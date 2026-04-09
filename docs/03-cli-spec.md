@@ -20,6 +20,7 @@ gig verify --help
 gig manifest --help
 gig doctor --help
 gig resolve --help
+gig update --help
 ```
 
 You can also use:
@@ -44,6 +45,7 @@ gig help
 | `gig doctor` | check config coverage, env mapping, and repo catalog health |
 | `gig resolve status` | inspect the current Git conflict state in one repository |
 | `gig resolve start` | walk supported Git text conflicts with keyboard actions |
+| `gig update` | refresh the installed CLI to the latest release or a specific version |
 | `gig version` | confirm what build you installed |
 
 ## Shared Rules
@@ -384,6 +386,29 @@ What it checks:
 - whether configured environment branches exist
 - whether service, owner, and kind are filled in
 
+## `gig update`
+
+Use this when you want to refresh the installed CLI.
+
+Update to the latest release:
+
+```bash
+gig update
+```
+
+Install a specific version:
+
+```bash
+gig update v2026.04.09
+```
+
+What it does:
+
+- direct installs re-run the official installer in the current binary directory
+- Homebrew installs run `brew update` and `brew upgrade gig-cli`
+- Scoop installs run `scoop update gig-cli`
+- pinned versions are supported for direct installs, not for Homebrew or Scoop
+
 ## `gig version`
 
 Use this when you want to confirm what build is installed.
@@ -464,6 +489,12 @@ gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --form
 
 ```bash
 gig doctor --path /path/to/workspace
+```
+
+### Refresh the installed CLI
+
+```bash
+gig update
 ```
 
 ## Output Formats

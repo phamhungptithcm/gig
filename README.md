@@ -133,12 +133,21 @@ There is also a ready sample here:
 ## Install
 
 Package managers publish `gig` as `gig-cli` to avoid name collisions, but the command you run after install stays `gig`.
+Homebrew and Scoop track the latest stable release. If you want to pin a specific version, use the direct installer or download the release asset manually.
 
 ### Quick Install On macOS And Linux With Homebrew
 
 ```bash
+brew tap phamhungptithcm/gig https://github.com/phamhungptithcm/gig
 brew install phamhungptithcm/gig/gig-cli
 gig version
+```
+
+Update to the latest Homebrew release:
+
+```bash
+brew update
+brew upgrade gig-cli
 ```
 
 ### Quick Install On Windows With Scoop
@@ -147,6 +156,12 @@ gig version
 scoop bucket add gig https://github.com/phamhungptithcm/gig
 scoop install gig/gig-cli
 gig version
+```
+
+Update to the latest Scoop release:
+
+```powershell
+scoop update gig-cli
 ```
 
 ### Quick Install On macOS And Linux Without Homebrew
@@ -160,7 +175,14 @@ curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/in
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | GIG_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh -s -- --version v2026.04.09
+```
+
+Update a direct install:
+
+```bash
+gig update
+gig update v2026.04.09
 ```
 
 ### Quick Install On Windows PowerShell
@@ -174,7 +196,14 @@ irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.p
 Install a specific version:
 
 ```powershell
-$env:GIG_VERSION="v0.1.0"; irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
+& ([ScriptBlock]::Create((irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1))) -Version v2026.04.09
+```
+
+Update a direct install:
+
+```powershell
+gig update
+gig update v2026.04.09
 ```
 
 ### Manual Download

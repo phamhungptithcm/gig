@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"gig/internal/buildinfo"
@@ -28,6 +30,7 @@ import (
 	svnscm "gig/internal/scm/svn"
 	snapshotsvc "gig/internal/snapshot"
 	ticketsvc "gig/internal/ticket"
+	updatesvc "gig/internal/update"
 )
 
 const usageExitCode = 2
@@ -86,6 +89,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runDoctor(ctx, args[1:])
 	case "resolve":
 		return a.runResolve(ctx, args[1:])
+	case "update":
+		return a.runUpdate(ctx, args[1:])
 	case "version", "-v", "--version":
 		return a.runVersion()
 	case "help", "-h", "--help":
@@ -1280,6 +1285,192 @@ func (a *App) runResolveStart(ctx context.Context, args []string) int {
 	return 0
 }
 
+func (a *App) runUpdate(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printUpdateUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	versionFlag := fs.String("version", "latest", "Install the latest release or a specific tag")
+	repoFlag := fs.String("repo", "", "GitHub repo that hosts gig releases")
+	installDirFlag := fs.String("install-dir", "", "Override the install directory for a direct install")
+
+	if err := fs.Parse(args); err != nil {
+		a.printUpdateUsage()
+		return usageExitCode
+	}
+	if fs.NArg() > 1 {
+		fmt.Fprintln(a.stderr, "update accepts at most one positional <version> argument")
+		a.printUpdateUsage()
+		return usageExitCode
+	}
+
+	version := updatesvc.NormalizeVersion(*versionFlag)
+	if fs.NArg() == 1 {
+		if version != "latest" {
+			fmt.Fprintln(a.stderr, "update accepts either --version or a positional <version>, not both")
+			a.printUpdateUsage()
+			return usageExitCode
+		}
+		version = updatesvc.NormalizeVersion(fs.Arg(0))
+	}
+
+	repoName := strings.TrimSpace(*repoFlag)
+	if repoName == "" {
+		repoName = strings.TrimSpace(os.Getenv("GIG_REPO"))
+	}
+	if repoName == "" {
+		repoName = "phamhungptithcm/gig"
+	}
+
+	executablePath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	resolvedExecutablePath := executablePath
+	if linkedPath, linkErr := filepath.EvalSymlinks(executablePath); linkErr == nil {
+		resolvedExecutablePath = linkedPath
+	}
+
+	installDir := strings.TrimSpace(*installDirFlag)
+	installMode := updatesvc.DetectInstallMode(resolvedExecutablePath)
+	if installDir != "" {
+		installMode = updatesvc.ModeDirect
+	} else {
+		installDir = filepath.Dir(resolvedExecutablePath)
+	}
+
+	switch installMode {
+	case updatesvc.ModeHomebrew:
+		if version != "latest" {
+			fmt.Fprintf(a.stderr, "update failed: Homebrew installs track the latest stable release only. Use the install script or GitHub release asset for %s.\n", version)
+			return 1
+		}
+
+		fmt.Fprintf(a.stdout, "Detected a Homebrew-managed install at %s\n", resolvedExecutablePath)
+		if code := a.runExternalCommand(ctx, "brew", []string{"update"}); code != 0 {
+			return code
+		}
+		return a.runExternalCommand(ctx, "brew", []string{"upgrade", "gig-cli"})
+	case updatesvc.ModeScoop:
+		if version != "latest" {
+			fmt.Fprintf(a.stderr, "update failed: Scoop installs track the latest stable release only. Use the PowerShell installer or GitHub release asset for %s.\n", version)
+			return 1
+		}
+
+		fmt.Fprintf(a.stdout, "Detected a Scoop-managed install at %s\n", resolvedExecutablePath)
+		return a.runExternalCommand(ctx, "scoop", []string{"update", "gig-cli"})
+	default:
+		if runtime.GOOS == "windows" {
+			return a.runWindowsInstallerUpdate(ctx, repoName, version, installDir)
+		}
+		return a.runPOSIXInstallerUpdate(ctx, repoName, version, installDir)
+	}
+}
+
+func (a *App) runExternalCommand(ctx context.Context, name string, args []string) int {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = a.stdout
+	cmd.Stderr = a.stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
+func (a *App) runPOSIXInstallerUpdate(ctx context.Context, repoName, version, installDir string) int {
+	installerURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/scripts/install.sh", repoName)
+	command := fmt.Sprintf(
+		"if command -v curl >/dev/null 2>&1; then curl -fsSL %s | sh; elif command -v wget >/dev/null 2>&1; then wget -qO- %s | sh; else echo 'curl or wget is required to update gig.' >&2; exit 1; fi",
+		shellSingleQuote(installerURL),
+		shellSingleQuote(installerURL),
+	)
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = a.stdout
+	cmd.Stderr = a.stderr
+	cmd.Env = append(os.Environ(),
+		"GIG_REPO="+repoName,
+		"GIG_VERSION="+version,
+		"GIG_INSTALL_DIR="+installDir,
+	)
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
+func (a *App) runWindowsInstallerUpdate(ctx context.Context, repoName, version, installDir string) int {
+	installerURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/scripts/install.ps1", repoName)
+
+	scriptFile, err := os.CreateTemp("", "gig-update-*.ps1")
+	if err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	scriptBody := fmt.Sprintf(`$ErrorActionPreference = "Stop"
+$installer = [ScriptBlock]::Create((Invoke-RestMethod -Uri '%s'))
+& $installer -Repo '%s' -Version '%s' -InstallDir '%s' -WaitForPid %d
+Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+`,
+		powerShellSingleQuote(installerURL),
+		powerShellSingleQuote(repoName),
+		powerShellSingleQuote(version),
+		powerShellSingleQuote(installDir),
+		os.Getpid(),
+	)
+
+	if _, err := scriptFile.WriteString(scriptBody); err != nil {
+		scriptFile.Close()
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+	if err := scriptFile.Close(); err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	command := fmt.Sprintf(
+		"Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','%s')",
+		powerShellSingleQuote(scriptFile.Name()),
+	)
+
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = a.stdout
+	cmd.Stderr = a.stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(a.stdout, "gig update started in the background.")
+	fmt.Fprintln(a.stdout, "Open a new terminal in a few seconds, then run: gig version")
+	return 0
+}
+
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func powerShellSingleQuote(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
+}
 func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "gig helps teams check whether a ticket is really ready for the next release step.")
 	fmt.Fprintln(a.stderr)
@@ -1292,6 +1483,7 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --from test --to main --path .")
 	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 --from test --to main --path .")
 	fmt.Fprintln(a.stderr, "  gig doctor --path .")
+	fmt.Fprintln(a.stderr, "  gig update")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Commands:")
 	fmt.Fprintln(a.stderr, "  scan        Find repositories under a path")
@@ -1305,6 +1497,7 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  snapshot    Save a repeatable ticket baseline for audit and re-check")
 	fmt.Fprintln(a.stderr, "  doctor      Check config coverage, env mappings, and repo catalog health")
 	fmt.Fprintln(a.stderr, "  resolve     Inspect or resolve active Git merge conflicts")
+	fmt.Fprintln(a.stderr, "  update      Install the latest release or a specific version")
 	fmt.Fprintln(a.stderr, "  version     Show the installed version")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "More help:")
@@ -1382,6 +1575,10 @@ func (a *App) printResolveStatusUsage() {
 
 func (a *App) printResolveStartUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig resolve start --path . [--config gig.yaml] [--ticket ABC-123]")
+}
+
+func (a *App) printUpdateUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig update [<version>] [--version vYYYY.MM.DD] [--install-dir /path/to/bin] [--repo owner/name]")
 }
 
 func hasHelpFlag(args []string) bool {

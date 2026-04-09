@@ -47,6 +47,7 @@ Package managers publish `gig` as `gig-cli` to avoid name collisions, but the co
 For macOS and Linux with Homebrew:
 
 ```bash
+brew tap phamhungptithcm/gig https://github.com/phamhungptithcm/gig
 brew install phamhungptithcm/gig/gig-cli
 gig version
 ```
@@ -64,6 +65,12 @@ For macOS and Linux without Homebrew:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
 gig version
+```
+
+Update the installed binary:
+
+```bash
+gig update
 ```
 
 ## What It Does Not Do Yet
