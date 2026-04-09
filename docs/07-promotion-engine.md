@@ -1,82 +1,95 @@
 # Promotion Engine
 
-## Status
+## Current Status
 
-This engine is planned, not fully implemented in the current MVP.
+The promotion engine is partially implemented in read-only form.
+
+Today, `gig` can already:
+
+- inspect ticket scope across repos
+- compare source and target branches
+- detect when the source branch is behind an earlier environment
+- classify a promotion as `safe`, `warning`, or `blocked`
+- generate a read-only promotion plan in human or JSON output
+
+Today, it does not execute any Git write action.
 
 ## Goal
 
-Move from "show me what is missing" to "help me move the right changes safely."
+Move from:
 
-## Promotion Flow
+`show me what is missing`
 
-### 1. Collect Commits
+to:
 
-Find all commits for the requested ticket across all detected repositories.
+`help me move the right changes safely`
 
-### 2. Compare Branches
+## What The Current Read-Only Engine Does
 
-Compare the source branch and target branch for each repository.
+### 1. Collect Ticket Evidence
 
-Goal:
-find which ticket commits are already present and which are still missing.
+Find all commits for the requested ticket across detected repositories.
 
-### 3. Build Plan
+### 2. Read Environment State
 
-Create a clear promotion plan.
+Check how the ticket appears in the configured environment flow such as:
 
-The plan should show:
+- `dev`
+- `test`
+- `prod`
 
-- repository name
-- commits to apply
-- commit order
-- dependencies
-- warnings
+### 3. Compare Source And Target
 
-### 4. Detect Missing Items
+Compare the selected source branch and target branch for each repository.
 
-Before execution, the engine should detect:
+### 4. Infer Risk Signals
+
+Look for file patterns that probably need manual review, such as:
+
+- DB changes
+- config changes
+- Mendix model changes
+
+### 5. Build A Verdict
+
+Return one of:
+
+- `safe`
+- `warning`
+- `blocked`
+
+### 6. Build A Plan
+
+Produce a read-only plan that shows:
 
 - missing commits
-- missing dependent tickets
-- branch mismatches
-- repositories that could not be read
+- manual steps
+- repo-level notes
+- planned actions
 
-### 5. Dry-Run
+## Current Blockers
 
-In dry-run mode, the tool should simulate the promotion flow without changing anything.
+Right now, the engine blocks a repo when:
 
-Dry-run should answer:
+- the source branch does not exist
+- the target branch does not exist
+- the selected source branch is behind an earlier environment
+- the selected source branch does not actually contain ticket commits
 
-- what would be picked
-- what might fail
-- where conflicts may happen
+## What Comes Next
 
-### 6. Execute
+Later versions should add:
 
-Only after explicit confirmation, the tool may execute the plan.
-
-Safety rules:
-
-- no silent write actions
-- clear confirmation before execution
-- stop and report on critical failure
-
-### 7. Report
-
-After execution, the tool should print a simple report.
-
-The report should show:
-
-- what was applied
-- what was skipped
-- what failed
-- what needs manual follow-up
+- dependency-aware checks
+- release packet generation in richer formats
+- deployment evidence
+- Jira or PR evidence
+- controlled execution after dry-run and approval
 
 ## Design Principles
 
 - safe by default
-- dry-run first
-- clear plan before execution
-- easy to audit
-- no hidden destructive behavior
+- read facts first
+- no hidden write actions
+- make human review easier
+- keep machine-readable output aligned with terminal output

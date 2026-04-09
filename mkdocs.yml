@@ -1,5 +1,5 @@
 site_name: gig
-site_description: Release workflow helper for ticket-aware multi-repository promotions
+site_description: Ticket-aware release workflow helper for multi-repo teams
 site_url: https://phamhungptithcm.github.io/gig/
 repo_name: phamhungptithcm/gig
 repo_url: https://github.com/phamhungptithcm/gig
@@ -9,25 +9,40 @@ theme:
 
 nav:
   - Home: index.md
-  - Product Overview: 00-product-overview.md
-  - Problem Statement: 01-problem-statement.md
-  - Scope And Phases: 02-scope-and-phases.md
-  - CLI Spec: 03-cli-spec.md
-  - Architecture: 04-architecture.md
-  - Domain Model: 05-domain-model.md
-  - SCM Abstraction: 06-scm-abstraction.md
-  - Promotion Engine: 07-promotion-engine.md
-  - Commit Convention: 08-commit-convention.md
-  - Config Spec: 09-config-spec.md
-  - Error Handling And Logging: 10-error-handling-and-logging.md
-  - Test Strategy: 11-test-strategy.md
-  - Mendix Considerations: 12-mendix-considerations.md
-  - Roadmap: 13-roadmap.md
-  - Codex Implementation Plan: 14-codex-implementation-plan.md
-  - Branching And Release: 15-branching-and-release.md
+  - Start Here:
+      - Quick Start: 19-quickstart.md
+      - Product Overview: 00-product-overview.md
+      - Problem Statement: 01-problem-statement.md
+      - Scope And Phases: 02-scope-and-phases.md
+  - Using gig:
+      - CLI Guide: 03-cli-spec.md
+      - Branching And Release: 15-branching-and-release.md
+      - Real-World Release Workflows: 16-real-world-release-workflows.md
+  - How gig Works:
+      - Architecture: 04-architecture.md
+      - Domain Model: 05-domain-model.md
+      - SCM Abstraction: 06-scm-abstraction.md
+      - Promotion Engine: 07-promotion-engine.md
+      - Commit Convention: 08-commit-convention.md
+      - Config Spec: 09-config-spec.md
+      - Error Handling And Logging: 10-error-handling-and-logging.md
+      - Test Strategy: 11-test-strategy.md
+      - Mendix Considerations: 12-mendix-considerations.md
+  - Direction And Planning:
+      - Roadmap: 13-roadmap.md
+      - Product Strategy: 17-product-strategy.md
+      - Operating Model: 18-operating-model.md
+      - Engineering Implementation Plan: 14-codex-implementation-plan.md
 
 markdown_extensions:
   - admonition
+  - attr_list
   - tables
   - toc:
       permalink: true
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/code-copy.js

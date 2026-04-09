@@ -1,14 +1,20 @@
 # Commit Convention
 
-## Why This File Matters
+## Why This Matters
 
-If commit messages are messy, the tool becomes weak.
+`gig` becomes much more useful when commit messages are consistent.
 
-Good commit messages make `scan`, `find`, `diff`, and future `promote` much more reliable.
+Good commit subjects make it easier for:
+
+- `gig find`
+- `gig inspect`
+- `gig diff`
+- `gig verify`
+- `gig plan`
 
 ## Recommended Subject Format
 
-Use this structure:
+Use this simple format:
 
 ```text
 <TICKET-ID> | <module-or-repo> | <short action>
@@ -17,23 +23,24 @@ Use this structure:
 Examples:
 
 - `ABC-123 | service-a | fix login validation`
+- `ABC-123 | web-ui | adjust summary screen`
+- `ABC-123 | db | add invoice column`
 - `ABC-123 | mendix-app | update workflow`
-- `ABC-123 | db | alter invoice table`
 
 ## Why This Format Works
 
-- the ticket ID is easy to find
-- the touched module is easy to see
-- the action is easy to understand
-- humans and tools can both read it quickly
+- the ticket ID is easy to spot
+- the touched area is easy to understand
+- the action is short and readable
+- both humans and tools can scan it quickly
 
 ## Minimum Rule
 
-At minimum, every commit that should be tracked by `gig` must include a valid ticket ID in the subject line.
+At minimum, every tracked commit should include a valid ticket ID in the subject line.
 
 ## Optional Footer Fields
 
-The body may include structured footer lines such as:
+The body can include extra structured lines such as:
 
 ```text
 depends-on: XYZ-456
@@ -41,34 +48,13 @@ module: billing-service
 type: fix
 ```
 
-These are optional in the MVP, but they prepare the repo for later features.
-
-## Footer Meaning
-
-- `depends-on`: another ticket that should be checked or promoted first
-- `module`: the logical area changed by this commit
-- `type`: the kind of change, such as `fix`, `feature`, or `refactor`
-
-## Default Ticket Pattern
-
-The current default regex is:
-
-```text
-\b[A-Z][A-Z0-9]+-\d+\b
-```
-
-Examples:
-
-- valid: `ABC-123`
-- valid: `TEAM9-42`
-- invalid: `abc_123`
+These are optional today, but useful for later dependency and release-packet features.
 
 ## Team Guidance
 
-- keep the ticket ID near the start of the subject line
-- use one main ticket ID per commit subject when possible
+- keep the ticket ID near the start of the subject
 - keep module names stable
-- keep action text short and direct
+- keep the action short and direct
 - keep follow-up commits on the same ticket consistently tagged
 
-Consistent commit messages make the tool stronger and reduce release risk.
+Consistent commit messages reduce release mistakes.

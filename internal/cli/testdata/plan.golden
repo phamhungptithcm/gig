@@ -1,0 +1,36 @@
+Ticket ABC-123
+Promotion: test -> main
+Environments: dev=dev -> test=test -> prod=main
+Verdict: blocked
+Scanned repositories: 1
+Touched repositories: 1
+
+Summary
+  - Resolve blocked repositories before promoting this ticket.
+  - ready repositories: 0
+  - warning repositories: 0
+  - blocked repositories: 1
+  - commits to promote: 1
+  - manual steps: 1
+
+[a-service] <WORKSPACE>/a-service (git)
+  verdict: blocked
+  source commits on test: 1
+  target commits on main: 0
+  commits to include: 1
+  branches seen: dev, test
+  environment status:
+    - dev (dev): present, commits here 2
+    - test (test): behind by 1 commit(s), commits here 1
+    - prod (main): behind by 1 commit(s), commits here 0
+  risk signals:
+    - db-change (manual-review): Database-related changes should be reviewed before promotion
+  manual steps:
+    - Review DB migration ordering, rollback steps, and deployment timing before promotion.
+  plan actions:
+    - Bring test up to date before promoting to main.
+    - Include 1 missing ticket commit(s) from test into main.
+  notes:
+    - Source branch test is behind an earlier environment by 1 commit(s).
+  commits to include:
+    - <HASH>  ABC-123 | service-a | add validation fix

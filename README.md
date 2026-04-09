@@ -1,163 +1,166 @@
 # gig
 
-`gig` is a cross-platform Go CLI for release workflows that need to track ticket-related commits across multiple repositories before promotion.
+`gig` helps teams answer one release question before they move code to the next branch or environment:
 
-## Why It Exists
+`Did we miss any change for this ticket?`
 
-Enterprise tickets often span multiple repositories and multiple rounds of QA and client review. During promotion, teams can easily miss follow-up commits, especially when the same ticket is fixed repeatedly across `dev`, `test`, and later branches. `gig` reduces that risk by scanning a workspace, finding commits by ticket, and surfacing branch gaps before any promotion step is attempted.
+This project is for teams where one ticket can touch many repos, fail review a few times, get follow-up fixes, and then become hard to release safely.
 
-## Current MVP Scope
+## What You Can Do With It Today
 
-The current MVP focuses on safe, read-only workflows:
+With `gig`, you can:
 
-- recursive workspace scanning
-- Git repository detection
-- ticket-based commit search across repositories
-- branch comparison for a ticket using Git-first logic
-- human-readable grouped CLI output
+- find every repo touched by one ticket
+- inspect the full ticket story across repos
+- see whether `test` is behind `dev`, or `main` is behind `test`
+- get a quick `safe`, `warning`, or `blocked` decision before promotion
+- generate a Markdown release packet for QA, client review, and release managers
+- generate JSON output for CI, scripts, and tooling
+- load a simple team config file so real branch names and repo ownership match your workflow
+- run `gig doctor` to check whether the config and repo mapping are good enough to trust
 
-SVN is intentionally left as a prepared adapter stub for future phases.
+Everything is still read-only.
+`gig` helps you inspect, verify, and prepare.
+It does not cherry-pick, merge, or deploy for you.
 
-## Project Layout
+## Who This Is For
 
-- `cmd/gig`: executable entrypoint
-- `internal/cli`: command parsing and command orchestration
-- `internal/repo`: workspace and repository discovery
-- `internal/scm`: shared SCM abstractions and adapter registry
-- `internal/scm/git`: Git adapter implementation
-- `internal/scm/svn`: SVN stub adapter for future phases
-- `internal/ticket`: ticket parsing and commit search service
-- `internal/diff`: branch comparison service
-- `internal/output`: human-readable rendering
-- `internal/config`: default configuration values
-- `docs/`: product and architecture documentation
-- `examples/`: sample usage
+`gig` is a good fit when your team says things like:
 
-## Requirements
+- "This ticket touched backend, frontend, and DB. Did we collect everything?"
+- "QA passed, but is `test` still missing one late fix from `dev`?"
+- "Client failed review once, then we fixed it again. Did that last commit reach `main`?"
+- "This ticket has DB or config changes. What needs manual review before release?"
 
-- Go 1.22+
-- Git CLI available on `PATH` for Git-backed commands
-
-## Quick Install
-
-### macOS With Homebrew
+## The Commands People Usually Start With
 
 ```bash
-brew install https://raw.githubusercontent.com/phamhungptithcm/gig/main/Formula/gig.rb
+gig --help
+gig inspect ABC-123 --path .
+gig verify --ticket ABC-123 --from test --to main --path .
+gig manifest generate --ticket ABC-123 --from test --to main --path .
+gig doctor --path .
 ```
 
-### Windows With Scoop
+If you want a team-specific setup, create a `gig.yaml` file and then run the same commands without repeating `--envs` every time.
 
-```powershell
-scoop install https://raw.githubusercontent.com/phamhungptithcm/gig/main/Scoop/gig.json
-```
+## A Friendly First Workflow
 
-### macOS And Linux Script Installer
-
-Install the latest release with one command:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
-```
-
-Install a specific version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | GIG_VERSION=v0.1.0 sh
-```
-
-### Windows PowerShell Installer
-
-Install the latest release from PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
-```
-
-Install a specific version:
-
-```powershell
-$env:GIG_VERSION="v0.1.0"; irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
-```
-
-### Manual Download
-
-If you prefer not to use installer scripts, download the right archive from [GitHub Releases](https://github.com/phamhungptithcm/gig/releases/latest), extract it, and put `gig` or `gig.exe` on your `PATH`.
-
-After install, verify it:
-
-```bash
-gig version
-```
-
-If you are preparing the very first public release, package manager installs become available after that first GitHub Release is published.
-
-## Build And Run
-
-Build the CLI:
-
-```bash
-mkdir -p bin && go build -o bin/gig ./cmd/gig
-```
-
-Run directly with Go:
-
-```bash
-go run ./cmd/gig scan --path .
-```
-
-## Commands
-
-Scan a workspace or a single repository:
+### 1. See what repos are under the workspace
 
 ```bash
 gig scan --path .
 ```
 
-Find commits by ticket across detected repositories:
+### 2. Inspect one ticket across repos
 
 ```bash
-gig find ABC-123 --path .
+gig inspect ABC-123 --path .
 ```
 
-Compare ticket-related commits between branches:
+### 3. Check whether the next move looks safe
 
 ```bash
-gig diff --ticket ABC-123 --from dev --to test --path .
+gig verify --ticket ABC-123 --from test --to main --path .
 ```
 
-## Output Behavior
+### 4. Generate a release packet people can actually read
 
-- results are grouped by repository
-- errors go to stderr
-- invalid usage returns a non-zero exit code
-- MVP commands are non-destructive
+```bash
+gig manifest generate --ticket ABC-123 --from test --to main --path .
+```
 
-## Limitations
+### 5. Check whether your config and repo mapping are healthy
 
-- Git is the only working SCM adapter in the MVP
-- commit matching depends on ticket IDs being present in commit messages
-- no JSON output yet
-- no promote/cherry-pick workflow yet
-- no config file loading yet
+```bash
+gig doctor --path .
+```
 
-## Development Flow
+## Team Config In One Minute
 
-- `staging` is the shared integration branch.
-- feature and bug-fix branches start from `staging` and open pull requests back into `staging`
-- `main` receives the scheduled promotion from `staging`
+If your branches are not just `dev`, `test`, and `main`, add a config file like this:
 
-## Repository Automation
+```yaml
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
 
-- CI runs formatting, vet, test, and build checks for pushes and pull requests on `staging` and `main`
-- every push to `main` creates the next GitHub release tag, release notes, checksums, and release archives
-- Markdown documentation under `docs/` is published to GitHub Pages with MkDocs
+environments:
+  - name: dev
+    branch: develop
+  - name: test
+    branch: release/test
+  - name: prod
+    branch: main
 
-## Roadmap Summary
+repositories:
+  - path: services/accounts-api
+    service: Accounts API
+    owner: Backend Team
+    kind: app
+    notes:
+      - Verify login and billing summary in QA.
+```
 
-- Phase 0: foundation, CLI bootstrap, repo discovery
-- Phase 1: `scan`, `find`, `diff`
-- Phase 2: promotion planning and dry-run cherry-pick
-- Phase 3+: dependency parsing, snapshots, SVN, Jira, Mendix checks
+Supported file names:
 
-See [examples/README.md](examples/README.md) and the documents in [docs/](docs/) for more detail.
+- `gig.yaml`
+- `gig.yml`
+- `.gig.yaml`
+- `.gig.yml`
+
+`gig` will auto-detect the file from the path you run against, or you can pass `--config`.
+
+There is also a ready sample here:
+
+- [gig.example.yaml](https://github.com/phamhungptithcm/gig/blob/main/gig.example.yaml)
+
+## Docs
+
+- GitHub Pages: [phamhungptithcm.github.io/gig](https://phamhungptithcm.github.io/gig/)
+- Quick start: [docs/19-quickstart.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/19-quickstart.md)
+- CLI guide: [docs/03-cli-spec.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/03-cli-spec.md)
+- Config spec: [docs/09-config-spec.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/09-config-spec.md)
+- Roadmap: [docs/13-roadmap.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/13-roadmap.md)
+
+## Install
+
+### Option 1: Download the latest release
+
+1. Open [GitHub Releases](https://github.com/phamhungptithcm/gig/releases/latest)
+2. Download the file for your operating system
+3. Extract it
+4. Put `gig` or `gig.exe` somewhere on your `PATH`
+
+### Option 2: Build from source
+
+Requirements:
+
+- Go `1.22+`
+- Git installed and available on your `PATH`
+
+Build:
+
+```bash
+git clone https://github.com/phamhungptithcm/gig.git
+cd gig
+mkdir -p bin
+go build -o bin/gig ./cmd/gig
+```
+
+Run:
+
+```bash
+./bin/gig version
+./bin/gig --help
+```
+
+## What `gig` Does Not Do Yet
+
+Right now, `gig` does not:
+
+- move code automatically
+- resolve merge conflicts
+- read Jira, PR, or deployment evidence yet
+- build multi-ticket release bundles yet
+
+Those are still on the roadmap.
+The current focus is to make ticket-based release checking useful, reliable, and easy to adopt first.

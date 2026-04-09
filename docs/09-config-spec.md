@@ -1,80 +1,169 @@
 # Config Spec
 
-## Goal
+This page explains the config file that `gig` can load today.
 
-The config file should let teams set workspace and SCM defaults without changing code.
+The goal is simple:
 
-Config loading is planned. The current MVP uses built-in defaults only.
+- map your real environment branches
+- describe repos in human terms
+- stop repeating the same flags on every command
+
+## Supported File Names
+
+`gig` will auto-detect these names:
+
+- `gig.yaml`
+- `gig.yml`
+- `.gig.yaml`
+- `.gig.yml`
+
+It searches upward from the `--path` you pass to the command.
+
+If you want to point at a specific file, use `--config`.
+
+## What The Config Can Do Today
+
+The current config supports:
+
+- custom ticket pattern regex
+- environment-to-branch mapping
+- repository catalog entries with service name, owner, kind, and notes
+
+This config is already used by:
+
+- `gig env status`
+- `gig verify`
+- `gig plan`
+- `gig manifest generate`
+- `gig doctor`
 
 ## Example Config
 
 ```yaml
-workspaceRoots:
-  - /Users/me/workspace
-scanRecursive: true
-defaultBranches:
-  dev: develop
-  test: test
-  prod: main
-commitPattern: '[A-Z]+-\\d+'
-supportedScm:
-  - git
-  - svn
-excludedPaths:
-  - node_modules
-  - dist
-  - target
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+
+environments:
+  - name: dev
+    branch: develop
+  - name: test
+    branch: release/test
+  - name: prod
+    branch: main
+
+repositories:
+  - path: services/accounts-api
+    service: Accounts API
+    owner: Backend Team
+    kind: app
+    notes:
+      - Verify login and billing summary in QA.
+
+  - path: db/shared-schema
+    service: Shared Schema
+    owner: Platform Team
+    kind: db
+    notes:
+      - Review migration order and rollback notes before release.
 ```
+
+There is also a sample file in the repo:
+
+- [gig.example.yaml](https://github.com/phamhungptithcm/gig/blob/main/gig.example.yaml)
 
 ## Field Meaning
 
-### `workspaceRoots`
+### `ticketPattern`
 
-List of common root folders to scan.
+Regex used to validate and find ticket IDs in commit messages.
 
-### `scanRecursive`
+Use this only if your team does not follow the default pattern.
 
-If `true`, the scanner walks child folders recursively.
+Default:
 
-### `defaultBranches`
+```text
+\b[A-Z][A-Z0-9]+-\d+\b
+```
 
-Maps logical environment names to real branch names.
+### `environments`
+
+List of logical environments and the real branch name each one maps to.
 
 Example:
 
 - `dev` -> `develop`
-- `test` -> `test`
+- `test` -> `release/test`
 - `prod` -> `main`
 
-### `commitPattern`
+Commands such as `env status`, `verify`, `plan`, and `manifest generate` use this mapping when `--envs` is not passed.
 
-Regex used to find ticket IDs in commit messages.
+### `repositories`
 
-### `supportedScm`
+List of repo catalog entries.
 
-List of SCM types the tool should try to detect.
+Each entry can include:
 
-### `excludedPaths`
+- `path`
+  repo path relative to the workspace root, or an absolute path
+- `name`
+  optional fallback if you prefer matching by repo name
+- `service`
+  human-friendly service or app name
+- `owner`
+  team or person responsible for that repo
+- `kind`
+  repo type such as `app`, `db`, `mendix`, or `infra`
+- `notes`
+  simple release notes, reminders, or QA hints for that repo
 
-Folders that should never be scanned.
+## Matching Rules
 
-Useful for:
+`gig` tries to match repository entries in this order:
 
-- build output folders
-- dependency caches
-- large generated directories
+1. `path`
+2. `name`
 
-## Planned Precedence
+Using `path` is the safest option for real teams because repo names can repeat across larger workspaces.
 
-When config loading is added, values should be resolved in this order:
+## Why The Repo Catalog Matters
+
+The repo catalog is what makes the output feel useful to humans, not just correct to a machine.
+
+It powers:
+
+- service names in release packets
+- owner callouts for release coordination
+- repo kind checks in `gig doctor`
+- release notes and reminders that are specific to each repo
+
+## Precedence
+
+Values are resolved in this order:
 
 1. command flags
-2. local project config
-3. user config
+2. explicit file passed with `--config`
+3. auto-detected config file from the workspace path
 4. built-in defaults
 
-## Design Notes
+Example:
 
-- config should stay small and easy to read
-- config errors should be clear
-- unknown fields should warn or fail based on chosen strictness mode
+- if you pass `--envs`, that wins over the config file
+- if you do not pass `--envs`, `gig` uses the config file
+- if no config file exists, `gig` falls back to built-in defaults
+
+## Built-In Defaults
+
+If there is no config file, `gig` still works with these defaults:
+
+- ticket pattern: `\b[A-Z][A-Z0-9]+-\d+\b`
+- environments:
+  - `dev` -> `dev`
+  - `test` -> `test`
+  - `prod` -> `main`
+
+## Best Practices
+
+- keep the file short and practical
+- use real team names in `owner`
+- use repo `path` whenever possible
+- add notes only when they help release, QA, or client review
+- use `gig doctor` after editing the file
