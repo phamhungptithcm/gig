@@ -55,13 +55,14 @@ The Git adapter:
 
 ## SVN Notes
 
-The SVN adapter now supports the read-only discovery flow.
+The SVN adapter now supports the same read-only CLI flow as Git.
 
 It can:
 
 - detect `.svn`
 - read the current working line for scan output
 - search history for ticket IDs
+- compare two SVN branch lines for one ticket
 - load changed files for inspect risk detection
 
 This is enough for:
@@ -69,10 +70,15 @@ This is enough for:
 - `gig scan`
 - `gig find`
 - `gig inspect`
+- `gig env status`
+- `gig diff`
+- `gig verify`
+- `gig plan`
+- `gig manifest generate`
+- `gig doctor`
 
-It does not yet:
+It still does not:
 
-- compare two SVN branches for promotion safety
 - prepare promotion or cherry-pick style actions
 
-Promotion-oriented commands still depend on Git-style branch compare support.
+The compare flow assumes a standard SVN branch layout or explicit branch paths that map to real SVN URLs.

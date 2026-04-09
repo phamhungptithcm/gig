@@ -1,6 +1,9 @@
 package svn
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"gig/internal/config"
@@ -113,6 +116,15 @@ func TestResolveBranchPathUsesStandardSVNLayout(t *testing.T) {
 	}
 }
 
+func TestResolveBranchPathPreservesNestedProjectSuffix(t *testing.T) {
+	t.Parallel()
+
+	gotPath, gotDisplay := resolveBranchPath("test", "^/branches/dev/HorizonCRM")
+	if gotPath != "branches/test/HorizonCRM" || gotDisplay != "test" {
+		t.Fatalf("resolveBranchPath(nested) = (%q, %q), want (%q, %q)", gotPath, gotDisplay, "branches/test/HorizonCRM", "test")
+	}
+}
+
 func TestDisplayBranchNameHandlesCommonLayouts(t *testing.T) {
 	t.Parallel()
 
@@ -153,5 +165,64 @@ func TestAdapterType(t *testing.T) {
 
 	if got := NewAdapter(parser).Type(); got != scm.TypeSVN {
 		t.Fatalf("Type() = %q, want %q", got, scm.TypeSVN)
+	}
+}
+
+func TestAdapterCompareBranchesUsesMergeinfoEligibility(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	infoXML := `<info><entry><url>https://svn.example.com/repos/app/branches/dev/HorizonCRM</url><relative-url>^/branches/dev/HorizonCRM</relative-url><repository><root>https://svn.example.com/repos/app</root></repository></entry></info>`
+	sourceLogXML := `<log>
+<logentry revision="101"><msg>ABC-123 initial change</msg><paths><path>/branches/dev/HorizonCRM/javasource/Main.java</path></paths></logentry>
+<logentry revision="102"><msg>ABC-123 follow-up fix</msg><paths><path>/branches/dev/HorizonCRM/db/migrations/001_add_column.sql</path></paths></logentry>
+</log>`
+	targetLogXML := `<log>
+<logentry revision="220"><msg>ABC-123 test-only patch</msg><paths><path>/branches/test/HorizonCRM/javasource/Test.java</path></paths></logentry>
+</log>`
+
+	adapter := &Adapter{
+		parser: parser,
+		run: func(_ context.Context, args ...string) (string, error) {
+			command := strings.Join(args, " ")
+			switch command {
+			case "info --xml /workspace/svnrepo":
+				return infoXML, nil
+			case "log --xml --verbose https://svn.example.com/repos/app/branches/dev/HorizonCRM":
+				return sourceLogXML, nil
+			case "log --xml --verbose https://svn.example.com/repos/app/branches/test/HorizonCRM":
+				return targetLogXML, nil
+			case "mergeinfo --show-revs eligible https://svn.example.com/repos/app/branches/dev/HorizonCRM https://svn.example.com/repos/app/branches/test/HorizonCRM":
+				return "r102\n", nil
+			default:
+				return "", fmt.Errorf("unexpected svn call: %s", command)
+			}
+		},
+	}
+
+	result, err := adapter.CompareBranches(context.Background(), "/workspace/svnrepo", scm.CompareQuery{
+		TicketID:   "ABC-123",
+		FromBranch: "dev",
+		ToBranch:   "test",
+	})
+	if err != nil {
+		t.Fatalf("CompareBranches() error = %v", err)
+	}
+
+	if len(result.SourceCommits) != 2 {
+		t.Fatalf("len(SourceCommits) = %d, want 2", len(result.SourceCommits))
+	}
+	if len(result.TargetCommits) != 1 {
+		t.Fatalf("len(TargetCommits) = %d, want 1", len(result.TargetCommits))
+	}
+	if len(result.MissingCommits) != 1 {
+		t.Fatalf("len(MissingCommits) = %d, want 1", len(result.MissingCommits))
+	}
+	if result.MissingCommits[0].Hash != "r102" {
+		t.Fatalf("MissingCommits[0].Hash = %q, want %q", result.MissingCommits[0].Hash, "r102")
 	}
 }

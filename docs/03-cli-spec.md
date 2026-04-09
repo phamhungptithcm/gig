@@ -271,8 +271,8 @@ gig version
 
 ## SCM Support Today
 
-- `gig scan`, `gig find`, and `gig inspect` work with Git repositories and SVN working copies
-- `gig diff`, `gig env status`, `gig verify`, `gig plan`, and `gig manifest generate` still require Git branch compare support
+- Git and SVN working copies both support the current read-only CLI flow: `scan`, `find`, `inspect`, `env status`, `diff`, `verify`, `plan`, `manifest generate`, and `doctor`
+- SVN branch comparison assumes a normal Subversion layout such as `trunk` and `branches/<name>`, or explicit branch paths in config and flags
 - repository catalog entries currently map to detected repository roots, not subfolders inside a single monorepo
 
 ## Common Examples

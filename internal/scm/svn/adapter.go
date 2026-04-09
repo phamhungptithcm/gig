@@ -18,6 +18,7 @@ import (
 
 type Adapter struct {
 	parser ticket.Parser
+	run    func(ctx context.Context, args ...string) (string, error)
 }
 
 type infoDocument struct {
@@ -103,35 +104,65 @@ func (a *Adapter) SearchCommits(ctx context.Context, repoRoot string, query scm.
 		return nil, err
 	}
 
-	target := repoRoot
-	defaultBranch := ""
-	if strings.TrimSpace(query.Branch) != "" {
-		info, err := a.readInfo(ctx, repoRoot)
-		if err != nil {
-			return nil, err
-		}
+	info, err := a.readInfo(ctx, repoRoot)
+	if err != nil {
+		return nil, err
+	}
 
+	target := repoRoot
+	defaultBranch := branchNameFromInfo(info)
+	if strings.TrimSpace(query.Branch) != "" {
 		target, defaultBranch, err = resolveBranchTarget(info, query.Branch)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	output, err := a.runSVN(ctx, "log", "--xml", "--verbose", target)
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := parseLogEntries(output)
-	if err != nil {
-		return nil, err
-	}
-
-	return buildCommits(entries, a.parser, query.TicketID, defaultBranch), nil
+	return a.searchCommitsAtTarget(ctx, target, query.TicketID, defaultBranch)
 }
 
-func (a *Adapter) CompareBranches(context.Context, string, scm.CompareQuery) (scm.CompareResult, error) {
-	return scm.CompareResult{}, scm.ErrUnsupported
+func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query scm.CompareQuery) (scm.CompareResult, error) {
+	if err := a.parser.Validate(query.TicketID); err != nil {
+		return scm.CompareResult{}, err
+	}
+	if strings.TrimSpace(query.FromBranch) == "" || strings.TrimSpace(query.ToBranch) == "" {
+		return scm.CompareResult{}, fmt.Errorf("both --from and --to branches are required")
+	}
+
+	info, err := a.readInfo(ctx, repoRoot)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+
+	fromTarget, fromDisplay, err := resolveBranchTarget(info, query.FromBranch)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+	toTarget, toDisplay, err := resolveBranchTarget(info, query.ToBranch)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+
+	sourceCommits, err := a.searchCommitsAtTarget(ctx, fromTarget, query.TicketID, fromDisplay)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+	targetCommits, err := a.searchCommitsAtTarget(ctx, toTarget, query.TicketID, toDisplay)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+	missingCommits, err := a.missingCommits(ctx, fromTarget, toTarget, sourceCommits)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+
+	return scm.CompareResult{
+		FromBranch:     query.FromBranch,
+		ToBranch:       query.ToBranch,
+		SourceCommits:  sourceCommits,
+		TargetCommits:  targetCommits,
+		MissingCommits: missingCommits,
+	}, nil
 }
 
 func (a *Adapter) PrepareCherryPick(context.Context, string, scm.CherryPickPlan) error {
@@ -193,6 +224,116 @@ func (a *Adapter) CommitFiles(ctx context.Context, repoRoot string, hashes []str
 	}
 
 	return filesByCommit, nil
+}
+
+func (a *Adapter) searchCommitsAtTarget(ctx context.Context, target, ticketID, defaultBranch string) ([]scm.Commit, error) {
+	output, err := a.runSVN(ctx, "log", "--xml", "--verbose", target)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := parseLogEntries(output)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildCommits(entries, a.parser, ticketID, defaultBranch), nil
+}
+
+func (a *Adapter) missingCommits(ctx context.Context, sourceTarget, targetTarget string, sourceCommits []scm.Commit) ([]scm.Commit, error) {
+	if len(sourceCommits) == 0 || sourceTarget == targetTarget {
+		return nil, nil
+	}
+
+	output, err := a.runSVN(ctx, "mergeinfo", "--show-revs", "eligible", sourceTarget, targetTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	eligible := parseRevisionSet(output)
+	missing := make([]scm.Commit, 0, len(sourceCommits))
+	for _, commit := range sourceCommits {
+		if _, ok := eligible[commit.Hash]; ok {
+			missing = append(missing, commit)
+		}
+	}
+
+	return missing, nil
+}
+
+func parseRevisionSet(content string) map[string]struct{} {
+	revisions := map[string]struct{}{}
+	for _, line := range strings.Split(content, "\n") {
+		revision := revisionHash(line)
+		if revision == "" {
+			continue
+		}
+		revisions[revision] = struct{}{}
+	}
+
+	return revisions
+}
+
+func resolveBranchTarget(info infoEntry, branch string) (string, string, error) {
+	relativePath, display := resolveBranchPath(branch, info.RelativeURL)
+	if relativePath == "" {
+		return "", "", fmt.Errorf("branch is required")
+	}
+	if strings.TrimSpace(info.Repository.Root) == "" {
+		return "", "", fmt.Errorf("svn repository root URL is not available")
+	}
+
+	return joinURL(info.Repository.Root, relativePath), display, nil
+}
+
+func resolveBranchPath(branch, currentRelativeURL string) (string, string) {
+	branch = strings.TrimSpace(branch)
+	branch = strings.TrimPrefix(branch, "^/")
+	branch = strings.Trim(branch, "/")
+	if branch == "" {
+		return "", ""
+	}
+
+	currentRoot, currentSuffix := splitBranchLocation(currentRelativeURL)
+
+	switch {
+	case branch == "trunk":
+		return joinBranchPath("trunk", currentSuffix), "trunk"
+	case strings.HasPrefix(branch, "branches/"), strings.HasPrefix(branch, "tags/"), branch == currentRoot:
+		return joinBranchPath(branch, currentSuffix), displayBranchName(branch)
+	}
+
+	if currentRoot == "" || currentRoot == "trunk" || strings.HasPrefix(currentRoot, "branches/") || strings.HasPrefix(currentRoot, "tags/") {
+		return joinBranchPath(pathpkg.Join("branches", branch), currentSuffix), branch
+	}
+
+	return joinBranchPath(branch, currentSuffix), displayBranchName(branch)
+}
+
+func parseLogEntries(content string) ([]logEntry, error) {
+	var document logDocument
+	if err := xml.Unmarshal([]byte(content), &document); err != nil {
+		return nil, fmt.Errorf("parse svn log xml: %w", err)
+	}
+
+	return document.Entries, nil
+}
+
+func (a *Adapter) readInfo(ctx context.Context, target string) (infoEntry, error) {
+	output, err := a.runSVN(ctx, "info", "--xml", target)
+	if err != nil {
+		return infoEntry{}, err
+	}
+
+	var document infoDocument
+	if err := xml.Unmarshal([]byte(output), &document); err != nil {
+		return infoEntry{}, fmt.Errorf("parse svn info xml: %w", err)
+	}
+	if len(document.Entries) == 0 {
+		return infoEntry{}, fmt.Errorf("svn info returned no entries for %s", target)
+	}
+
+	return document.Entries[0], nil
 }
 
 func buildCommits(entries []logEntry, parser ticket.Parser, ticketID, defaultBranch string) []scm.Commit {
@@ -257,66 +398,6 @@ func collectBranches(paths []logPath, defaultBranch string) []string {
 	return branches
 }
 
-func resolveBranchTarget(info infoEntry, branch string) (string, string, error) {
-	relativePath, display := resolveBranchPath(strings.TrimSpace(branch), info.RelativeURL)
-	if relativePath == "" {
-		return "", "", fmt.Errorf("branch is required")
-	}
-	if strings.TrimSpace(info.Repository.Root) == "" {
-		return "", "", fmt.Errorf("svn repository root URL is not available")
-	}
-
-	return joinURL(info.Repository.Root, relativePath), display, nil
-}
-
-func resolveBranchPath(branch, currentRelativeURL string) (string, string) {
-	branch = strings.TrimSpace(branch)
-	branch = strings.TrimPrefix(branch, "^/")
-	branch = strings.Trim(branch, "/")
-	if branch == "" {
-		return "", ""
-	}
-
-	switch {
-	case branch == "trunk":
-		return branch, "trunk"
-	case strings.HasPrefix(branch, "branches/"), strings.HasPrefix(branch, "tags/"):
-		return branch, displayBranchName(branch)
-	}
-
-	current := strings.Trim(strings.TrimPrefix(strings.TrimSpace(currentRelativeURL), "^/"), "/")
-	if current == "" || current == "trunk" || strings.HasPrefix(current, "trunk/") || strings.HasPrefix(current, "branches/") || strings.HasPrefix(current, "tags/") {
-		return pathpkg.Join("branches", branch), branch
-	}
-
-	return branch, displayBranchName(branch)
-}
-
-func parseLogEntries(content string) ([]logEntry, error) {
-	var document logDocument
-	if err := xml.Unmarshal([]byte(content), &document); err != nil {
-		return nil, fmt.Errorf("parse svn log xml: %w", err)
-	}
-	return document.Entries, nil
-}
-
-func (a *Adapter) readInfo(ctx context.Context, target string) (infoEntry, error) {
-	output, err := a.runSVN(ctx, "info", "--xml", target)
-	if err != nil {
-		return infoEntry{}, err
-	}
-
-	var document infoDocument
-	if err := xml.Unmarshal([]byte(output), &document); err != nil {
-		return infoEntry{}, fmt.Errorf("parse svn info xml: %w", err)
-	}
-	if len(document.Entries) == 0 {
-		return infoEntry{}, fmt.Errorf("svn info returned no entries for %s", target)
-	}
-
-	return document.Entries[0], nil
-}
-
 func revisionHash(revision string) string {
 	revision = strings.TrimSpace(revision)
 	revision = strings.TrimPrefix(strings.TrimPrefix(revision, "r"), "R")
@@ -366,8 +447,8 @@ func normalizeChangedPath(repoPath string) string {
 }
 
 func branchRoot(repoPath string) string {
-	cleaned := strings.TrimPrefix(pathpkg.Clean("/"+strings.TrimSpace(repoPath)), "/")
-	if cleaned == "" || cleaned == "." {
+	cleaned := normalizeRelativeLocation(repoPath)
+	if cleaned == "" {
 		return ""
 	}
 
@@ -388,6 +469,26 @@ func branchRoot(repoPath string) string {
 	return parts[0]
 }
 
+func normalizeRelativeLocation(location string) string {
+	return strings.Trim(strings.TrimPrefix(strings.TrimSpace(location), "^/"), "/")
+}
+
+func splitBranchLocation(location string) (root string, suffix string) {
+	cleaned := normalizeRelativeLocation(location)
+	root = branchRoot(cleaned)
+	if root == "" {
+		return "", cleaned
+	}
+	if cleaned == root {
+		return root, ""
+	}
+	if strings.HasPrefix(cleaned, root+"/") {
+		return root, strings.TrimPrefix(cleaned, root+"/")
+	}
+
+	return root, ""
+}
+
 func branchNameFromInfo(info infoEntry) string {
 	if branch := displayBranchName(info.RelativeURL); branch != "" {
 		return branch
@@ -406,7 +507,7 @@ func branchNameFromInfo(info infoEntry) string {
 }
 
 func displayBranchName(location string) string {
-	location = strings.Trim(strings.TrimPrefix(strings.TrimSpace(location), "^/"), "/")
+	location = normalizeRelativeLocation(location)
 	if location == "" {
 		return ""
 	}
@@ -428,6 +529,15 @@ func displayBranchName(location string) string {
 	return location
 }
 
+func joinBranchPath(root, suffix string) string {
+	root = strings.Trim(root, "/")
+	suffix = strings.Trim(suffix, "/")
+	if suffix == "" {
+		return root
+	}
+	return pathpkg.Join(root, suffix)
+}
+
 func joinURL(root, relativePath string) string {
 	root = strings.TrimRight(strings.TrimSpace(root), "/")
 	relativePath = strings.Trim(strings.TrimSpace(relativePath), "/")
@@ -438,6 +548,10 @@ func joinURL(root, relativePath string) string {
 }
 
 func (a *Adapter) runSVN(ctx context.Context, args ...string) (string, error) {
+	if a.run != nil {
+		return a.run(ctx, args...)
+	}
+
 	if _, err := exec.LookPath("svn"); err != nil {
 		return "", fmt.Errorf("svn executable not found: %w", err)
 	}

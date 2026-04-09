@@ -212,6 +212,9 @@ func (s *Service) EnvironmentStatusInRepositories(ctx context.Context, repositor
 				return nil, err
 			}
 
+			if statuses[i].CommitCount == 0 && len(compareResult.SourceCommits) > 0 && len(compareResult.MissingCommits) == 0 {
+				statuses[i].CommitCount = inferredCommitCount(compareResult)
+			}
 			statuses[i].MissingFromPrevious = len(compareResult.MissingCommits)
 			statuses[i].State = deriveEnvironmentState(statuses, i)
 		}
@@ -387,4 +390,11 @@ func deriveEnvironmentState(statuses []EnvironmentResult, index int) Environment
 		return EnvStatePresent
 	}
 	return EnvStateAligned
+}
+
+func inferredCommitCount(compareResult scm.CompareResult) int {
+	if len(compareResult.TargetCommits) > 0 {
+		return len(compareResult.TargetCommits)
+	}
+	return len(compareResult.SourceCommits)
 }

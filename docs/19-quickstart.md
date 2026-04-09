@@ -17,8 +17,7 @@ Before release, teams often ask:
 
 Today that means:
 
-- Git for the full flow
-- SVN for `scan`, `find`, and `inspect`
+- Git and SVN for the current read-only flow
 
 ## First Command To Run
 

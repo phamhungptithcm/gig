@@ -41,16 +41,13 @@ Good warning examples:
 - `gig scan`
 - `gig find`
 - `gig inspect`
-
-That means ticket search can find SVN revisions and `inspect` can still flag risky files such as `.mpr`.
-
-It still does not compare SVN branches for promotion commands such as:
-
-- `gig diff`
 - `gig env status`
+- `gig diff`
 - `gig verify`
 - `gig plan`
 - `gig manifest generate`
+
+That means ticket search can find SVN revisions, `inspect` can still flag risky files such as `.mpr`, and promotion checks can compare SVN branch lines for the same ticket.
 
 ## Safe Direction
 
