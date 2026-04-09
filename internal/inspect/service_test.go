@@ -2,8 +2,10 @@ package inspect
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
+	depsvc "gig/internal/dependency"
 	"gig/internal/scm"
 	"gig/internal/ticket"
 )
@@ -26,10 +28,11 @@ func (f fakeAdapterProvider) For(repoType scm.Type) (scm.Adapter, bool) {
 }
 
 type fakeAdapter struct {
-	repoType    scm.Type
-	search      map[string]map[string][]scm.Commit
-	compare     map[string]scm.CompareResult
-	existingRef map[string]map[string]bool
+	repoType       scm.Type
+	search         map[string]map[string][]scm.Commit
+	compare        map[string]scm.CompareResult
+	existingRef    map[string]map[string]bool
+	commitMessages map[string]map[string]string
 }
 
 func (f fakeAdapter) Type() scm.Type                                        { return f.repoType }
@@ -59,6 +62,17 @@ func (f fakeAdapter) CompareBranches(_ context.Context, repoRoot string, query s
 
 func (f fakeAdapter) RefExists(_ context.Context, repoRoot, ref string) (bool, error) {
 	return f.existingRef[repoRoot][ref], nil
+}
+
+func (f fakeAdapter) CommitMessages(_ context.Context, repoRoot string, hashes []string) (map[string]string, error) {
+	messages := map[string]string{}
+	byHash := f.commitMessages[repoRoot]
+	for _, hash := range hashes {
+		if message, ok := byHash[hash]; ok {
+			messages[hash] = message
+		}
+	}
+	return messages, nil
 }
 
 func TestInferRiskSignalsClassifiesKnownFiles(t *testing.T) {
@@ -167,5 +181,103 @@ func TestEnvironmentStatusUsesCompareEvidenceWhenTargetHasNoTicketCommitMessage(
 	}
 	if got := results[0].Statuses[1].CommitCount; got != 1 {
 		t.Fatalf("statuses[1].CommitCount = %d, want 1", got)
+	}
+}
+
+func TestInspectInRepositoriesCollectsDeclaredDependenciesFromGitAndSVN(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	repositories := []scm.Repository{
+		{Name: "repo-git", Root: "/workspace/repo-git", Type: scm.TypeGit},
+		{Name: "repo-svn", Root: "/workspace/repo-svn", Type: scm.TypeSVN},
+	}
+
+	service := NewService(
+		fakeDiscoverer{repositories: repositories},
+		fakeAdapterProvider{
+			adapters: map[scm.Type]scm.Adapter{
+				scm.TypeGit: fakeAdapter{
+					repoType: scm.TypeGit,
+					search: map[string]map[string][]scm.Commit{
+						"/workspace/repo-git": {
+							"": {
+								{Hash: "abc12345", Subject: "ABC-123 add service fix", Branches: []string{"dev"}},
+							},
+						},
+					},
+					commitMessages: map[string]map[string]string{
+						"/workspace/repo-git": {
+							"abc12345": "ABC-123 add service fix\n\nDepends-On: XYZ-456, OPS-99\n",
+						},
+					},
+				},
+				scm.TypeSVN: fakeAdapter{
+					repoType: scm.TypeSVN,
+					search: map[string]map[string][]scm.Commit{
+						"/workspace/repo-svn": {
+							"": {
+								{Hash: "r101", Subject: "ABC-123 update batch job", Branches: []string{"dev"}},
+							},
+						},
+					},
+					commitMessages: map[string]map[string]string{
+						"/workspace/repo-svn": {
+							"r101": "ABC-123 update batch job\n\nDepends-On: DB-7\n",
+						},
+					},
+				},
+			},
+		},
+		parser,
+	)
+
+	results, err := service.InspectInRepositories(context.Background(), repositories, "ABC-123")
+	if err != nil {
+		t.Fatalf("InspectInRepositories() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+
+	got := map[string][]depsvc.DeclaredDependency{}
+	for _, result := range results {
+		got[result.Repository.Name] = result.DeclaredDependencies
+	}
+
+	want := map[string][]depsvc.DeclaredDependency{
+		"repo-git": {
+			{
+				TicketID:      "ABC-123",
+				DependsOn:     "OPS-99",
+				CommitHash:    "abc12345",
+				CommitSubject: "ABC-123 add service fix",
+				TrailerKey:    depsvc.TrailerDependsOn,
+			},
+			{
+				TicketID:      "ABC-123",
+				DependsOn:     "XYZ-456",
+				CommitHash:    "abc12345",
+				CommitSubject: "ABC-123 add service fix",
+				TrailerKey:    depsvc.TrailerDependsOn,
+			},
+		},
+		"repo-svn": {
+			{
+				TicketID:      "ABC-123",
+				DependsOn:     "DB-7",
+				CommitHash:    "r101",
+				CommitSubject: "ABC-123 update batch job",
+				TrailerKey:    depsvc.TrailerDependsOn,
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DeclaredDependencies = %#v, want %#v", got, want)
 	}
 }

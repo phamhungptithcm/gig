@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,34 +14,43 @@ import (
 
 	"gig/internal/buildinfo"
 	"gig/internal/config"
+	conflictsvc "gig/internal/conflict"
 	diffsvc "gig/internal/diff"
 	doctorsvc "gig/internal/doctor"
 	inspectsvc "gig/internal/inspect"
 	manifestsvc "gig/internal/manifest"
 	"gig/internal/output"
 	plansvc "gig/internal/plan"
+	releaseplansvc "gig/internal/releaseplan"
 	"gig/internal/repo"
 	"gig/internal/scm"
 	gitscm "gig/internal/scm/git"
 	svnscm "gig/internal/scm/svn"
+	snapshotsvc "gig/internal/snapshot"
 	ticketsvc "gig/internal/ticket"
 )
 
 const usageExitCode = 2
 
 type App struct {
+	stdin   io.Reader
 	stdout  io.Writer
 	stderr  io.Writer
 	scanner *repo.Scanner
 }
 
 func NewApp(stdout, stderr io.Writer) (*App, error) {
+	return NewAppWithIO(os.Stdin, stdout, stderr)
+}
+
+func NewAppWithIO(stdin io.Reader, stdout, stderr io.Writer) (*App, error) {
 	parser, err := ticketsvc.NewParser(config.Default().TicketPattern)
 	if err != nil {
 		return nil, err
 	}
 
 	return &App{
+		stdin:   stdin,
 		stdout:  stdout,
 		stderr:  stderr,
 		scanner: repo.NewScanner(newRegistry(parser)),
@@ -69,8 +80,12 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runVerify(ctx, args[1:])
 	case "manifest":
 		return a.runManifest(ctx, args[1:])
+	case "snapshot":
+		return a.runSnapshot(ctx, args[1:])
 	case "doctor":
 		return a.runDoctor(ctx, args[1:])
+	case "resolve":
+		return a.runResolve(ctx, args[1:])
 	case "version", "-v", "--version":
 		return a.runVersion()
 	case "help", "-h", "--help":
@@ -389,6 +404,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	releaseID := fs.String("release", "", "Release ID to plan from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to plan")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
 	fromBranch := fs.String("from", "", "Source branch")
@@ -422,6 +438,60 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
+	}
+
+	normalizedReleaseID := strings.TrimSpace(*releaseID)
+	if normalizedReleaseID != "" {
+		if *ticketID != "" || *ticketFile != "" {
+			fmt.Fprintln(a.stderr, "plan failed: use either --release or ticket-based flags, not both")
+			a.printPlanUsage()
+			return usageExitCode
+		}
+		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
+			fmt.Fprintln(a.stderr, "plan failed: --from, --to, and --envs are not used with --release")
+			a.printPlanUsage()
+			return usageExitCode
+		}
+
+		normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(normalizedReleaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+			return usageExitCode
+		}
+
+		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(resolvedPath, normalizedReleaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+			return 1
+		}
+		releasePlan, err := releaseplansvc.Build(normalizedReleaseID, resolvedPath, snapshotDir, snapshots)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+			return 1
+		}
+
+		switch outputFormat {
+		case outputFormatHuman:
+			if err := output.RenderReleasePlan(a.stdout, releasePlan); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		case outputFormatJSON:
+			if err := output.RenderJSON(a.stdout, struct {
+				Command     string                     `json:"command"`
+				Workspace   string                     `json:"workspace"`
+				ReleasePlan releaseplansvc.ReleasePlan `json:"releasePlan"`
+			}{
+				Command:     "plan",
+				Workspace:   resolvedPath,
+				ReleasePlan: releasePlan,
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		}
+
+		return 0
 	}
 
 	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
@@ -505,6 +575,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	releaseID := fs.String("release", "", "Release ID to verify from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to verify")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
 	fromBranch := fs.String("from", "", "Source branch")
@@ -538,6 +609,63 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
+	}
+
+	normalizedReleaseID := strings.TrimSpace(*releaseID)
+	if normalizedReleaseID != "" {
+		if *ticketID != "" || *ticketFile != "" {
+			fmt.Fprintln(a.stderr, "verify failed: use either --release or ticket-based flags, not both")
+			a.printVerifyUsage()
+			return usageExitCode
+		}
+		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
+			fmt.Fprintln(a.stderr, "verify failed: --from, --to, and --envs are not used with --release")
+			a.printVerifyUsage()
+			return usageExitCode
+		}
+
+		normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(normalizedReleaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+			return usageExitCode
+		}
+		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(resolvedPath, normalizedReleaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+			return 1
+		}
+
+		verifications := make([]plansvc.Verification, 0, len(snapshots))
+		for _, snapshot := range snapshots {
+			verifications = append(verifications, snapshot.Verification)
+		}
+
+		switch outputFormat {
+		case outputFormatHuman:
+			if err := output.RenderReleaseVerificationBatch(a.stdout, normalizedReleaseID, snapshotDir, verifications); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		case outputFormatJSON:
+			if err := output.RenderJSON(a.stdout, struct {
+				Command       string                 `json:"command"`
+				Workspace     string                 `json:"workspace"`
+				ReleaseID     string                 `json:"releaseId"`
+				SnapshotDir   string                 `json:"snapshotDir"`
+				Verifications []plansvc.Verification `json:"verifications"`
+			}{
+				Command:       "verify",
+				Workspace:     resolvedPath,
+				ReleaseID:     normalizedReleaseID,
+				SnapshotDir:   snapshotDir,
+				Verifications: verifications,
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		}
+
+		return 0
 	}
 
 	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
@@ -637,6 +765,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	releaseID := fs.String("release", "", "Release ID to package from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to package")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
 	fromBranch := fs.String("from", "", "Source branch")
@@ -670,6 +799,63 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return 1
+	}
+
+	normalizedReleaseID := strings.TrimSpace(*releaseID)
+	if normalizedReleaseID != "" {
+		if *ticketID != "" || *ticketFile != "" {
+			fmt.Fprintln(a.stderr, "manifest generate failed: use either --release or ticket-based flags, not both")
+			a.printManifestGenerateUsage()
+			return usageExitCode
+		}
+		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
+			fmt.Fprintln(a.stderr, "manifest generate failed: --from, --to, and --envs are not used with --release")
+			a.printManifestGenerateUsage()
+			return usageExitCode
+		}
+
+		normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(normalizedReleaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+			return usageExitCode
+		}
+		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(resolvedPath, normalizedReleaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+			return 1
+		}
+
+		packets := make([]manifestsvc.ReleasePacket, 0, len(snapshots))
+		for _, snapshot := range snapshots {
+			packets = append(packets, manifestsvc.BuildReleasePacket(resolvedPath, runtime.loaded, snapshot.Plan))
+		}
+
+		switch selectedFormat {
+		case manifestFormatMarkdown:
+			if err := output.RenderReleasePacketBundleMarkdownForRelease(a.stdout, normalizedReleaseID, snapshotDir, packets); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		case manifestFormatJSON:
+			if err := output.RenderJSON(a.stdout, struct {
+				Command     string                      `json:"command"`
+				Workspace   string                      `json:"workspace"`
+				ReleaseID   string                      `json:"releaseId"`
+				SnapshotDir string                      `json:"snapshotDir"`
+				Packets     []manifestsvc.ReleasePacket `json:"packets"`
+			}{
+				Command:     "manifest generate",
+				Workspace:   resolvedPath,
+				ReleaseID:   normalizedReleaseID,
+				SnapshotDir: snapshotDir,
+				Packets:     packets,
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		}
+
+		return 0
 	}
 
 	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
@@ -734,6 +920,150 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 				return 1
 			}
+		}
+	}
+
+	return 0
+}
+
+func (a *App) runSnapshot(ctx context.Context, args []string) int {
+	if len(args) == 0 || hasHelpFlag(args) {
+		a.printSnapshotUsage()
+		return 0
+	}
+
+	switch args[0] {
+	case "create":
+		return a.runSnapshotCreate(ctx, args[1:])
+	default:
+		fmt.Fprintf(a.stderr, "unknown snapshot subcommand %q\n\n", args[0])
+		a.printSnapshotUsage()
+		return usageExitCode
+	}
+}
+
+func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printSnapshotCreateUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("snapshot create", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	ticketID := fs.String("ticket", "", "Ticket ID to capture")
+	fromBranch := fs.String("from", "", "Source branch")
+	toBranch := fs.String("to", "", "Target branch")
+	releaseID := fs.String("release", "", "Release ID to attach this snapshot to")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	outputPath := fs.String("output", "", "Write the snapshot JSON to this path")
+
+	if err := fs.Parse(args); err != nil {
+		a.printSnapshotCreateUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "snapshot create does not accept positional arguments")
+		a.printSnapshotCreateUsage()
+		return usageExitCode
+	}
+
+	selectedFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return 1
+	}
+
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return 1
+	}
+
+	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return usageExitCode
+	}
+
+	normalizedTicketID := normalizeTicketID(*ticketID)
+	if normalizedTicketID == "" {
+		fmt.Fprintln(a.stderr, "snapshot create failed: --ticket is required")
+		a.printSnapshotCreateUsage()
+		return usageExitCode
+	}
+	if err := runtime.parser.Validate(normalizedTicketID); err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return usageExitCode
+	}
+	if strings.TrimSpace(*fromBranch) == "" || strings.TrimSpace(*toBranch) == "" {
+		fmt.Fprintln(a.stderr, "snapshot create failed: both --from and --to branches are required")
+		a.printSnapshotCreateUsage()
+		return usageExitCode
+	}
+
+	normalizedReleaseID := ""
+	if strings.TrimSpace(*releaseID) != "" {
+		normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(*releaseID)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+			return usageExitCode
+		}
+	}
+
+	snapshot, err := runtime.snapshot.CaptureWithOptions(ctx, resolvedPath, runtime.loaded, normalizedTicketID, *fromBranch, *toBranch, environments, snapshotsvc.CaptureOptions{
+		ReleaseID: normalizedReleaseID,
+	})
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return 1
+	}
+
+	resolvedOutputPath := ""
+	switch {
+	case strings.TrimSpace(*outputPath) != "":
+		resolvedOutputPath, err = normalizeCLIPath(*outputPath)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+			return 1
+		}
+	case normalizedReleaseID != "":
+		resolvedOutputPath = snapshotsvc.DefaultReleaseSnapshotPath(resolvedPath, normalizedReleaseID, normalizedTicketID)
+	}
+	if resolvedOutputPath != "" {
+		if err := writeJSONFile(resolvedOutputPath, snapshot); err != nil {
+			fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+			return 1
+		}
+	}
+
+	switch selectedFormat {
+	case outputFormatHuman:
+		if err := output.RenderSnapshot(a.stdout, snapshot, resolvedOutputPath); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command  string                     `json:"command"`
+			Output   string                     `json:"output,omitempty"`
+			Snapshot snapshotsvc.TicketSnapshot `json:"snapshot"`
+		}{
+			Command:  "snapshot create",
+			Output:   resolvedOutputPath,
+			Snapshot: snapshot,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
 		}
 	}
 
@@ -809,6 +1139,147 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 	return 0
 }
 
+func (a *App) runResolve(ctx context.Context, args []string) int {
+	if len(args) == 0 || hasHelpFlag(args) {
+		a.printResolveUsage()
+		return 0
+	}
+
+	switch args[0] {
+	case "status":
+		return a.runResolveStatus(ctx, args[1:])
+	case "start":
+		return a.runResolveStart(ctx, args[1:])
+	default:
+		fmt.Fprintf(a.stderr, "unknown resolve subcommand %q\n\n", args[0])
+		a.printResolveUsage()
+		return usageExitCode
+	}
+}
+
+func (a *App) runResolveStatus(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printResolveStatusUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("resolve status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a Git repository or a child path inside it")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	ticketID := fs.String("ticket", "", "Optional ticket ID used for scope warnings")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	if err := fs.Parse(args); err != nil {
+		a.printResolveStatusUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "resolve status does not accept positional arguments")
+		a.printResolveStatusUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "resolve status failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "resolve status failed: %v\n", err)
+		return 1
+	}
+
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "resolve status failed: %v\n", err)
+		return 1
+	}
+
+	status, err := runtime.conflicts.Status(ctx, resolvedPath, *ticketID)
+	if err != nil {
+		if errors.Is(err, conflictsvc.ErrNoConflict) {
+			fmt.Fprintln(a.stdout, "No active Git conflict state was found.")
+			return 0
+		}
+		fmt.Fprintf(a.stderr, "resolve status failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderConflictStatus(a.stdout, status); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string             `json:"command"`
+			Status  conflictsvc.Status `json:"status"`
+		}{
+			Command: "resolve status",
+			Status:  status,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func (a *App) runResolveStart(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printResolveStartUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("resolve start", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a Git repository or a child path inside it")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	ticketID := fs.String("ticket", "", "Optional ticket ID used for scope warnings")
+	if err := fs.Parse(args); err != nil {
+		a.printResolveStartUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "resolve start does not accept positional arguments")
+		a.printResolveStartUsage()
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "resolve start failed: %v\n", err)
+		return 1
+	}
+
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "resolve start failed: %v\n", err)
+		return 1
+	}
+
+	if err := runtime.conflicts.RunInteractive(ctx, resolvedPath, *ticketID, conflictsvc.InteractiveOptions{
+		Stdin:  a.stdin,
+		Stdout: a.stdout,
+		Stderr: a.stderr,
+	}); err != nil {
+		if errors.Is(err, conflictsvc.ErrNoConflict) {
+			fmt.Fprintln(a.stderr, "resolve start failed: no active Git conflict state was found")
+			return 1
+		}
+		fmt.Fprintf(a.stderr, "resolve start failed: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
 func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "gig helps teams check whether a ticket is really ready for the next release step.")
 	fmt.Fprintln(a.stderr)
@@ -831,7 +1302,9 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  verify      Return safe, warning, or blocked for the next move")
 	fmt.Fprintln(a.stderr, "  plan        Build a read-only promotion plan")
 	fmt.Fprintln(a.stderr, "  manifest    Generate a release packet for QA, client, and release review")
+	fmt.Fprintln(a.stderr, "  snapshot    Save a repeatable ticket baseline for audit and re-check")
 	fmt.Fprintln(a.stderr, "  doctor      Check config coverage, env mappings, and repo catalog health")
+	fmt.Fprintln(a.stderr, "  resolve     Inspect or resolve active Git merge conflicts")
 	fmt.Fprintln(a.stderr, "  version     Show the installed version")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "More help:")
@@ -864,24 +1337,51 @@ func (a *App) printEnvStatusUsage() {
 }
 
 func (a *App) printPlanUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig plan --release <release-id> --path . [--config gig.yaml] [--format human|json]")
+	fmt.Fprintln(a.stderr, "   or: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printVerifyUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig verify (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig verify --release <release-id> --path . [--config gig.yaml] [--format human|json]")
+	fmt.Fprintln(a.stderr, "   or: gig verify (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printManifestUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig manifest generate --release <release-id> --path . [--config gig.yaml] [--format markdown|json]")
 	fmt.Fprintln(a.stderr, "  gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
 }
 
 func (a *App) printManifestGenerateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig manifest generate --release <release-id> --path . [--config gig.yaml] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "   or: gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+}
+
+func (a *App) printSnapshotUsage() {
+	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+}
+
+func (a *App) printSnapshotCreateUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
 }
 
 func (a *App) printDoctorUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig doctor --path . [--config gig.yaml] [--format human|json]")
+}
+
+func (a *App) printResolveUsage() {
+	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig resolve status --path . [--config gig.yaml] [--ticket ABC-123] [--format human|json]")
+	fmt.Fprintln(a.stderr, "  gig resolve start --path . [--config gig.yaml] [--ticket ABC-123]")
+}
+
+func (a *App) printResolveStatusUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig resolve status --path . [--config gig.yaml] [--ticket ABC-123] [--format human|json]")
+}
+
+func (a *App) printResolveStartUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig resolve start --path . [--config gig.yaml] [--ticket ABC-123]")
 }
 
 func hasHelpFlag(args []string) bool {
@@ -1080,15 +1580,17 @@ func resolveEnvironments(spec string, loaded config.Loaded) ([]inspectsvc.Enviro
 }
 
 type commandRuntime struct {
-	loaded   config.Loaded
-	parser   ticketsvc.Parser
-	scanner  *repo.Scanner
-	finder   *ticketsvc.Service
-	diff     *diffsvc.Service
-	inspect  *inspectsvc.Service
-	planner  *plansvc.Service
-	doctor   *doctorsvc.Service
-	manifest *manifestsvc.Service
+	loaded    config.Loaded
+	parser    ticketsvc.Parser
+	scanner   *repo.Scanner
+	conflicts *conflictsvc.Service
+	finder    *ticketsvc.Service
+	diff      *diffsvc.Service
+	inspect   *inspectsvc.Service
+	planner   *plansvc.Service
+	snapshot  *snapshotsvc.Service
+	doctor    *doctorsvc.Service
+	manifest  *manifestsvc.Service
 }
 
 func newCommandRuntime(path, configPath string) (commandRuntime, error) {
@@ -1104,19 +1606,35 @@ func newCommandRuntime(path, configPath string) (commandRuntime, error) {
 
 	registry := newRegistry(parser)
 	scanner := repo.NewScanner(registry)
+	inspector := inspectsvc.NewService(scanner, registry, parser)
 	planner := plansvc.NewService(scanner, registry, parser)
 
 	return commandRuntime{
-		loaded:   loaded,
-		parser:   parser,
-		scanner:  scanner,
-		finder:   ticketsvc.NewService(scanner, registry, parser),
-		diff:     diffsvc.NewService(scanner, registry, parser),
-		inspect:  inspectsvc.NewService(scanner, registry, parser),
-		planner:  planner,
-		doctor:   doctorsvc.NewService(scanner, registry),
-		manifest: manifestsvc.NewService(planner),
+		loaded:    loaded,
+		parser:    parser,
+		scanner:   scanner,
+		conflicts: conflictsvc.NewService(scanner, registry, parser),
+		finder:    ticketsvc.NewService(scanner, registry, parser),
+		diff:      diffsvc.NewService(scanner, registry, parser),
+		inspect:   inspector,
+		planner:   planner,
+		snapshot:  snapshotsvc.NewService(inspector, planner),
+		doctor:    doctorsvc.NewService(scanner, registry),
+		manifest:  manifestsvc.NewService(planner),
 	}, nil
+}
+
+func writeJSONFile(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	var buffer bytes.Buffer
+	if err := output.RenderJSON(&buffer, value); err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, buffer.Bytes(), 0o644)
 }
 
 func newRegistry(parser ticketsvc.Parser) *scm.Registry {

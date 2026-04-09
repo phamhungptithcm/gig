@@ -68,6 +68,16 @@ func RenderInspect(w io.Writer, ticketID, basePath string, scannedRepoCount int,
 				}
 			}
 		}
+		if len(result.DeclaredDependencies) > 0 {
+			if _, err := fmt.Fprintln(w, "  declared dependencies:"); err != nil {
+				return err
+			}
+			for _, dependency := range result.DeclaredDependencies {
+				if _, err := fmt.Fprintf(w, "    - %s (declared by %s  %s)\n", dependency.DependsOn, shortHash(dependency.CommitHash), dependency.CommitSubject); err != nil {
+					return err
+				}
+			}
+		}
 
 		if _, err := fmt.Fprintln(w, "  commits:"); err != nil {
 			return err
@@ -91,6 +101,14 @@ func RenderInspect(w io.Writer, ticketID, basePath string, scannedRepoCount int,
 	}
 
 	return nil
+}
+
+func shortHash(hash string) string {
+	hash = strings.TrimSpace(hash)
+	if len(hash) <= 8 {
+		return hash
+	}
+	return hash[:8]
 }
 
 func RenderEnvironmentStatus(w io.Writer, ticketID, basePath string, environments []inspectsvc.Environment, scannedRepoCount int, results []inspectsvc.RepositoryEnvironmentStatus) error {

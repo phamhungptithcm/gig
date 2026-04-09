@@ -14,6 +14,7 @@
 - 1 commit(s) are still planned from test to main.
 - Promotion is blocked until the repository issues below are resolved.
 - 1 manual review step(s) were inferred from risky file changes.
+- 1 dependency ticket(s) are still missing from main.
 
 ## QA Checklist
 - Use this section when QA needs a short release packet instead of reading raw git history.
@@ -41,6 +42,7 @@ Checklist:
 - Record release evidence after promotion so future checks can compare against a clean baseline.
 - Bring test up to date before promoting to main.
 - Include 1 missing ticket commit(s) from test into main.
+- Include dependency ticket XYZ-456 in main before promoting ABC-123.
 - Review DB migration ordering, rollback steps, and deployment timing before promotion.
 - Coordinate with Backend Team for Accounts API if manual confirmation is needed.
 
@@ -62,6 +64,10 @@ Environment status:
 
 Risk signals:
 - `db-change` (manual-review): Database-related changes should be reviewed before promotion [db/migrations/001_add_column.sql]
+- `missing-dependency` (blocked): Dependency ticket XYZ-456 is present in test but missing from main [XYZ-456]
+
+Dependency status:
+- XYZ-456: present in test but missing from main
 
 Manual steps:
 - Review DB migration ordering, rollback steps, and deployment timing before promotion.
@@ -69,11 +75,12 @@ Manual steps:
 Planned actions:
 - Bring test up to date before promoting to main.
 - Include 1 missing ticket commit(s) from test into main.
+- Include dependency ticket XYZ-456 in main before promoting ABC-123.
 
 Notes:
 - Verify login and billing summary.
 - Source branch test is behind an earlier environment by 1 commit(s).
+- Declared dependency XYZ-456 is present in test but missing from main.
 
 Commits to include:
 - `<HASH>` ABC-123 | service-a | add validation fix
-

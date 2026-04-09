@@ -34,7 +34,8 @@
       "reasons": [
         "At least one repository is missing the correct source or target release evidence.",
         "1 ticket commit(s) are still planned for promotion.",
-        "1 manual review step(s) were inferred from the changed files."
+        "1 manual review step(s) were inferred from the changed files.",
+        "1 dependency ticket(s) are still missing from main."
       ],
       "repositories": [
         {
@@ -49,7 +50,8 @@
             "test contains 1 ticket commit(s).",
             "main is missing 1 ticket commit(s).",
             "Source branch test is behind an earlier environment by 1 commit(s).",
-            "1 risk signal(s) require review."
+            "Declared dependency XYZ-456 is present in test but missing from main.",
+            "2 risk signal(s) require review."
           ],
           "riskSignals": [
             {
@@ -58,6 +60,26 @@
               "Summary": "Database-related changes should be reviewed before promotion",
               "Examples": [
                 "db/migrations/001_add_column.sql"
+              ]
+            },
+            {
+              "Code": "missing-dependency",
+              "Level": "blocked",
+              "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+              "Examples": [
+                "XYZ-456"
+              ]
+            }
+          ],
+          "dependencyResolutions": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "Status": "missing-target",
+              "FoundInSource": true,
+              "FoundInTarget": false,
+              "EvidenceCommits": [
+                "<HASH>"
               ]
             }
           ],

@@ -134,6 +134,22 @@ func RenderReleasePacketMarkdown(w io.Writer, packet manifestsvc.ReleasePacket) 
 			}
 		}
 
+		if len(repository.DependencyResolutions) > 0 {
+			if _, err := fmt.Fprintln(w, "Dependency status:"); err != nil {
+				return err
+			}
+			lines := make([]string, 0, len(repository.DependencyResolutions))
+			for _, resolution := range repository.DependencyResolutions {
+				lines = append(lines, formatDependencyResolution(resolution, packet.FromBranch, packet.ToBranch))
+			}
+			if err := renderMarkdownList(w, lines); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+		}
+
 		if len(repository.ManualSteps) > 0 {
 			if _, err := fmt.Fprintln(w, "Manual steps:"); err != nil {
 				return err
@@ -189,8 +205,10 @@ func RenderReleasePacketMarkdown(w io.Writer, packet manifestsvc.ReleasePacket) 
 			if err := renderMarkdownList(w, lines); err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintln(w); err != nil {
-				return err
+			if i < len(packet.Repositories)-1 {
+				if _, err := fmt.Fprintln(w); err != nil {
+					return err
+				}
 			}
 		}
 

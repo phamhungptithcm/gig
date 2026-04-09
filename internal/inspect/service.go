@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	depsvc "gig/internal/dependency"
 	"gig/internal/repo"
 	"gig/internal/scm"
 	"gig/internal/ticket"
@@ -37,10 +38,11 @@ type RiskSignal struct {
 }
 
 type RepositoryInspection struct {
-	Repository  scm.Repository
-	Commits     []scm.Commit
-	Branches    []string
-	RiskSignals []RiskSignal
+	Repository           scm.Repository
+	Commits              []scm.Commit
+	Branches             []string
+	RiskSignals          []RiskSignal
+	DeclaredDependencies []depsvc.DeclaredDependency
 }
 
 type Environment struct {
@@ -66,11 +68,12 @@ type EnvironmentResult struct {
 }
 
 type RepositoryEnvironmentStatus struct {
-	Repository  scm.Repository
-	Commits     []scm.Commit
-	Branches    []string
-	RiskSignals []RiskSignal
-	Statuses    []EnvironmentResult
+	Repository           scm.Repository
+	Commits              []scm.Commit
+	Branches             []string
+	RiskSignals          []RiskSignal
+	DeclaredDependencies []depsvc.DeclaredDependency
+	Statuses             []EnvironmentResult
 }
 
 func NewService(discoverer repo.Discoverer, adapters adapterProvider, parser ticket.Parser) *Service {
@@ -122,12 +125,17 @@ func (s *Service) InspectInRepositories(ctx context.Context, repositories []scm.
 		if err != nil {
 			return nil, err
 		}
+		declaredDependencies, err := s.loadDeclaredDependencies(ctx, adapter, repository.Root, ticketID, commits)
+		if err != nil {
+			return nil, err
+		}
 
 		results = append(results, RepositoryInspection{
-			Repository:  repository,
-			Commits:     commits,
-			Branches:    collectBranches(commits),
-			RiskSignals: inferRiskSignals(filesByCommit),
+			Repository:           repository,
+			Commits:              commits,
+			Branches:             collectBranches(commits),
+			RiskSignals:          inferRiskSignals(filesByCommit),
+			DeclaredDependencies: declaredDependencies,
 		})
 	}
 
@@ -220,11 +228,12 @@ func (s *Service) EnvironmentStatusInRepositories(ctx context.Context, repositor
 		}
 
 		results = append(results, RepositoryEnvironmentStatus{
-			Repository:  inspection.Repository,
-			Commits:     inspection.Commits,
-			Branches:    inspection.Branches,
-			RiskSignals: inspection.RiskSignals,
-			Statuses:    statuses,
+			Repository:           inspection.Repository,
+			Commits:              inspection.Commits,
+			Branches:             inspection.Branches,
+			RiskSignals:          inspection.RiskSignals,
+			DeclaredDependencies: inspection.DeclaredDependencies,
+			Statuses:             statuses,
 		})
 	}
 

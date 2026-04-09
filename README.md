@@ -18,10 +18,11 @@ With `gig`, you can:
 - generate JSON output for CI, scripts, and tooling
 - load a simple team config file so real branch names and repo ownership match your workflow
 - run `gig doctor` to check whether the config and repo mapping are good enough to trust
+- inspect an active Git conflict state and walk supported text conflicts from the terminal
 
-Everything is still read-only.
+Most commands are still read-only.
 `gig` helps you inspect, verify, and prepare.
-It does not cherry-pick, merge, or deploy for you.
+It now also helps with active Git conflict resolution, but it still does not cherry-pick, merge, or deploy for you automatically.
 
 ## Who This Is For
 
@@ -40,6 +41,7 @@ gig inspect ABC-123 --path .
 gig verify --ticket ABC-123 --from test --to main --path .
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 gig doctor --path .
+gig resolve status --path .
 ```
 
 If you want a team-specific setup, create a `gig.yaml` file and then run the same commands without repeating `--envs` every time.
@@ -74,6 +76,13 @@ gig manifest generate --ticket ABC-123 --from test --to main --path .
 
 ```bash
 gig doctor --path .
+```
+
+### 6. If Git stops on conflicts, inspect or resolve them
+
+```bash
+gig resolve status --path .
+gig resolve start --path .
 ```
 
 ## Team Config In One Minute
@@ -179,7 +188,7 @@ $env:GIG_VERSION="v0.1.0"; irm https://raw.githubusercontent.com/phamhungptithcm
 
 Requirements:
 
-- Go `1.22+`
+- Go `1.23+`
 - Git installed and available on your `PATH`
 
 Build:
@@ -203,7 +212,6 @@ Run:
 Right now, `gig` does not:
 
 - move code automatically
-- resolve merge conflicts
 - read Jira, PR, or deployment evidence yet
 - build multi-ticket release bundles yet
 

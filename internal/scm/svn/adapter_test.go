@@ -226,3 +226,74 @@ func TestAdapterCompareBranchesUsesMergeinfoEligibility(t *testing.T) {
 		t.Fatalf("MissingCommits[0].Hash = %q, want %q", result.MissingCommits[0].Hash, "r102")
 	}
 }
+
+func TestAdapterCommitMessagesReturnsRawMessages(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := &Adapter{
+		parser: parser,
+		run: func(_ context.Context, args ...string) (string, error) {
+			command := strings.Join(args, " ")
+			switch command {
+			case "log --xml -r 101 /workspace/svnrepo":
+				return `<log><logentry revision="101"><msg>ABC-123 update batch job
+
+Depends-On: DB-7</msg></logentry></log>`, nil
+			default:
+				return "", fmt.Errorf("unexpected svn call: %s", command)
+			}
+		},
+	}
+
+	messages, err := adapter.CommitMessages(context.Background(), "/workspace/svnrepo", []string{"r101"})
+	if err != nil {
+		t.Fatalf("CommitMessages() error = %v", err)
+	}
+
+	if got := messages["r101"]; !strings.Contains(got, "Depends-On: DB-7") {
+		t.Fatalf("CommitMessages()[r101] = %q, want trailer included", got)
+	}
+}
+
+func TestAdapterCommitMessagesDeduplicatesHashes(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	callCount := 0
+	adapter := &Adapter{
+		parser: parser,
+		run: func(_ context.Context, args ...string) (string, error) {
+			callCount++
+			command := strings.Join(args, " ")
+			switch command {
+			case "log --xml -r 101 /workspace/svnrepo":
+				return `<log><logentry revision="101"><msg>ABC-123 first</msg></logentry></log>`, nil
+			case "log --xml -r 102 /workspace/svnrepo":
+				return `<log><logentry revision="102"><msg>ABC-123 second</msg></logentry></log>`, nil
+			default:
+				return "", fmt.Errorf("unexpected svn call: %s", command)
+			}
+		},
+	}
+
+	messages, err := adapter.CommitMessages(context.Background(), "/workspace/svnrepo", []string{"r101", "101", "r101", ""})
+	if err != nil {
+		t.Fatalf("CommitMessages() error = %v", err)
+	}
+
+	if len(messages) != 1 {
+		t.Fatalf("len(messages) = %d, want 1", len(messages))
+	}
+	if callCount != 1 {
+		t.Fatalf("svn log call count = %d, want 1", callCount)
+	}
+}

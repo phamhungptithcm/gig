@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	depsvc "gig/internal/dependency"
 	inspectsvc "gig/internal/inspect"
 	plansvc "gig/internal/plan"
 )
@@ -106,6 +107,16 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 					line += ": " + riskSignal.Summary
 				}
 				if _, err := fmt.Fprintln(w, line); err != nil {
+					return err
+				}
+			}
+		}
+		if len(repositoryPlan.DependencyResolutions) > 0 {
+			if _, err := fmt.Fprintln(w, "  dependency status:"); err != nil {
+				return err
+			}
+			for _, resolution := range repositoryPlan.DependencyResolutions {
+				if _, err := fmt.Fprintf(w, "    - %s\n", formatDependencyResolution(resolution, promotionPlan.FromBranch, promotionPlan.ToBranch)); err != nil {
 					return err
 				}
 			}
@@ -217,6 +228,16 @@ func RenderVerification(w io.Writer, verification plansvc.Verification) error {
 				return err
 			}
 		}
+		if len(repositoryVerification.DependencyResolutions) > 0 {
+			if _, err := fmt.Fprintln(w, "  dependency status:"); err != nil {
+				return err
+			}
+			for _, resolution := range repositoryVerification.DependencyResolutions {
+				if _, err := fmt.Fprintf(w, "    - %s\n", formatDependencyResolution(resolution, verification.FromBranch, verification.ToBranch)); err != nil {
+					return err
+				}
+			}
+		}
 		if len(repositoryVerification.ManualSteps) > 0 {
 			if _, err := fmt.Fprintln(w, "  manual steps:"); err != nil {
 				return err
@@ -252,5 +273,18 @@ func formatEnvironmentStatus(status inspectsvc.EnvironmentResult) string {
 		return fmt.Sprintf("%s (%s): branch not found", status.Environment.Name, status.Environment.Branch)
 	default:
 		return fmt.Sprintf("%s (%s): unknown", status.Environment.Name, status.Environment.Branch)
+	}
+}
+
+func formatDependencyResolution(resolution depsvc.Resolution, fromBranch, toBranch string) string {
+	switch resolution.Status {
+	case depsvc.StatusSatisfied:
+		return fmt.Sprintf("%s: already present in %s", resolution.DependsOn, toBranch)
+	case depsvc.StatusMissingTarget:
+		return fmt.Sprintf("%s: present in %s but missing from %s", resolution.DependsOn, fromBranch, toBranch)
+	case depsvc.StatusUnresolved:
+		return fmt.Sprintf("%s: could not be confirmed in %s or %s", resolution.DependsOn, fromBranch, toBranch)
+	default:
+		return fmt.Sprintf("%s: unknown dependency status", resolution.DependsOn)
 	}
 }
