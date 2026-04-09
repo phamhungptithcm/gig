@@ -38,6 +38,60 @@ SVN is intentionally left as a prepared adapter stub for future phases.
 - Go 1.22+
 - Git CLI available on `PATH` for Git-backed commands
 
+## Quick Install
+
+### macOS With Homebrew
+
+```bash
+brew install https://raw.githubusercontent.com/phamhungptithcm/gig/main/Formula/gig.rb
+```
+
+### Windows With Scoop
+
+```powershell
+scoop install https://raw.githubusercontent.com/phamhungptithcm/gig/main/Scoop/gig.json
+```
+
+### macOS And Linux Script Installer
+
+Install the latest release with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | GIG_VERSION=v0.1.0 sh
+```
+
+### Windows PowerShell Installer
+
+Install the latest release from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
+```
+
+Install a specific version:
+
+```powershell
+$env:GIG_VERSION="v0.1.0"; irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
+```
+
+### Manual Download
+
+If you prefer not to use installer scripts, download the right archive from [GitHub Releases](https://github.com/phamhungptithcm/gig/releases/latest), extract it, and put `gig` or `gig.exe` on your `PATH`.
+
+After install, verify it:
+
+```bash
+gig version
+```
+
+If you are preparing the very first public release, package manager installs become available after that first GitHub Release is published.
+
 ## Build And Run
 
 Build the CLI:
@@ -96,7 +150,7 @@ gig diff --ticket ABC-123 --from dev --to test --path .
 ## Repository Automation
 
 - CI runs formatting, vet, test, and build checks for pushes and pull requests on `staging` and `main`
-- every push to `main` creates the next GitHub release tag, release notes, and release archives
+- every push to `main` creates the next GitHub release tag, release notes, checksums, and release archives
 - Markdown documentation under `docs/` is published to GitHub Pages with MkDocs
 
 ## Roadmap Summary

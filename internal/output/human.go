@@ -61,7 +61,7 @@ func RenderFind(w io.Writer, ticketID, basePath string, scannedRepoCount int, re
 		return err
 	}
 
-	for _, result := range results {
+	for i, result := range results {
 		if _, err := fmt.Fprintf(w, "[%s] %s (%s)\n", result.Repository.Name, result.Repository.Root, result.Repository.Type); err != nil {
 			return err
 		}
@@ -77,8 +77,10 @@ func RenderFind(w io.Writer, ticketID, basePath string, scannedRepoCount int, re
 			}
 		}
 
-		if _, err := fmt.Fprintln(w); err != nil {
-			return err
+		if i < len(results)-1 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -109,7 +111,7 @@ func RenderDiff(w io.Writer, ticketID, fromBranch, toBranch, basePath string, sc
 		return err
 	}
 
-	for _, result := range results {
+	for i, result := range results {
 		if _, err := fmt.Fprintf(w, "[%s] %s (%s)\n", result.Repository.Name, result.Repository.Root, result.Repository.Type); err != nil {
 			return err
 		}
@@ -121,8 +123,13 @@ func RenderDiff(w io.Writer, ticketID, fromBranch, toBranch, basePath string, sc
 		}
 
 		if len(result.Compare.MissingCommits) == 0 {
-			if _, err := fmt.Fprintf(w, "  missing in %s: none\n\n", toBranch); err != nil {
+			if _, err := fmt.Fprintf(w, "  missing in %s: none\n", toBranch); err != nil {
 				return err
+			}
+			if i < len(results)-1 {
+				if _, err := fmt.Fprintln(w); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -135,8 +142,10 @@ func RenderDiff(w io.Writer, ticketID, fromBranch, toBranch, basePath string, sc
 				return err
 			}
 		}
-		if _, err := fmt.Fprintln(w); err != nil {
-			return err
+		if i < len(results)-1 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
 		}
 	}
 

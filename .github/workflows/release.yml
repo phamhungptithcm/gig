@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.event_name == 'workflow_dispatch' || (github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]'))
     runs-on: ubuntu-latest
 
     steps:
@@ -56,6 +57,10 @@ jobs:
         if: steps.metadata.outputs.should_release == 'true'
         run: ./scripts/build-release-assets.sh "${{ steps.metadata.outputs.next_tag }}" dist
 
+      - name: Generate package manager files
+        if: steps.metadata.outputs.should_release == 'true'
+        run: ./scripts/generate-package-manager-files.sh "${{ steps.metadata.outputs.next_tag }}" dist
+
       - name: Generate release notes
         if: steps.metadata.outputs.should_release == 'true'
         run: |
@@ -73,3 +78,16 @@ jobs:
             --title "${{ steps.metadata.outputs.next_tag }}" \
             --notes-file release-notes.md \
             --target "$GITHUB_SHA"
+
+      - name: Commit package manager metadata
+        if: steps.metadata.outputs.should_release == 'true'
+        run: |
+          if git diff --quiet -- Formula/gig.rb Scoop/gig.json; then
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/gig.rb Scoop/gig.json
+          git commit -m "chore(release): update package manager metadata for ${{ steps.metadata.outputs.next_tag }} [skip release]"
+          git push

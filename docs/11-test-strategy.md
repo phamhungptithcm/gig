@@ -54,11 +54,15 @@ Test flows such as:
 
 ## Current Coverage
 
+- `internal/cli`
+  - golden-style CLI output tests for `scan`, `find`, and `diff`
+  - subcommand help behavior
 - `internal/repo`
   - recursive discovery
   - enclosing repo detection
 - `internal/ticket`
   - regex-based ticket extraction, normalization, and validation
+  - multi-repo find orchestration with fake adapters
 - `internal/diff`
   - service orchestration and result filtering with fake adapters
 - `internal/scm/git`
@@ -69,7 +73,6 @@ Test flows such as:
 ## Planned Additions
 
 - renderer snapshot tests
-- golden file tests for CLI output
 - config loading tests once config files exist
 - JSON output contract tests
 - promotion dry-run integration tests

@@ -1,0 +1,5 @@
+Found 2 repositories under <WORKSPACE>.
+
+REPO       SCM  BRANCH  PATH
+a-service  git  main    <WORKSPACE>/a-service
+b-service  git  main    <WORKSPACE>/apps/b-service
