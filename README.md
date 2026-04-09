@@ -116,10 +116,10 @@ There is also a ready sample here:
 ## Docs
 
 - GitHub Pages: [phamhungptithcm.github.io/gig](https://phamhungptithcm.github.io/gig/)
-- Quick start: [docs/19-quickstart.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/19-quickstart.md)
-- CLI guide: [docs/03-cli-spec.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/03-cli-spec.md)
-- Config spec: [docs/09-config-spec.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/09-config-spec.md)
-- Roadmap: [docs/13-roadmap.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/13-roadmap.md)
+- Quick start: [docs/19-quickstart.md](docs/19-quickstart.md)
+- CLI guide: [docs/03-cli-spec.md](docs/03-cli-spec.md)
+- Config spec: [docs/09-config-spec.md](docs/09-config-spec.md)
+- Roadmap: [docs/13-roadmap.md](docs/13-roadmap.md)
 
 ## Install
 
