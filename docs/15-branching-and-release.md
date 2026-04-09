@@ -36,7 +36,7 @@ When docs inputs change on `main`:
 2. run `gig --help`
 3. run `gig version`
 4. run `gig inspect ABC-123 --path .`
-5. run `gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main`
+5. run `gig verify --ticket ABC-123 --from test --to main --path .`
 
 ## Suggested Weekly Team Flow
 
