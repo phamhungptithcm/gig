@@ -167,6 +167,45 @@ func TestAppVerifyGolden(t *testing.T) {
 	assertGolden(t, "verify.golden", normalizeOutput(stdout, workspace))
 }
 
+func TestAppVerifyTicketFileGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	ticketFile := filepath.Join(workspace, "tickets.txt")
+	writeFile(t, ticketFile, `
+# release candidates
+abc-123
+
+XYZ-999
+ABC-123
+`)
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket-file", ticketFile, "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("verify ticket file exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "verify_ticket_file.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppVerifyTicketFileJSONGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	ticketFile := filepath.Join(workspace, "tickets.txt")
+	writeFile(t, ticketFile, `
+ABC-123
+XYZ-999
+`)
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket-file", ticketFile, "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("verify ticket file json exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "verify_ticket_file_json.golden", normalizeOutput(stdout, workspace))
+}
+
 func TestAppManifestGenerateGolden(t *testing.T) {
 	t.Parallel()
 

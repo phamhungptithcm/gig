@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -388,6 +390,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	ticketID := fs.String("ticket", "", "Ticket ID to plan")
+	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
@@ -427,31 +430,64 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	normalizedTicketID := normalizeTicketID(*ticketID)
-	promotionPlan, err := runtime.planner.BuildPromotionPlan(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
+	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
-		return 1
+		return usageExitCode
+	}
+
+	promotionPlans := make([]plansvc.PromotionPlan, 0, len(ticketIDs))
+	for _, ticketID := range ticketIDs {
+		promotionPlan, err := runtime.planner.BuildPromotionPlan(ctx, resolvedPath, ticketID, *fromBranch, *toBranch, environments)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+			return 1
+		}
+		promotionPlans = append(promotionPlans, promotionPlan)
 	}
 
 	switch outputFormat {
 	case outputFormatHuman:
-		if err := output.RenderPromotionPlan(a.stdout, promotionPlan); err != nil {
-			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
-			return 1
+		if len(promotionPlans) == 1 {
+			if err := output.RenderPromotionPlan(a.stdout, promotionPlans[0]); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		} else {
+			if err := output.RenderPromotionPlanBatch(a.stdout, promotionPlans); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
 		}
 	case outputFormatJSON:
-		if err := output.RenderJSON(a.stdout, struct {
-			Command   string                `json:"command"`
-			Workspace string                `json:"workspace"`
-			Plan      plansvc.PromotionPlan `json:"plan"`
-		}{
-			Command:   "plan",
-			Workspace: resolvedPath,
-			Plan:      promotionPlan,
-		}); err != nil {
-			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
-			return 1
+		if len(promotionPlans) == 1 {
+			if err := output.RenderJSON(a.stdout, struct {
+				Command   string                `json:"command"`
+				Workspace string                `json:"workspace"`
+				Plan      plansvc.PromotionPlan `json:"plan"`
+			}{
+				Command:   "plan",
+				Workspace: resolvedPath,
+				Plan:      promotionPlans[0],
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		} else {
+			if err := output.RenderJSON(a.stdout, struct {
+				Command    string                  `json:"command"`
+				Workspace  string                  `json:"workspace"`
+				TicketFile string                  `json:"ticketFile,omitempty"`
+				Plans      []plansvc.PromotionPlan `json:"plans"`
+			}{
+				Command:    "plan",
+				Workspace:  resolvedPath,
+				TicketFile: resolvedTicketFile,
+				Plans:      promotionPlans,
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
 		}
 	}
 
@@ -470,6 +506,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	ticketID := fs.String("ticket", "", "Ticket ID to verify")
+	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
@@ -509,31 +546,64 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	normalizedTicketID := normalizeTicketID(*ticketID)
-	verification, err := runtime.planner.VerifyPromotion(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
+	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
-		return 1
+		return usageExitCode
+	}
+
+	verifications := make([]plansvc.Verification, 0, len(ticketIDs))
+	for _, ticketID := range ticketIDs {
+		verification, err := runtime.planner.VerifyPromotion(ctx, resolvedPath, ticketID, *fromBranch, *toBranch, environments)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+			return 1
+		}
+		verifications = append(verifications, verification)
 	}
 
 	switch outputFormat {
 	case outputFormatHuman:
-		if err := output.RenderVerification(a.stdout, verification); err != nil {
-			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
-			return 1
+		if len(verifications) == 1 {
+			if err := output.RenderVerification(a.stdout, verifications[0]); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		} else {
+			if err := output.RenderVerificationBatch(a.stdout, verifications); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
 		}
 	case outputFormatJSON:
-		if err := output.RenderJSON(a.stdout, struct {
-			Command      string               `json:"command"`
-			Workspace    string               `json:"workspace"`
-			Verification plansvc.Verification `json:"verification"`
-		}{
-			Command:      "verify",
-			Workspace:    resolvedPath,
-			Verification: verification,
-		}); err != nil {
-			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
-			return 1
+		if len(verifications) == 1 {
+			if err := output.RenderJSON(a.stdout, struct {
+				Command      string               `json:"command"`
+				Workspace    string               `json:"workspace"`
+				Verification plansvc.Verification `json:"verification"`
+			}{
+				Command:      "verify",
+				Workspace:    resolvedPath,
+				Verification: verifications[0],
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		} else {
+			if err := output.RenderJSON(a.stdout, struct {
+				Command       string                 `json:"command"`
+				Workspace     string                 `json:"workspace"`
+				TicketFile    string                 `json:"ticketFile,omitempty"`
+				Verifications []plansvc.Verification `json:"verifications"`
+			}{
+				Command:       "verify",
+				Workspace:     resolvedPath,
+				TicketFile:    resolvedTicketFile,
+				Verifications: verifications,
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
 		}
 	}
 
@@ -568,6 +638,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	ticketID := fs.String("ticket", "", "Ticket ID to package")
+	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
@@ -607,28 +678,62 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	packet, err := runtime.manifest.Generate(ctx, resolvedPath, runtime.loaded, normalizeTicketID(*ticketID), *fromBranch, *toBranch, environments)
+	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
-		return 1
+		return usageExitCode
+	}
+
+	packets := make([]manifestsvc.ReleasePacket, 0, len(ticketIDs))
+	for _, ticketID := range ticketIDs {
+		packet, err := runtime.manifest.Generate(ctx, resolvedPath, runtime.loaded, ticketID, *fromBranch, *toBranch, environments)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+			return 1
+		}
+		packets = append(packets, packet)
 	}
 
 	switch selectedFormat {
 	case manifestFormatMarkdown:
-		if err := output.RenderReleasePacketMarkdown(a.stdout, packet); err != nil {
-			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
-			return 1
+		if len(packets) == 1 {
+			if err := output.RenderReleasePacketMarkdown(a.stdout, packets[0]); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		} else {
+			if err := output.RenderReleasePacketBundleMarkdown(a.stdout, packets); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
 		}
 	case manifestFormatJSON:
-		if err := output.RenderJSON(a.stdout, struct {
-			Command string                    `json:"command"`
-			Packet  manifestsvc.ReleasePacket `json:"packet"`
-		}{
-			Command: "manifest generate",
-			Packet:  packet,
-		}); err != nil {
-			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
-			return 1
+		if len(packets) == 1 {
+			if err := output.RenderJSON(a.stdout, struct {
+				Command string                    `json:"command"`
+				Packet  manifestsvc.ReleasePacket `json:"packet"`
+			}{
+				Command: "manifest generate",
+				Packet:  packets[0],
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		} else {
+			if err := output.RenderJSON(a.stdout, struct {
+				Command    string                      `json:"command"`
+				Workspace  string                      `json:"workspace"`
+				TicketFile string                      `json:"ticketFile,omitempty"`
+				Packets    []manifestsvc.ReleasePacket `json:"packets"`
+			}{
+				Command:    "manifest generate",
+				Workspace:  resolvedPath,
+				TicketFile: resolvedTicketFile,
+				Packets:    packets,
+			}); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
 		}
 	}
 
@@ -759,20 +864,20 @@ func (a *App) printEnvStatusUsage() {
 }
 
 func (a *App) printPlanUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig plan --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printVerifyUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig verify --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig verify (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printManifestUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "  gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
 }
 
 func (a *App) printManifestGenerateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig manifest generate --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
 }
 
 func (a *App) printDoctorUsage() {
@@ -799,6 +904,73 @@ func normalizeCLIPath(path string) (string, error) {
 
 func normalizeTicketID(ticketID string) string {
 	return strings.ToUpper(strings.TrimSpace(ticketID))
+}
+
+func resolveTicketIDs(ticketID, ticketFile string, parser ticketsvc.Parser) ([]string, string, error) {
+	normalizedTicketID := normalizeTicketID(ticketID)
+	ticketFile = strings.TrimSpace(ticketFile)
+
+	switch {
+	case normalizedTicketID != "" && ticketFile != "":
+		return nil, "", fmt.Errorf("use either --ticket or --ticket-file, not both")
+	case normalizedTicketID == "" && ticketFile == "":
+		return nil, "", fmt.Errorf("either --ticket or --ticket-file is required")
+	case normalizedTicketID != "":
+		if err := parser.Validate(normalizedTicketID); err != nil {
+			return nil, "", err
+		}
+		return []string{normalizedTicketID}, "", nil
+	default:
+		resolvedTicketFile, err := normalizeCLIPath(ticketFile)
+		if err != nil {
+			return nil, "", err
+		}
+		ticketIDs, err := readTicketIDsFromFile(resolvedTicketFile, parser)
+		if err != nil {
+			return nil, "", err
+		}
+		return ticketIDs, resolvedTicketFile, nil
+	}
+}
+
+func readTicketIDsFromFile(path string, parser ticketsvc.Parser) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	seen := make(map[string]struct{})
+	ticketIDs := make([]string, 0, 8)
+	lineNumber := 0
+
+	for scanner.Scan() {
+		lineNumber++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		ticketID := normalizeTicketID(line)
+		if err := parser.Validate(ticketID); err != nil {
+			return nil, fmt.Errorf("ticket file %s line %d: %w", path, lineNumber, err)
+		}
+		if _, ok := seen[ticketID]; ok {
+			continue
+		}
+		seen[ticketID] = struct{}{}
+		ticketIDs = append(ticketIDs, ticketID)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(ticketIDs) == 0 {
+		return nil, fmt.Errorf("ticket file %s did not contain any ticket IDs", path)
+	}
+
+	return ticketIDs, nil
 }
 
 func (a *App) runVersion() int {
@@ -909,6 +1081,7 @@ func resolveEnvironments(spec string, loaded config.Loaded) ([]inspectsvc.Enviro
 
 type commandRuntime struct {
 	loaded   config.Loaded
+	parser   ticketsvc.Parser
 	scanner  *repo.Scanner
 	finder   *ticketsvc.Service
 	diff     *diffsvc.Service
@@ -935,6 +1108,7 @@ func newCommandRuntime(path, configPath string) (commandRuntime, error) {
 
 	return commandRuntime{
 		loaded:   loaded,
+		parser:   parser,
 		scanner:  scanner,
 		finder:   ticketsvc.NewService(scanner, registry, parser),
 		diff:     diffsvc.NewService(scanner, registry, parser),
