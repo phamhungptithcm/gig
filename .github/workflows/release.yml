@@ -82,12 +82,12 @@ jobs:
       - name: Commit package manager metadata
         if: steps.metadata.outputs.should_release == 'true'
         run: |
-          if git diff --quiet -- Formula/gig.rb Scoop/gig.json; then
+          if [ -z "$(git status --short -- Formula/gig-cli.rb bucket/gig-cli.json)" ]; then
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/gig.rb Scoop/gig.json
+          git add Formula/gig-cli.rb bucket/gig-cli.json
           git commit -m "chore(release): update package manager metadata for ${{ steps.metadata.outputs.next_tag }} [skip release]"
           git push

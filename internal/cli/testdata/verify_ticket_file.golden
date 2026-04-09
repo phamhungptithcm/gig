@@ -1,0 +1,40 @@
+Batch verification
+Tickets: 2
+Safe: 0
+Warning: 0
+Blocked: 2
+
+Ticket ABC-123
+Verification: test -> main
+Environments: dev=dev -> test=test -> prod=main
+Verdict: blocked
+Scanned repositories: 1
+Touched repositories: 1
+
+Why
+  - At least one repository is missing the correct source or target release evidence.
+  - 1 ticket commit(s) are still planned for promotion.
+  - 1 manual review step(s) were inferred from the changed files.
+
+[a-service] <WORKSPACE>/a-service (git)
+  verdict: blocked
+  checks:
+    - test contains 1 ticket commit(s).
+    - main is missing 1 ticket commit(s).
+    - Source branch test is behind an earlier environment by 1 commit(s).
+    - 1 risk signal(s) require review.
+  manual steps:
+    - Review DB migration ordering, rollback steps, and deployment timing before promotion.
+
+---
+Ticket XYZ-999
+Verification: test -> main
+Environments: dev=dev -> test=test -> prod=main
+Verdict: blocked
+Scanned repositories: 1
+Touched repositories: 0
+
+Why
+  - The ticket was not found in detected repositories.
+
+No repository activity found for this ticket.

@@ -39,6 +39,32 @@ Today, `gig` can:
 - load team config from a file
 - check config and repo coverage with `gig doctor`
 
+## Installation
+
+Package managers publish `gig` as `gig-cli` to avoid name collisions, but the command you run after install stays `gig`.
+
+For macOS and Linux with Homebrew:
+
+```bash
+brew install phamhungptithcm/gig/gig-cli
+gig version
+```
+
+For Windows with Scoop:
+
+```powershell
+scoop bucket add gig https://github.com/phamhungptithcm/gig
+scoop install gig/gig-cli
+gig version
+```
+
+For macOS and Linux without Homebrew:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
+gig version
+```
+
 ## What It Does Not Do Yet
 
 Today, `gig` does not:
