@@ -1,0 +1,146 @@
+{
+  "command": "verify",
+  "workspace": "<WORKSPACE>",
+  "releaseId": "rel-2026-04-09",
+  "snapshotDir": "<WORKSPACE>/.gig/releases/rel-2026-04-09/snapshots",
+  "verifications": [
+    {
+      "ticketId": "ABC-123",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "environments": [
+        {
+          "Name": "dev",
+          "Branch": "dev"
+        },
+        {
+          "Name": "test",
+          "Branch": "test"
+        },
+        {
+          "Name": "prod",
+          "Branch": "main"
+        }
+      ],
+      "summary": {
+        "scannedRepositories": 2,
+        "touchedRepositories": 1,
+        "readyRepositories": 0,
+        "warningRepositories": 0,
+        "blockedRepositories": 1,
+        "totalCommitsToPromote": 1,
+        "totalManualSteps": 1
+      },
+      "verdict": "blocked",
+      "reasons": [
+        "At least one repository is missing the correct source or target release evidence.",
+        "1 ticket commit(s) are still planned for promotion.",
+        "1 manual review step(s) were inferred from the changed files.",
+        "1 dependency ticket(s) are still missing from main."
+      ],
+      "repositories": [
+        {
+          "repository": {
+            "Name": "a-service",
+            "Root": "<WORKSPACE>/a-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "verdict": "blocked",
+          "checks": [
+            "test contains 1 ticket commit(s).",
+            "main is missing 1 ticket commit(s).",
+            "Source branch test is behind an earlier environment by 1 commit(s).",
+            "Declared dependency XYZ-456 is present in test but missing from main.",
+            "2 risk signal(s) require review."
+          ],
+          "riskSignals": [
+            {
+              "Code": "db-change",
+              "Level": "manual-review",
+              "Summary": "Database-related changes should be reviewed before promotion",
+              "Examples": [
+                "db/migrations/001_add_column.sql"
+              ]
+            },
+            {
+              "Code": "missing-dependency",
+              "Level": "blocked",
+              "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+              "Examples": [
+                "XYZ-456"
+              ]
+            }
+          ],
+          "dependencyResolutions": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "Status": "missing-target",
+              "FoundInSource": true,
+              "FoundInTarget": false,
+              "EvidenceCommits": [
+                "<HASH>"
+              ]
+            }
+          ],
+          "manualSteps": [
+            {
+              "code": "review-db-rollout",
+              "summary": "Review DB migration ordering, rollback steps, and deployment timing before promotion."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ticketId": "XYZ-999",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "environments": [
+        {
+          "Name": "dev",
+          "Branch": "dev"
+        },
+        {
+          "Name": "test",
+          "Branch": "test"
+        },
+        {
+          "Name": "prod",
+          "Branch": "main"
+        }
+      ],
+      "summary": {
+        "scannedRepositories": 2,
+        "touchedRepositories": 1,
+        "readyRepositories": 1,
+        "warningRepositories": 0,
+        "blockedRepositories": 0,
+        "totalCommitsToPromote": 0,
+        "totalManualSteps": 0
+      },
+      "verdict": "safe",
+      "reasons": [
+        "Source branch contains the ticket scope and no repository is currently blocked.",
+        "Target branch already contains the ticket commits from the selected source."
+      ],
+      "repositories": [
+        {
+          "repository": {
+            "Name": "b-service",
+            "Root": "<WORKSPACE>/b-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "verdict": "safe",
+          "checks": [
+            "test contains 1 ticket commit(s).",
+            "main already contains the ticket commits from test.",
+            "Target branch main already contains the ticket commits from test."
+          ]
+        }
+      ]
+    }
+  ]
+}

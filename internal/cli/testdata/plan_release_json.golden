@@ -1,0 +1,150 @@
+{
+  "command": "plan",
+  "workspace": "<WORKSPACE>",
+  "releasePlan": {
+    "releaseId": "rel-2026-04-09",
+    "workspace": "<WORKSPACE>",
+    "snapshotDir": "<WORKSPACE>/.gig/releases/rel-2026-04-09/snapshots",
+    "fromBranch": "test",
+    "toBranch": "main",
+    "environments": [
+      {
+        "Name": "dev",
+        "Branch": "dev"
+      },
+      {
+        "Name": "test",
+        "Branch": "test"
+      },
+      {
+        "Name": "prod",
+        "Branch": "main"
+      }
+    ],
+    "summary": {
+      "snapshots": 2,
+      "tickets": 2,
+      "safeTickets": 1,
+      "warningTickets": 0,
+      "blockedTickets": 1,
+      "touchedRepositories": 2,
+      "totalCommitsToPromote": 1,
+      "totalManualSteps": 1
+    },
+    "verdict": "blocked",
+    "notes": [
+      "1 manual review step(s) are still open across this release.",
+      "1 ticket snapshot(s) are currently blocked.",
+      "1 total ticket commit(s) are still planned for main."
+    ],
+    "tickets": [
+      {
+        "ticketId": "ABC-123",
+        "capturedAt": "<TIMESTAMP>",
+        "verdict": "blocked",
+        "touchedRepositories": 1,
+        "commitsToPromote": 1,
+        "manualSteps": 1
+      },
+      {
+        "ticketId": "XYZ-999",
+        "capturedAt": "<TIMESTAMP>",
+        "verdict": "safe",
+        "touchedRepositories": 1,
+        "commitsToPromote": 0,
+        "manualSteps": 0
+      }
+    ],
+    "repositories": [
+      {
+        "repository": {
+          "Name": "a-service",
+          "Root": "<WORKSPACE>/a-service",
+          "Type": "git",
+          "CurrentBranch": "test"
+        },
+        "ticketIds": [
+          "ABC-123"
+        ],
+        "verdict": "blocked",
+        "commitsToInclude": 1,
+        "riskSignals": [
+          {
+            "Code": "db-change",
+            "Level": "manual-review",
+            "Summary": "Database-related changes should be reviewed before promotion",
+            "Examples": [
+              "db/migrations/001_add_column.sql"
+            ]
+          },
+          {
+            "Code": "missing-dependency",
+            "Level": "blocked",
+            "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+            "Examples": [
+              "XYZ-456"
+            ]
+          }
+        ],
+        "dependencyResolutions": [
+          {
+            "TicketID": "ABC-123",
+            "DependsOn": "XYZ-456",
+            "Status": "missing-target",
+            "FoundInSource": true,
+            "FoundInTarget": false,
+            "EvidenceCommits": [
+              "<HASH>"
+            ]
+          }
+        ],
+        "manualSteps": [
+          {
+            "code": "ABC-123:review-db-rollout",
+            "summary": "ABC-123: Review DB migration ordering, rollback steps, and deployment timing before promotion."
+          }
+        ],
+        "actions": [
+          {
+            "code": "ABC-123:sync-source-environment",
+            "summary": "ABC-123: Bring test up to date before promoting to main."
+          },
+          {
+            "code": "ABC-123:include-missing-commits",
+            "summary": "ABC-123: Include 1 missing ticket commit(s) from test into main."
+          },
+          {
+            "code": "ABC-123:include-missing-dependency",
+            "summary": "ABC-123: Include dependency ticket XYZ-456 in main before promoting ABC-123."
+          }
+        ],
+        "notes": [
+          "ABC-123: Source branch test is behind an earlier environment by 1 commit(s).",
+          "ABC-123: Declared dependency XYZ-456 is present in test but missing from main."
+        ]
+      },
+      {
+        "repository": {
+          "Name": "b-service",
+          "Root": "<WORKSPACE>/b-service",
+          "Type": "git",
+          "CurrentBranch": "test"
+        },
+        "ticketIds": [
+          "XYZ-999"
+        ],
+        "verdict": "safe",
+        "commitsToInclude": 0,
+        "actions": [
+          {
+            "code": "XYZ-999:already-aligned",
+            "summary": "XYZ-999: No ticket commits are missing in main."
+          }
+        ],
+        "notes": [
+          "XYZ-999: Target branch main already contains the ticket commits from test."
+        ]
+      }
+    ]
+  }
+}
