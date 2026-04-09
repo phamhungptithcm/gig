@@ -1,13 +1,22 @@
 # Test Strategy
 
-## Goals
+## Goal
 
-- keep parsing and orchestration testable without invoking the CLI
-- verify repository discovery across nested workspace layouts
-- exercise Git adapter behavior with real temporary repositories
-- keep output stable and easy to review
+Keep the release workflow logic safe to change.
 
-## Test Types
+The tests should tell us quickly if we broke:
+
+- repo discovery
+- ticket parsing
+- branch comparison
+- environment status
+- release verification
+- promotion planning output
+- config loading
+- release packet rendering
+- doctor checks
+
+## Main Test Types
 
 ### Unit Tests
 
@@ -16,63 +25,68 @@ Use unit tests for:
 - ticket parsing
 - repo detection
 - diff orchestration
-- config parsing later
+- inspect and plan logic
+- config parsing
 
-### Adapter Contract Tests
+### Adapter Tests
 
-Use shared contract-style tests to make sure each SCM adapter behaves the same way for the same use cases.
+Use local temporary Git repos to test real Git behavior.
 
-This matters when SVN is added later.
+This matters because release mistakes usually come from real branch history, not from fake string matching.
 
-### Golden File Tests For CLI Output
+### Golden CLI Tests
 
-Use golden files to verify human-readable CLI output stays stable.
+Use golden files to keep human-readable output stable.
 
-Good targets:
+Current good targets:
 
-- `scan` output
-- `find` output
-- `diff` output
-- future `promote --dry-run` output
+- `scan`
+- `find`
+- `diff`
+- `inspect`
+- `env status`
+- `verify`
+- `plan`
+- `manifest generate`
+- `doctor`
 
-### Integration Tests With Local Git Repos
+### JSON Contract Tests
 
-Use temporary local Git repositories created during tests.
+JSON output should stay stable enough for scripts and CI tooling.
 
-Test flows such as:
+Current good targets:
 
-- finding commits by ticket
-- comparing branches
-- detecting missing commits
-- confirming cherry-picked commits are no longer missing
-
-## Test Style
-
-- use temp directories for filesystem-driven tests
-- use local Git config inside temp repos for adapter tests
-- keep service tests independent from terminal rendering
+- `plan --format json`
+- `doctor --format json`
+- `manifest generate --format json`
 
 ## Current Coverage
 
 - `internal/cli`
-  - golden-style CLI output tests for `scan`, `find`, and `diff`
-  - subcommand help behavior
+  - golden output tests for the main commands
+  - help and usage behavior
 - `internal/repo`
   - recursive discovery
   - enclosing repo detection
 - `internal/ticket`
-  - regex-based ticket extraction, normalization, and validation
-  - multi-repo find orchestration with fake adapters
+  - ticket extraction, normalization, and validation
+- `internal/config`
+  - config loading and repo lookup
 - `internal/diff`
-  - service orchestration and result filtering with fake adapters
+  - compare orchestration
+- `internal/inspect`
+  - risk-signal inference
+  - environment-state logic
+- `internal/plan`
+  - verdict logic
+  - promotion plan generation
+  - verification generation
 - `internal/scm/git`
-  - search by ticket in a real temp repo
-  - compare branches and confirm missing commit detection
-  - confirm cherry-picked commits are no longer reported as missing
+  - real Git search and compare behavior
 
-## Planned Additions
+## What We Still Want Next
 
-- renderer snapshot tests
-- config loading tests once config files exist
-- JSON output contract tests
-- promotion dry-run integration tests
+- stronger JSON contract coverage
+- more release packet scenarios
+- more mixed-branch and multi-repo scenarios
+- integration-focused tests once Jira and deployment evidence are added

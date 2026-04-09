@@ -1,0 +1,22 @@
+Workspace: <WORKSPACE>
+Config: <WORKSPACE>/gig.yaml
+Verdict: warning
+Scanned repositories: 1
+Configured repositories: 2
+Covered repositories: 1
+Missing catalog entries: 0
+Missing environment refs: 1
+
+Workspace Findings
+  - [warning] Configured repository entry apps/missing-ui was not found under the selected workspace.
+
+[a-service] <WORKSPACE>/a-service (git)
+  verdict: warning
+  service: Accounts API
+  owner: Backend Team
+  environment checks:
+    - build=dev: found
+    - qa=qa: missing
+    - prod=main: found
+  findings:
+    - [warning] Config entry is missing a repository kind such as app, db, mendix, or infra.

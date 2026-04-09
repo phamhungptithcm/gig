@@ -2,79 +2,82 @@
 
 ## Design Goal
 
-Keep the code simple, testable, and easy to extend.
+Keep the code simple, testable, and easy to grow.
 
 The main rule is:
-the CLI should not contain business logic.
+the CLI should stay thin.
 
-## Layers
+## Main Layers
 
 ### CLI Layer
 
-Role:
-Receive user input and map it to application actions.
+This layer turns user input into application calls.
 
 Responsibilities:
 
 - parse commands and flags
-- validate required arguments at command level
-- call services
+- show help and usage
+- normalize simple input such as ticket ID or path
+- call the right service
+- choose human or JSON output
 - return exit codes
-- route results to output renderers
 
-Main package:
+Main packages:
 
 - `cmd/gig`
 - `internal/cli`
 
 ### Service Layer
 
-Role:
-Run use cases.
+This layer contains the real use cases.
 
 Responsibilities:
 
 - scan workspaces
-- search commits by ticket
+- find ticket commits
 - compare branches
-- later build promotion plans
+- inspect a ticket across repos
+- evaluate environment status
+- build read-only verification and promotion plans
 
 Main packages:
 
 - `internal/repo`
 - `internal/ticket`
 - `internal/diff`
-- future `internal/promote`
+- `internal/inspect`
+- `internal/plan`
 
-### Core Domain Layer
+### Domain Layer
 
-Role:
-Define the shared language of the tool.
+This layer holds the shared shapes the rest of the code works with.
 
-Responsibilities:
+Examples:
 
-- repository model
-- commit model
-- branch diff model
-- promotion plan model
-- ticket change set model
+- repository info
+- commit refs
+- branch comparison results
+- risk signals
+- environment status
+- promotion plan and verification results
 
-Main location today:
+Main locations today:
 
 - `internal/scm`
-
-This can be split further later if the domain grows.
+- `internal/inspect`
+- `internal/plan`
 
 ### Adapter Layer
 
-Role:
-Talk to external systems.
+This layer talks to external tools such as Git.
 
 Responsibilities:
 
-- Git operations
-- future SVN operations
-- future Jira integration
+- detect repos
+- resolve branch names
+- search commits
+- compare branches
+- inspect files changed by a commit
 
 Main packages:
 
@@ -83,15 +86,15 @@ Main packages:
 
 ## Request Flow
 
-1. CLI parses command and flags.
-2. Scanner resolves the input path into one or more repositories.
-3. Service selects the correct SCM adapter for each repository.
-4. Adapter executes SCM-specific queries.
-5. Output renderer formats the service results for the terminal.
+1. CLI reads the command and flags.
+2. The scanner turns the path into one or more repositories.
+3. The service chooses the correct adapter for each repo.
+4. The adapter runs SCM-specific queries.
+5. The output package renders the result for terminal or JSON.
 
 ## Why This Design Works
 
 - each layer has one clear job
 - Git details do not leak into the CLI
-- future SVN support can reuse the same service flow
-- output format can change without rewriting business logic
+- new output formats can reuse the same service results
+- future integrations can be added without rewriting the commands

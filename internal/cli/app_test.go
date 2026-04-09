@@ -72,6 +72,162 @@ func TestAppDiffGolden(t *testing.T) {
 	assertGolden(t, "diff.golden", normalizeOutput(stdout, workspace))
 }
 
+func TestAppInspectGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "a-service")
+
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add validation fix")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "db", "migrations", "001_add_column.sql"), "alter table demo add column enabled int;\n")
+	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
+
+	runGit(t, repoRoot, "checkout", "-b", "test", firstHash)
+
+	stdout, stderr, exitCode := runApp(t, "inspect", "abc-123", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("inspect exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "inspect.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppEnvStatusGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "a-service")
+
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add validation fix")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "db", "migrations", "001_add_column.sql"), "alter table demo add column enabled int;\n")
+	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
+
+	runGit(t, repoRoot, "checkout", "-b", "test", firstHash)
+
+	stdout, stderr, exitCode := runApp(t, "env", "status", "ABC-123", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("env status exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "env_status.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppPlanGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "plan", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("plan exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "plan.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppPlanJSONGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "plan", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("plan json exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "plan_json.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppVerifyGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("verify exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "verify.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppManifestGenerateGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	writeFile(t, filepath.Join(workspace, "gig.yaml"), `
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+environments:
+  - name: build
+    branch: dev
+  - name: qa
+    branch: test
+  - name: prod
+    branch: main
+repositories:
+  - path: a-service
+    service: Accounts API
+    owner: Backend Team
+    kind: app
+    notes:
+      - Verify login and billing summary.
+`)
+
+	stdout, stderr, exitCode := runApp(t, "manifest", "generate", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("manifest generate exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "manifest_generate.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppDoctorGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	writeFile(t, filepath.Join(workspace, "gig.yaml"), `
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+environments:
+  - name: build
+    branch: dev
+  - name: qa
+    branch: qa
+  - name: prod
+    branch: main
+repositories:
+  - path: a-service
+    service: Accounts API
+    owner: Backend Team
+  - path: apps/missing-ui
+    service: Admin Web
+    owner: Frontend Team
+    kind: app
+`)
+
+	stdout, stderr, exitCode := runApp(t, "doctor", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("doctor exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "doctor.golden", normalizeOutput(stdout, workspace))
+}
+
 func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	t.Parallel()
 
@@ -84,6 +240,30 @@ func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "Usage: gig scan --path .") {
 		t.Fatalf("scan --help stderr = %q, want usage", stderr)
+	}
+}
+
+func TestAppRootHelpReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	stdout, stderr, exitCode := runApp(t, "--help")
+	if exitCode != 0 {
+		t.Fatalf("--help exit code = %d, want 0", exitCode)
+	}
+	if stdout != "" {
+		t.Fatalf("--help stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "gig <command> [flags]") {
+		t.Fatalf("--help stderr = %q, want root usage", stderr)
+	}
+	if !strings.Contains(stderr, "scan        Find repositories under a path") {
+		t.Fatalf("--help stderr = %q, want command summary", stderr)
+	}
+	if !strings.Contains(stderr, "manifest    Generate a release packet for QA, client, and release review") {
+		t.Fatalf("--help stderr = %q, want manifest command summary", stderr)
+	}
+	if !strings.Contains(stderr, "doctor      Check config coverage, env mappings, and repo catalog health") {
+		t.Fatalf("--help stderr = %q, want doctor command summary", stderr)
 	}
 }
 
@@ -170,7 +350,34 @@ func runGit(t *testing.T, repoRoot string, args ...string) string {
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(path), err)
+	}
+
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
 	}
+}
+
+func createPromotionFixture(t *testing.T) string {
+	t.Helper()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "a-service")
+
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add validation fix")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "db", "migrations", "001_add_column.sql"), "alter table demo add column enabled int;\n")
+	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
+
+	runGit(t, repoRoot, "checkout", "-b", "test", firstHash)
+
+	return workspace
 }

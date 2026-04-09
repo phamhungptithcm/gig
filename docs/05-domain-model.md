@@ -1,6 +1,11 @@
 # Domain Model
 
-## Repo
+This page describes the main data shapes `gig` works with today.
+
+The goal is simple:
+the CLI, services, and output code should all talk about the same things in the same way.
+
+## Repository
 
 Represents one detected repository in the workspace.
 
@@ -11,9 +16,9 @@ Fields:
 - `Type`
 - `CurrentBranch`
 
-## CommitRef
+## Commit Ref
 
-Represents one commit that the tool found and wants to show or compare.
+Represents one commit that `gig` found for a ticket.
 
 Fields:
 
@@ -21,115 +26,129 @@ Fields:
 - `Subject`
 - `Branches`
 
-Notes:
+## Ticket Search Result
 
-- in Git, `Hash` is the commit SHA
-- `Branches` is optional because branch data may not always be cheap or available
+Used by `gig find`.
 
-## TicketChangeSet
+Contains:
 
-Represents all commits for one ticket in one repository.
+- repository
+- list of matching commits
 
-Suggested fields:
+## Branch Diff
 
-- `TicketID`
-- `Repo`
-- `Commits []CommitRef`
+Used by `gig diff`.
 
-Use:
+Contains:
 
-- output of `find`
-- input to promotion planning
+- ticket ID
+- source branch
+- target branch
+- commits found in the source branch
+- commits found in the target branch
+- commits missing in the target branch
 
-## BranchDiff
+## Risk Signal
 
-Represents the difference for one ticket between two branches in one repository.
+Used by `gig inspect`, `gig verify`, and `gig plan`.
 
-Suggested fields:
+Represents something that may need extra review.
 
-- `TicketID`
-- `Repo`
-- `FromBranch`
-- `ToBranch`
-- `SourceCommits []CommitRef`
-- `TargetCommits []CommitRef`
-- `MissingCommits []CommitRef`
+Examples:
 
-Use:
-
-- output of `diff`
-- input to promotion planning
-
-## PromotionPlan
-
-Represents what the tool plans to do during a future promote flow.
-
-Suggested fields:
-
-- `TicketID`
-- `FromBranch`
-- `ToBranch`
-- `RepoPlans`
-- `DryRun`
-- `Warnings`
-
-Each repo plan may include:
-
-- repository info
-- commits to apply
-- dependency warnings
-- risk warnings
-
-## PromotionResult
-
-Represents the result after a future promotion run.
-
-Suggested fields:
-
-- `TicketID`
-- `FromBranch`
-- `ToBranch`
-- `Applied`
-- `Skipped`
-- `Failed`
-- `Warnings`
-- `Errors`
-
-## Query Models Used Today
-
-The current implementation also uses simple transport models:
-
-### SearchQuery
-
-Used to search commits for a ticket.
+- `db-change`
+- `config-change`
+- `mendix-model`
 
 Fields:
 
-- `TicketID`
-- `Branch`
+- `Code`
+- `Level`
+- `Summary`
+- `Examples`
 
-### CompareQuery
+## Repository Inspection
 
-Used to compare ticket-related commits between branches.
+Used by `gig inspect`.
 
-Fields:
+Represents the full ticket picture for one repository.
 
-- `TicketID`
-- `FromBranch`
-- `ToBranch`
+Contains:
 
-### CompareResult
+- repository
+- commits
+- branches seen
+- risk signals
 
-Current normalized adapter result.
+## Environment
 
-Fields:
+Represents one logical environment in the release flow.
 
-- `SourceCommits`
-- `TargetCommits`
-- `MissingCommits`
+Examples:
+
+- `dev`
+- `test`
+- `uat`
+- `prod`
+
+Each environment maps to one branch name.
+
+## Environment Result
+
+Used by `gig env status`, `gig verify`, and `gig plan`.
+
+Represents the ticket state in one environment branch.
+
+Current states:
+
+- `present`
+- `aligned`
+- `behind`
+- `not-present`
+- `branch-missing`
+
+## Promotion Plan
+
+Used by `gig plan`.
+
+This is a read-only plan.
+It does not execute any Git write action.
+
+Contains:
+
+- ticket ID
+- source branch
+- target branch
+- environment mapping
+- overall summary
+- overall verdict
+- per-repo plans
+
+Each repo plan can include:
+
+- compare result
+- risk signals
+- environment statuses
+- manual steps
+- planned actions
+- notes
+- verdict
+
+## Verification Result
+
+Used by `gig verify`.
+
+Contains:
+
+- overall verdict
+- summary counts
+- human-readable reasons
+- per-repo checks
+- manual steps
 
 ## Why These Models Matter
 
-- they make the service layer easier to reason about
-- they keep output and SCM code from inventing their own shapes
-- they prepare the codebase for promote, snapshot, and dependency features
+- the terminal output stays consistent
+- JSON output stays close to human output
+- new commands can build on the same service results
+- future release packet and config work has a stable base

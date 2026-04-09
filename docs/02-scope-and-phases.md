@@ -1,99 +1,80 @@
 # Scope And Phases
 
-## Phase 0: Foundation
+## What Exists Now
 
-Goal:
-Create a clean base that can grow without a rewrite.
+The current project already covers the core read-only release workflow.
 
-Scope:
+### Foundation
 
-- project skeleton
+Shipped:
+
 - CLI bootstrap
 - package boundaries
 - repository discovery
-- Git detection
-- path scanning
-- basic tests for core helpers
-
-Output:
-
-- a runnable CLI
-- clean internal modules
 - Git-first SCM abstraction
+- test coverage for the core layers
 
-## Phase 1: MVP CLI
+### Visibility And Verification
 
-Goal:
-Help teams inspect ticket-related changes before promotion.
-
-Scope:
+Shipped:
 
 - `gig scan`
-- `gig find <ticket-id>`
-- `gig diff --ticket <ticket-id> --from <branch> --to <branch>`
-- human-readable output
-- test coverage for parser, discovery, diff logic, and Git adapter behavior
+- `gig find`
+- `gig diff`
+- `gig inspect`
+- `gig env status`
+- `gig verify`
+- `gig plan`
+- basic risk signals for DB, config, and Mendix-style changes
 
-Output:
+### Team-Ready Readability
 
-- workspace scan
-- commit search by ticket
-- branch gap detection by ticket
+Shipped:
 
-## Phase 2: Promote Automation
+- config loading
+- environment and branch mapping from config
+- repository or service catalog
+- `gig manifest generate`
+- `gig doctor`
+- Markdown and JSON output for release review
 
-Goal:
-Move from read-only analysis to guided promotion.
+This is the current MVP that teams can actually try for real release checks.
 
-Scope:
+## What The Current MVP Is Meant To Do
 
-- `gig promote`
-- promotion plan
-- dry-run mode
-- confirmation step before write actions
-- early conflict checks
+The job of the current MVP is simple:
 
-Output:
+- help teams see the full ticket story
+- show where a ticket is behind in the environment flow
+- give a clear go or no-go signal before promotion
+- produce a release packet and release plan without changing repos
 
-- safe promotion plan
-- clear preview of what will happen
-- optional execution after confirmation
+## What Comes Next
 
-## Phase 3: Dependency And Snapshot
+### Next Release Focus
 
-Goal:
-Make the tool smarter about ticket relationships and repeatable release state.
+- richer release packet structure
+- stronger JSON contracts
+- dependency trailer parsing
+- ticket snapshots
+- better release-level planning
 
-Scope:
+### Later Release Focus
 
-- parse dependency footers such as `depends-on: XYZ-456`
-- include related ticket changes in planning
-- snapshot commits by ticket and branch state
+- Jira and PR evidence
+- deployment evidence
+- multi-ticket release bundles
+- controlled promote execution after strong dry-run and approval flows
 
-Output:
+### Enterprise Coverage Later
 
-- better promotion safety
-- better audit support
+- SVN support
+- stronger Mendix support
+- mixed-tooling workflow coverage
 
-## Phase 4: SVN, Jira, And Mendix Advanced Features
+## What Is Deliberately Out Of Scope Today
 
-Goal:
-Support real enterprise environments more fully.
-
-Scope:
-
-- working SVN adapter
-- Jira integration
-- Mendix warnings and higher-risk file detection
-- stronger release reporting
-
-Output:
-
-- broader SCM support
-- better enterprise workflow coverage
-
-## What Is Not In MVP
-
-- automatic production promotion by default
-- silent destructive actions
+- silent write actions
+- automatic production promotion
 - auto-resolution of complex merge conflicts
+- pretending branch presence is the same as deployment evidence

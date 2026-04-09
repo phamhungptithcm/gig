@@ -1,0 +1,79 @@
+# Release Packet: ABC-123
+
+## Overview
+- Workspace: `<WORKSPACE>`
+- Promotion: `test -> main`
+- Verdict: `blocked`
+- Touched repositories: `1`
+- Commits to promote: `1`
+- Manual steps: `1`
+- Config: `<WORKSPACE>/gig.yaml`
+
+## Summary
+- This ticket currently touches 1 repository in the selected workspace.
+- 1 commit(s) are still planned from test to main.
+- Promotion is blocked until the repository issues below are resolved.
+- 1 manual review step(s) were inferred from risky file changes.
+
+## QA Checklist
+- Use this section when QA needs a short release packet instead of reading raw git history.
+
+Checklist:
+- Verify the final ticket behavior on main after the promotion is complete.
+- Confirm every follow-up fix from test is visible in main.
+- Re-check Accounts API because release evidence is still blocked or incomplete.
+- Do focused regression checks for Accounts API because risky file changes were detected.
+
+## Client Review Notes
+- This packet summarizes what is expected to move from test to main for ticket ABC-123.
+
+Checklist:
+- Use the repository summary below to confirm the final scope that is moving forward.
+- Confirm the latest client feedback and follow-up fixes are included in the target branch.
+- Review the commit list for each affected repo if you want to confirm the exact follow-up fixes included in this release packet.
+- Call out any DB, config, or Mendix-related work because those changes usually need extra communication during release review.
+
+## Release Manager Checklist
+- Use this section to coordinate the actual promotion, communication, and rollback readiness.
+
+Checklist:
+- Use test as the approved source and main as the target for this ticket.
+- Record release evidence after promotion so future checks can compare against a clean baseline.
+- Bring test up to date before promoting to main.
+- Include 1 missing ticket commit(s) from test into main.
+- Review DB migration ordering, rollback steps, and deployment timing before promotion.
+- Coordinate with Backend Team for Accounts API if manual confirmation is needed.
+
+## Repository Details
+
+### a-service
+
+- Repo path: `<WORKSPACE>/a-service`
+- SCM: `git`
+- Verdict: `blocked`
+- Service: `Accounts API`
+- Owner: `Backend Team`
+- Kind: `app`
+
+Environment status:
+- build (dev): present, commits here 2
+- qa (test): behind by 1 commit(s), commits here 1
+- prod (main): behind by 1 commit(s), commits here 0
+
+Risk signals:
+- `db-change` (manual-review): Database-related changes should be reviewed before promotion [db/migrations/001_add_column.sql]
+
+Manual steps:
+- Review DB migration ordering, rollback steps, and deployment timing before promotion.
+
+Planned actions:
+- Bring test up to date before promoting to main.
+- Include 1 missing ticket commit(s) from test into main.
+
+Notes:
+- Verify login and billing summary.
+- Source branch test is behind an earlier environment by 1 commit(s).
+
+Commits to include:
+- `<HASH>` ABC-123 | service-a | add validation fix
+

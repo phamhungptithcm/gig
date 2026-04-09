@@ -2,39 +2,73 @@
 
 ## What `gig` Is
 
-`gig` is a command-line tool for developers and release engineers.
+`gig` is a command-line tool for teams that release work by ticket across more than one repo.
 
-It helps teams answer a simple but important question:
+It is useful when one ticket can pick up more commits over time before it is finally approved.
 
-"Did we move every commit for this ticket to the next branch?"
+## The Simple Promise
 
-## What Problem It Solves
+Before someone moves a ticket from one branch to the next, `gig` helps them answer:
 
-Many teams work in more than one repository. One ticket may touch backend code, frontend code, database scripts, and low-code apps like Mendix at the same time.
+- what changed for this ticket?
+- where is this ticket now?
+- is the next move safe?
+- what should be reviewed by hand first?
 
-When the same ticket is tested many times, more commits are added over time. Later, someone must move the right changes from one branch to another. This is often done by hand. Hand work is slow and easy to get wrong.
+## Who It Helps
 
-`gig` helps reduce that risk by finding ticket-related commits, comparing branches, and showing what is missing before promotion.
+`gig` is useful for:
 
-## Main Users
+- developers who keep adding follow-up fixes to the same ticket
+- QA or UAT coordinators who want to know what changed since the last review round
+- release engineers who need a clear release packet and promotion plan
+- outsourcing or delivery leads who need confidence across many repos
 
-- developers who make and fix changes for the same ticket many times
-- QA and release engineers who need a clear view before promotion
-- teams working in multi-repo and mixed-SCM environments
+## What The Project Can Do Today
 
-## Value
+Today, `gig` can:
 
-- fewer missed commits during release work
-- one place to check many repositories
-- a safer promotion process
-- a clear path to future automation
+- scan a workspace for repos
+- find ticket commits
+- inspect a ticket across repos
+- compare branch state for a ticket
+- show environment status like `dev -> test -> prod`
+- verify a promotion as `safe`, `warning`, or `blocked`
+- output a read-only promotion plan in human-readable or JSON form
+- generate a Markdown or JSON release packet
+- load team config from a file
+- check config and repo coverage with `gig doctor`
 
-## What The First Versions Do
+## What It Does Not Do Yet
 
-The early versions focus on safe read-only work:
+Today, `gig` does not:
 
-- detect repositories in a workspace
-- find commits by ticket ID
-- compare source and target branches for missing changes
+- move commits for you
+- resolve conflicts
+- read Jira, PR, or deployment tools yet
+- build multi-ticket release bundles yet
 
-Promotion automation comes later, after discovery and comparison are stable and trusted.
+That is by design.
+The project is still focused on helping teams make better release decisions before any write action happens.
+
+## Why This Matters
+
+The problem is not only "find commits by ticket."
+
+The real problem is:
+
+- a ticket may fail review many times
+- different repos may move at different speeds
+- release managers can easily miss one late follow-up commit
+- DB, config, or Mendix changes may need manual review
+
+`gig` is meant to reduce those mistakes.
+
+## Product Direction
+
+The project is moving toward:
+
+- better ticket visibility across repos and environments
+- clearer release plans and release packets
+- machine-readable output for CI and tooling
+- richer evidence later from Jira, PRs, and deployments
