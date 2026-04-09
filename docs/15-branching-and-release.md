@@ -17,7 +17,7 @@
 
 When code is pushed to `main`:
 
-- the next patch tag is calculated
+- the next release tag is calculated in `vYYYY.MM.DD` format
 - release archives are built for macOS, Linux, and Windows
 - release notes are generated from the commits since the previous tag
 - GitHub Release assets are published
