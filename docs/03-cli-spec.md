@@ -17,7 +17,8 @@ gig --help
 ```bash
 gig inspect --help
 gig verify --help
-gig plan --help
+gig manifest --help
+gig doctor --help
 ```
 
 You can also use:
@@ -36,17 +37,35 @@ gig help
 | `gig env status` | check where a ticket is present or behind across env branches |
 | `gig diff` | compare one branch to another for a ticket |
 | `gig verify` | get a quick `safe`, `warning`, or `blocked` result |
-| `gig plan` | build a promotion plan for people or CI |
+| `gig plan` | build a read-only promotion plan for people or CI |
+| `gig manifest generate` | generate a Markdown or JSON release packet |
+| `gig doctor` | check config coverage, env mapping, and repo catalog health |
 | `gig version` | confirm what build you installed |
 
 ## Shared Rules
 
-- commands print human-readable output by default
+- commands print human-readable output by default unless you ask for JSON
 - errors go to stderr
 - successful commands exit with code `0`
 - usage errors return code `2`
 - runtime failures return code `1`
 - current commands are read-only and never change repositories
+
+## Shared Config Behavior
+
+Ticket-aware commands can load config automatically.
+
+Supported file names:
+
+- `gig.yaml`
+- `gig.yml`
+- `.gig.yaml`
+- `.gig.yml`
+
+`gig` searches upward from the path you pass with `--path`.
+If you want to point to a specific file, use `--config`.
+
+If you do not pass `--envs`, commands that need environments will use the config file first and built-in defaults second.
 
 ## `gig scan`
 
@@ -69,6 +88,12 @@ Use this when you only want the raw commit list for one ticket.
 
 ```bash
 gig find ABC-123 --path .
+```
+
+If your team uses a custom ticket pattern:
+
+```bash
+gig find ABC-123 --path . --config gig.yaml
 ```
 
 What it shows:
@@ -96,8 +121,16 @@ What it shows:
 
 Use this when you want to see where a ticket stands across the environment line.
 
+If you want to pass envs directly:
+
 ```bash
 gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main
+```
+
+If you already have a config file:
+
+```bash
+gig env status ABC-123 --path .
 ```
 
 What it shows:
@@ -125,13 +158,13 @@ What it shows:
 Use this when you want a fast release decision.
 
 ```bash
-gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+gig verify --ticket ABC-123 --from test --to main --path .
 ```
 
 Optional JSON output:
 
 ```bash
-gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
+gig verify --ticket ABC-123 --from test --to main --path . --format json
 ```
 
 What it shows:
@@ -146,13 +179,13 @@ What it shows:
 Use this when you want a clear, read-only promotion plan.
 
 ```bash
-gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+gig plan --ticket ABC-123 --from test --to main --path .
 ```
 
 Optional JSON output:
 
 ```bash
-gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
+gig plan --ticket ABC-123 --from test --to main --path . --format json
 ```
 
 What it shows:
@@ -164,7 +197,50 @@ What it shows:
 - manual steps
 - planned actions
 
-This JSON output is the first release-manifest style output in the project.
+## `gig manifest generate`
+
+Use this when you want a release packet that people can copy into release communication or attach to a QA or client review.
+
+Default Markdown output:
+
+```bash
+gig manifest generate --ticket ABC-123 --from test --to main --path .
+```
+
+Optional JSON output:
+
+```bash
+gig manifest generate --ticket ABC-123 --from test --to main --path . --format json
+```
+
+What it shows:
+
+- short release summary
+- QA checklist
+- client review notes
+- release manager checklist
+- per-repo details, risks, notes, and commits to include
+
+## `gig doctor`
+
+Use this when you want to check whether the workspace and config are in a healthy state.
+
+```bash
+gig doctor --path .
+```
+
+Optional JSON output:
+
+```bash
+gig doctor --path . --format json
+```
+
+What it checks:
+
+- whether a config file was found
+- whether repo catalog entries match real repos
+- whether configured environment branches exist
+- whether service, owner, and kind are filled in
 
 ## `gig version`
 
@@ -185,19 +261,31 @@ gig inspect ABC-123 --path /path/to/workspace
 ### Check whether `test` is behind `dev`
 
 ```bash
-gig env status ABC-123 --path /path/to/workspace --envs dev=dev,test=test,prod=main
+gig env status ABC-123 --path /path/to/workspace
 ```
 
 ### Check whether it is safe to move from `test` to `main`
 
 ```bash
-gig verify --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,prod=main
+gig verify --ticket ABC-123 --from test --to main --path /path/to/workspace
 ```
 
-### Generate a JSON plan for CI or review tooling
+### Generate a release packet for people
 
 ```bash
-gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,prod=main --format json
+gig manifest generate --ticket ABC-123 --from test --to main --path /path/to/workspace
+```
+
+### Generate JSON for CI or review tooling
+
+```bash
+gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --format json
+```
+
+### Check whether your config is good enough to trust
+
+```bash
+gig doctor --path /path/to/workspace
 ```
 
 ## Output Formats
@@ -205,24 +293,27 @@ gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --envs
 - `human`
   easy to read in terminal and good for manual review
 - `json`
-  good for CI, scripts, and future release packet tooling
+  good for CI, scripts, and tooling
+- `markdown`
+  good for release packets and copy-paste communication
 
-JSON output is currently available on:
+Output formats currently available on:
 
-- `gig verify`
-- `gig plan`
+- `gig verify`: `human`, `json`
+- `gig plan`: `human`, `json`
+- `gig manifest generate`: `markdown`, `json`
+- `gig doctor`: `human`, `json`
 
 ## Exit Codes
 
 - `0`: success
 - `1`: runtime failure
 - `2`: usage error
-- `3`: reserved for future partial-success execution flows
 
 ## What Is Planned Next
 
 Planned next CLI additions include:
 
-- `gig manifest generate`
-- `gig doctor`
 - `gig plan --release <release-id>`
+- richer Jira or deployment evidence
+- multi-ticket release bundles

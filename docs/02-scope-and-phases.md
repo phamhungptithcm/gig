@@ -25,8 +25,18 @@ Shipped:
 - `gig env status`
 - `gig verify`
 - `gig plan`
-- JSON output for `verify` and `plan`
 - basic risk signals for DB, config, and Mendix-style changes
+
+### Team-Ready Readability
+
+Shipped:
+
+- config loading
+- environment and branch mapping from config
+- repository or service catalog
+- `gig manifest generate`
+- `gig doctor`
+- Markdown and JSON output for release review
 
 This is the current MVP that teams can actually try for real release checks.
 
@@ -37,23 +47,20 @@ The job of the current MVP is simple:
 - help teams see the full ticket story
 - show where a ticket is behind in the environment flow
 - give a clear go or no-go signal before promotion
-- produce a release plan without changing repos
+- produce a release packet and release plan without changing repos
 
 ## What Comes Next
 
 ### Next Release Focus
 
-- config loading
-- environment and branch mapping from config
-- repository or service catalog
-- richer release manifest output
-- a dedicated `manifest generate` command
-- a `doctor` command for branch and ticket hygiene
+- richer release packet structure
+- stronger JSON contracts
+- dependency trailer parsing
+- ticket snapshots
+- better release-level planning
 
 ### Later Release Focus
 
-- dependency trailer parsing
-- ticket snapshots
 - Jira and PR evidence
 - deployment evidence
 - multi-ticket release bundles

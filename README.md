@@ -1,75 +1,125 @@
 # gig
 
-`gig` helps teams answer one release question before moving code to the next branch or environment:
+`gig` helps teams answer one release question before they move code to the next branch or environment:
 
 `Did we miss any change for this ticket?`
 
-If one ticket can touch many repos, fail review many times, and pick up extra fixes before release, `gig` is built for that exact workflow.
+This project is for teams where one ticket can touch many repos, fail review a few times, get follow-up fixes, and then become hard to release safely.
 
-## What Problem It Solves
-
-In real teams, one ticket can touch:
-
-- backend services
-- frontend apps
-- database scripts
-- low-code apps such as Mendix
-
-The same ticket may fail in developer verify, QA verify, client review, or UAT.
-Every failed round can add more commits.
-
-By release time, teams usually need to answer questions like:
-
-- which repos changed for this ticket?
-- is `test` still behind `dev` for this ticket?
-- is `main` missing a late follow-up fix?
-- does this ticket include DB or config work that needs manual review?
-
-That is where missed commits and release mistakes happen.
-`gig` helps reduce that risk.
-
-## What You Get Today
+## What You Can Do With It Today
 
 With `gig`, you can:
 
 - find every repo touched by one ticket
-- list every commit for that ticket across a workspace
 - inspect the full ticket story across repos
-- check environment status such as `dev -> test -> prod`
-- verify whether the next promotion step looks `safe`, `warning`, or `blocked`
-- generate a read-only promotion plan in human or JSON format
+- see whether `test` is behind `dev`, or `main` is behind `test`
+- get a quick `safe`, `warning`, or `blocked` decision before promotion
+- generate a Markdown release packet for QA, client review, and release managers
+- generate JSON output for CI, scripts, and tooling
+- load a simple team config file so real branch names and repo ownership match your workflow
+- run `gig doctor` to check whether the config and repo mapping are good enough to trust
 
-Today, `gig` is read-only.
-It helps you inspect, verify, and plan.
-It does not cherry-pick, merge, or deploy by itself.
+Everything is still read-only.
+`gig` helps you inspect, verify, and prepare.
+It does not cherry-pick, merge, or deploy for you.
 
-## Commands You Will Actually Use
+## Who This Is For
 
-- `gig --help`
-  Show the command list and the main usage patterns.
-- `gig inspect ABC-123 --path .`
-  Show the full ticket picture across repos.
-- `gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main`
-  Show where the ticket is present or behind in the environment flow.
-- `gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main`
-  Tell you if the next move looks safe.
-- `gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json`
-  Generate a release-plan style JSON output for CI or review tooling.
+`gig` is a good fit when your team says things like:
 
-## A Good First Try
+- "This ticket touched backend, frontend, and DB. Did we collect everything?"
+- "QA passed, but is `test` still missing one late fix from `dev`?"
+- "Client failed review once, then we fixed it again. Did that last commit reach `main`?"
+- "This ticket has DB or config changes. What needs manual review before release?"
+
+## The Commands People Usually Start With
 
 ```bash
 gig --help
 gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+gig verify --ticket ABC-123 --from test --to main --path .
+gig manifest generate --ticket ABC-123 --from test --to main --path .
+gig doctor --path .
 ```
 
-If you want the full docs site:
+If you want a team-specific setup, create a `gig.yaml` file and then run the same commands without repeating `--envs` every time.
+
+## A Friendly First Workflow
+
+### 1. See what repos are under the workspace
+
+```bash
+gig scan --path .
+```
+
+### 2. Inspect one ticket across repos
+
+```bash
+gig inspect ABC-123 --path .
+```
+
+### 3. Check whether the next move looks safe
+
+```bash
+gig verify --ticket ABC-123 --from test --to main --path .
+```
+
+### 4. Generate a release packet people can actually read
+
+```bash
+gig manifest generate --ticket ABC-123 --from test --to main --path .
+```
+
+### 5. Check whether your config and repo mapping are healthy
+
+```bash
+gig doctor --path .
+```
+
+## Team Config In One Minute
+
+If your branches are not just `dev`, `test`, and `main`, add a config file like this:
+
+```yaml
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+
+environments:
+  - name: dev
+    branch: develop
+  - name: test
+    branch: release/test
+  - name: prod
+    branch: main
+
+repositories:
+  - path: services/accounts-api
+    service: Accounts API
+    owner: Backend Team
+    kind: app
+    notes:
+      - Verify login and billing summary in QA.
+```
+
+Supported file names:
+
+- `gig.yaml`
+- `gig.yml`
+- `.gig.yaml`
+- `.gig.yml`
+
+`gig` will auto-detect the file from the path you run against, or you can pass `--config`.
+
+There is also a ready sample here:
+
+- [gig.example.yaml](https://github.com/phamhungptithcm/gig/blob/main/gig.example.yaml)
+
+## Docs
 
 - GitHub Pages: [phamhungptithcm.github.io/gig](https://phamhungptithcm.github.io/gig/)
-- Quick start: [Quick Start](docs/19-quickstart.md)
-- CLI guide: [CLI Guide](docs/03-cli-spec.md)
-- Roadmap: [Roadmap](docs/13-roadmap.md)
+- Quick start: [docs/19-quickstart.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/19-quickstart.md)
+- CLI guide: [docs/03-cli-spec.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/03-cli-spec.md)
+- Config spec: [docs/09-config-spec.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/09-config-spec.md)
+- Roadmap: [docs/13-roadmap.md](/Users/hunpeo97/Desktop/Workspace/Coder/gig/docs/13-roadmap.md)
 
 ## Install
 
@@ -79,8 +129,6 @@ If you want the full docs site:
 2. Download the file for your operating system
 3. Extract it
 4. Put `gig` or `gig.exe` somewhere on your `PATH`
-
-This is the simplest path for most people.
 
 ### Option 2: Build from source
 
@@ -111,27 +159,8 @@ Right now, `gig` does not:
 
 - move code automatically
 - resolve merge conflicts
-- read Jira or deployment tools yet
-- load team config from a file yet
+- read Jira, PR, or deployment evidence yet
+- build multi-ticket release bundles yet
 
-That is intentional.
-The first goal is to make release checking reliable before adding write actions.
-
-## Project Direction
-
-`gig` is moving toward a ticket-aware release workflow tool for multi-repo teams.
-
-The next important steps are:
-
-- config loading for team-specific env and branch mapping
-- richer release manifests
-- `doctor` checks
-- Jira, PR, and deployment evidence
-
-## In One Sentence
-
-If your team keeps asking:
-
-`Did we miss any change for this ticket before release?`
-
-then `gig` is built to help answer that quickly and clearly.
+Those are still on the roadmap.
+The current focus is to make ticket-based release checking useful, reliable, and easy to adopt first.

@@ -16,17 +16,19 @@ It is mostly useful for maintainers.
 - environment status
 - release verification
 - read-only promotion planning
-- JSON output for plan and verify
+- config loading with repo catalog and env mapping
+- release packet generation
+- doctor checks for config and repo coverage
+- JSON output for plan, verify, doctor, and manifest
 - CLI golden tests
 
 ## What The Next Engineering Slice Should Cover
 
-- config loading
-- environment and branch mapping from config
-- repository catalog
-- richer manifest generation
-- better JSON contracts
-- a `doctor` command
+- stronger JSON contracts
+- richer release packet structure
+- dependency trailer parsing
+- release-level planning
+- Jira or deployment evidence integration
 
 ## Definition Of Done
 
@@ -46,6 +48,9 @@ A change is done when:
 - Branch diff: `internal/diff/*`
 - Ticket inspection: `internal/inspect/*`
 - Release planning and verification: `internal/plan/*`
+- Config loading: `internal/config/*`
+- Doctor checks: `internal/doctor/*`
+- Release packet generation: `internal/manifest/*`
 - Output: `internal/output/*`
 - Git adapter: `internal/scm/git/*`
 - Shared SCM contracts: `internal/scm/*`

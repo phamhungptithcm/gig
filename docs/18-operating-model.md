@@ -39,17 +39,21 @@ Examples:
 
 A generated release packet for one ticket or a release bundle.
 
-Suggested contents:
+Current packet output already includes:
 
-- ticket list
-- repository list
-- commits or PRs included
 - source and target branch comparison
-- dependency links
 - risk summary
 - manual steps
-- approval checklist
+- QA checklist
+- client review notes
+- release manager checklist
+
+Later it should also grow toward:
+
+- multi-ticket bundles
+- approval checklist history
 - rollback notes
+- external evidence from Jira, PRs, and deployments
 
 ### Risk Signal
 
@@ -89,29 +93,31 @@ Build a promotion plan with risks, blockers, and manual steps.
 
 Run pre-release checks and emit `safe / warning / blocked` outcomes.
 
+### `gig manifest generate`
+
+Produce a Markdown or JSON release packet for QA, client review, and release managers.
+
+### `gig doctor`
+
+Check config coverage, branch mapping, and repo catalog quality.
+
 ## Recommended Next Command Additions
 
 ### `gig plan --release <release-id>`
 
 Build a release plan for multiple tickets together.
 
-### `gig manifest generate`
+## Current Config Direction
 
-Produce a JSON or Markdown release packet for review and audit.
-
-### `gig doctor`
-
-Check branch naming, ticket discipline, config quality, and missing integration data.
-
-## Recommended Config Direction
-
-The current config spec should expand beyond simple scanner defaults.
-
-Important additions:
+The current config already supports:
 
 - repository catalog with service names and owners
 - environment-to-branch mapping
-- repository type or risk type such as `app`, `db`, `mendix`, `infra`
+- repository kind such as `app`, `db`, `mendix`, or `infra`
+- simple repo notes that can appear in release packets
+
+Next useful additions:
+
 - manual-step definitions
 - deployment source configuration
 - issue tracker configuration
@@ -139,11 +145,12 @@ The practical order should be:
 
 1. Git history and patch-based comparison
 2. repository and service catalog
-3. JSON output and release manifest generation
+3. release packet and stronger JSON output
 4. Jira work item enrichment
 5. GitHub or GitLab pull request and deployment evidence
-6. controlled promote execution
-7. SVN and advanced enterprise adapters
+6. multi-ticket release planning
+7. controlled promote execution
+8. SVN and advanced enterprise adapters
 
 ## Adoption Path For Teams
 
@@ -153,15 +160,15 @@ Use `gig` in read-only mode for ticket inspection and branch comparison.
 
 ### Step 2
 
-Standardize branch names, commit messages, and trailers.
+Add a small config file so branch names, service names, and owners are clear.
 
 ### Step 3
 
-Add repo catalog and environment mapping config.
+Use `gig doctor` until the workspace and config are reliable.
 
 ### Step 4
 
-Start generating release manifests and review packets in CI.
+Start generating release packets for QA, client review, and release managers.
 
 ### Step 5
 
@@ -169,4 +176,4 @@ Integrate Jira and deployment evidence.
 
 ### Step 6
 
-Enable controlled promotion planning and, later, controlled execution.
+Move toward release bundles and, later, controlled execution.

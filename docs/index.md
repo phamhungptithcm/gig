@@ -1,25 +1,26 @@
 # gig
 
-`gig` is a small CLI that helps teams answer one release question:
+`gig` helps teams answer one release question before they move code forward:
 
-`Did we miss any change for this ticket before moving it forward?`
+`Did we miss any change for this ticket?`
 
-If your team works across many repos, verifies the same ticket many times, and still promotes changes by branch, `gig` is built for that problem.
+If one ticket can touch many repos, fail review a few times, and pick up follow-up fixes before release, this is the workflow `gig` is built for.
 
 ## What You Can Do Today
 
 With the current version of `gig`, you can:
 
 - scan a workspace and find repos quickly
-- find every commit for one ticket
 - inspect the full ticket story across repos
-- check whether a ticket is behind in `dev`, `test`, or `main`
-- verify whether the next promotion step looks safe
-- generate a read-only promotion plan in human or JSON format
+- see where a ticket is present, aligned, or behind across env branches
+- verify whether the next release move looks `safe`, `warning`, or `blocked`
+- generate a Markdown release packet for QA, client review, and release managers
+- generate JSON output for CI and scripts
+- use a config file for real branch names, repo owners, service names, and repo types
+- run `gig doctor` to check config coverage and environment mapping health
 
 Everything is read-only right now.
-`gig` helps you inspect, verify, and plan.
-It does not cherry-pick, merge, or deploy by itself.
+`gig` helps people inspect, verify, and prepare before a risky release move happens.
 
 ## Start Here
 
@@ -27,15 +28,17 @@ If you are new, read these in order:
 
 1. [Quick Start](19-quickstart.md)
 2. [CLI Guide](03-cli-spec.md)
-3. [Roadmap](13-roadmap.md)
+3. [Config Spec](09-config-spec.md)
+4. [Roadmap](13-roadmap.md)
 
 ## Most Useful Commands
 
 ```bash
 gig --help
 gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
-gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
+gig verify --ticket ABC-123 --from test --to main --path .
+gig manifest generate --ticket ABC-123 --from test --to main --path .
+gig doctor --path .
 ```
 
 ## When `gig` Is A Good Fit
@@ -44,21 +47,21 @@ gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=tes
 
 - "This ticket touched three repos. Did we collect everything?"
 - "QA passed, but is `test` still behind `dev` for this ticket?"
-- "Client asked for one more fix. Did that commit reach `main` yet?"
-- "This ticket includes DB work. Do we need a manual review before release?"
+- "Client asked for one more fix. Did that last commit reach `main` yet?"
+- "This ticket includes DB or config work. What needs manual review before release?"
 
 ## What The Docs Cover
 
-- [Product Overview](00-product-overview.md)
-  explains what the project is and who it helps
+- [Quick Start](19-quickstart.md)
+  start fast with the commands most teams use first
 - [CLI Guide](03-cli-spec.md)
-  shows every command and when to use it
+  see every command, when to use it, and sample output formats
+- [Config Spec](09-config-spec.md)
+  map real branches, services, owners, and repo kinds
 - [Branching And Release](15-branching-and-release.md)
-  explains this repo's own release flow
-- [Real-World Release Workflows](16-real-world-release-workflows.md)
-  shows the real team situations the tool is designed for
+  understand this repo's own release flow
 - [Roadmap](13-roadmap.md)
-  shows what is already here and what comes next
+  see what is shipped, what is next, and what is later
 
 ## Current Direction
 
@@ -66,6 +69,6 @@ gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=tes
 
 The short version:
 
-- today it helps you see and verify
-- next it should help you produce better release packets and team config
-- later it can support richer release evidence and controlled execution
+- today it helps you see, verify, and package release information
+- next it should add richer evidence from Jira, PRs, and deployments
+- later it can support release bundles and controlled execution

@@ -167,6 +167,67 @@ func TestAppVerifyGolden(t *testing.T) {
 	assertGolden(t, "verify.golden", normalizeOutput(stdout, workspace))
 }
 
+func TestAppManifestGenerateGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	writeFile(t, filepath.Join(workspace, "gig.yaml"), `
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+environments:
+  - name: build
+    branch: dev
+  - name: qa
+    branch: test
+  - name: prod
+    branch: main
+repositories:
+  - path: a-service
+    service: Accounts API
+    owner: Backend Team
+    kind: app
+    notes:
+      - Verify login and billing summary.
+`)
+
+	stdout, stderr, exitCode := runApp(t, "manifest", "generate", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("manifest generate exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "manifest_generate.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppDoctorGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	writeFile(t, filepath.Join(workspace, "gig.yaml"), `
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+environments:
+  - name: build
+    branch: dev
+  - name: qa
+    branch: qa
+  - name: prod
+    branch: main
+repositories:
+  - path: a-service
+    service: Accounts API
+    owner: Backend Team
+  - path: apps/missing-ui
+    service: Admin Web
+    owner: Frontend Team
+    kind: app
+`)
+
+	stdout, stderr, exitCode := runApp(t, "doctor", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("doctor exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "doctor.golden", normalizeOutput(stdout, workspace))
+}
+
 func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	t.Parallel()
 
@@ -197,6 +258,12 @@ func TestAppRootHelpReturnsZero(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "scan        Find repositories under a path") {
 		t.Fatalf("--help stderr = %q, want command summary", stderr)
+	}
+	if !strings.Contains(stderr, "manifest    Generate a release packet for QA, client, and release review") {
+		t.Fatalf("--help stderr = %q, want manifest command summary", stderr)
+	}
+	if !strings.Contains(stderr, "doctor      Check config coverage, env mappings, and repo catalog health") {
+		t.Fatalf("--help stderr = %q, want doctor command summary", stderr)
 	}
 }
 

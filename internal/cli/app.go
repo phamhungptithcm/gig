@@ -11,7 +11,9 @@ import (
 	"gig/internal/buildinfo"
 	"gig/internal/config"
 	diffsvc "gig/internal/diff"
+	doctorsvc "gig/internal/doctor"
 	inspectsvc "gig/internal/inspect"
+	manifestsvc "gig/internal/manifest"
 	"gig/internal/output"
 	plansvc "gig/internal/plan"
 	"gig/internal/repo"
@@ -27,34 +29,18 @@ type App struct {
 	stdout  io.Writer
 	stderr  io.Writer
 	scanner *repo.Scanner
-	finder  *ticketsvc.Service
-	diff    *diffsvc.Service
-	inspect *inspectsvc.Service
-	planner *plansvc.Service
 }
 
 func NewApp(stdout, stderr io.Writer) (*App, error) {
-	cfg := config.Default()
-	parser, err := ticketsvc.NewParser(cfg.TicketPattern)
+	parser, err := ticketsvc.NewParser(config.Default().TicketPattern)
 	if err != nil {
 		return nil, err
 	}
 
-	registry := scm.NewRegistry(
-		gitscm.NewAdapter(parser),
-		svnscm.NewAdapter(),
-	)
-
-	scanner := repo.NewScanner(registry)
-
 	return &App{
 		stdout:  stdout,
 		stderr:  stderr,
-		scanner: scanner,
-		finder:  ticketsvc.NewService(scanner, registry, parser),
-		diff:    diffsvc.NewService(scanner, registry, parser),
-		inspect: inspectsvc.NewService(scanner, registry, parser),
-		planner: plansvc.NewService(scanner, registry, parser),
+		scanner: repo.NewScanner(newRegistry(parser)),
 	}, nil
 }
 
@@ -79,6 +65,10 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runPlan(ctx, args[1:])
 	case "verify":
 		return a.runVerify(ctx, args[1:])
+	case "manifest":
+		return a.runManifest(ctx, args[1:])
+	case "doctor":
+		return a.runDoctor(ctx, args[1:])
 	case "version", "-v", "--version":
 		return a.runVersion()
 	case "help", "-h", "--help":
@@ -132,7 +122,7 @@ func (a *App) runScan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runFind(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		a.printFindUsage()
@@ -149,6 +139,7 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
 	if err := fs.Parse(args); err != nil {
 		a.printFindUsage()
 		return usageExitCode
@@ -166,13 +157,19 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 	}
 
 	ticketID := normalizeTicketID(fs.Arg(0))
-	repositories, err := a.scanner.Discover(ctx, resolvedPath)
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
 	}
 
-	results, err := a.finder.FindInRepositories(ctx, repositories, ticketID)
+	repositories, err := runtime.scanner.Discover(ctx, resolvedPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
+		return 1
+	}
+
+	results, err := runtime.finder.FindInRepositories(ctx, repositories, ticketID)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
@@ -196,6 +193,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
 	ticketID := fs.String("ticket", "", "Ticket ID to compare")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
@@ -217,13 +215,19 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 	}
 
 	normalizedTicketID := normalizeTicketID(*ticketID)
-	repositories, err := a.scanner.Discover(ctx, resolvedPath)
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
 		return 1
 	}
 
-	results, err := a.diff.CompareTicketInRepositories(ctx, repositories, normalizedTicketID, *fromBranch, *toBranch)
+	repositories, err := runtime.scanner.Discover(ctx, resolvedPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
+		return 1
+	}
+
+	results, err := runtime.diff.CompareTicketInRepositories(ctx, repositories, normalizedTicketID, *fromBranch, *toBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
 		return 1
@@ -238,7 +242,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 }
 
 func (a *App) runInspect(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		a.printInspectUsage()
@@ -255,6 +259,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
 	if err := fs.Parse(args); err != nil {
 		a.printInspectUsage()
 		return usageExitCode
@@ -272,7 +277,13 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	}
 
 	ticketID := normalizeTicketID(fs.Arg(0))
-	results, scannedRepoCount, err := a.inspect.Inspect(ctx, resolvedPath, ticketID)
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
+		return 1
+	}
+
+	results, scannedRepoCount, err := runtime.inspect.Inspect(ctx, resolvedPath, ticketID)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
@@ -303,7 +314,7 @@ func (a *App) runEnv(ctx context.Context, args []string) int {
 }
 
 func (a *App) runEnvStatus(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-envs", "--envs")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		a.printEnvStatusUsage()
@@ -320,7 +331,8 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	envsSpec := fs.String("envs", defaultEnvironmentSpec, "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	if err := fs.Parse(args); err != nil {
 		a.printEnvStatusUsage()
 		return usageExitCode
@@ -331,20 +343,26 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	environments, err := parseEnvironmentSpec(*envsSpec)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
-		return usageExitCode
-	}
-
 	resolvedPath, err := normalizeCLIPath(*path)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
 
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
+		return 1
+	}
+
+	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
+		return usageExitCode
+	}
+
 	ticketID := normalizeTicketID(fs.Arg(0))
-	results, scannedRepoCount, err := a.inspect.EnvironmentStatus(ctx, resolvedPath, ticketID, environments)
+	results, scannedRepoCount, err := runtime.inspect.EnvironmentStatus(ctx, resolvedPath, ticketID, environments)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
@@ -368,10 +386,11 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
 	ticketID := fs.String("ticket", "", "Ticket ID to plan")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
-	envsSpec := fs.String("envs", defaultEnvironmentSpec, "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
 
 	if err := fs.Parse(args); err != nil {
@@ -390,20 +409,26 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	environments, err := parseEnvironmentSpec(*envsSpec)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
-		return usageExitCode
-	}
-
 	resolvedPath, err := normalizeCLIPath(*path)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
 	}
 
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return 1
+	}
+
+	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return usageExitCode
+	}
+
 	normalizedTicketID := normalizeTicketID(*ticketID)
-	promotionPlan, err := a.planner.BuildPromotionPlan(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
+	promotionPlan, err := runtime.planner.BuildPromotionPlan(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
@@ -443,10 +468,11 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
 	ticketID := fs.String("ticket", "", "Ticket ID to verify")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
-	envsSpec := fs.String("envs", defaultEnvironmentSpec, "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
 
 	if err := fs.Parse(args); err != nil {
@@ -465,20 +491,26 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	environments, err := parseEnvironmentSpec(*envsSpec)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
-		return usageExitCode
-	}
-
 	resolvedPath, err := normalizeCLIPath(*path)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
 	}
 
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return 1
+	}
+
+	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return usageExitCode
+	}
+
 	normalizedTicketID := normalizeTicketID(*ticketID)
-	verification, err := a.planner.VerifyPromotion(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
+	verification, err := runtime.planner.VerifyPromotion(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
@@ -508,6 +540,170 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	return 0
 }
 
+func (a *App) runManifest(ctx context.Context, args []string) int {
+	if len(args) == 0 || hasHelpFlag(args) {
+		a.printManifestUsage()
+		return 0
+	}
+
+	switch args[0] {
+	case "generate":
+		return a.runManifestGenerate(ctx, args[1:])
+	default:
+		fmt.Fprintf(a.stderr, "unknown manifest subcommand %q\n\n", args[0])
+		a.printManifestUsage()
+		return usageExitCode
+	}
+}
+
+func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printManifestGenerateUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("manifest generate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	ticketID := fs.String("ticket", "", "Ticket ID to package")
+	fromBranch := fs.String("from", "", "Source branch")
+	toBranch := fs.String("to", "", "Target branch")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	format := fs.String("format", string(manifestFormatMarkdown), "Output format: markdown or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printManifestGenerateUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "manifest generate does not accept positional arguments")
+		a.printManifestGenerateUsage()
+		return usageExitCode
+	}
+
+	selectedFormat, err := parseManifestFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		return 1
+	}
+
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		return 1
+	}
+
+	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		return usageExitCode
+	}
+
+	packet, err := runtime.manifest.Generate(ctx, resolvedPath, runtime.loaded, normalizeTicketID(*ticketID), *fromBranch, *toBranch, environments)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		return 1
+	}
+
+	switch selectedFormat {
+	case manifestFormatMarkdown:
+		if err := output.RenderReleasePacketMarkdown(a.stdout, packet); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case manifestFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string                    `json:"command"`
+			Packet  manifestsvc.ReleasePacket `json:"packet"`
+		}{
+			Command: "manifest generate",
+			Packet:  packet,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func (a *App) runDoctor(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printDoctorUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printDoctorUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "doctor does not accept positional arguments")
+		a.printDoctorUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "doctor failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "doctor failed: %v\n", err)
+		return 1
+	}
+
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "doctor failed: %v\n", err)
+		return 1
+	}
+
+	report, err := runtime.doctor.Run(ctx, resolvedPath, runtime.loaded)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "doctor failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderDoctor(a.stdout, report); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string           `json:"command"`
+			Report  doctorsvc.Report `json:"report"`
+		}{
+			Command: "doctor",
+			Report:  report,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
 func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "gig helps teams check whether a ticket is really ready for the next release step.")
 	fmt.Fprintln(a.stderr)
@@ -517,7 +713,9 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "Start here:")
 	fmt.Fprintln(a.stderr, "  gig --help")
 	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --path .")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --from test --to main --path .")
+	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 --from test --to main --path .")
+	fmt.Fprintln(a.stderr, "  gig doctor --path .")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Commands:")
 	fmt.Fprintln(a.stderr, "  scan        Find repositories under a path")
@@ -527,6 +725,8 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  diff        Compare one branch to another for a ticket")
 	fmt.Fprintln(a.stderr, "  verify      Return safe, warning, or blocked for the next move")
 	fmt.Fprintln(a.stderr, "  plan        Build a read-only promotion plan")
+	fmt.Fprintln(a.stderr, "  manifest    Generate a release packet for QA, client, and release review")
+	fmt.Fprintln(a.stderr, "  doctor      Check config coverage, env mappings, and repo catalog health")
 	fmt.Fprintln(a.stderr, "  version     Show the installed version")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "More help:")
@@ -538,32 +738,45 @@ func (a *App) printScanUsage() {
 }
 
 func (a *App) printFindUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> --path .")
+	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> --path . [--config gig.yaml]")
 }
 
 func (a *App) printDiffUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
+	fmt.Fprintln(a.stderr, "Usage: gig diff --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml]")
 }
 
 func (a *App) printInspectUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> --path .")
+	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> --path . [--config gig.yaml]")
 }
 
 func (a *App) printEnvUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> --path . [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printEnvStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> --path . [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printPlanUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig plan --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig plan --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printVerifyUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig verify --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig verify --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+}
+
+func (a *App) printManifestUsage() {
+	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+}
+
+func (a *App) printManifestGenerateUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig manifest generate --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+}
+
+func (a *App) printDoctorUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig doctor --path . [--config gig.yaml] [--format human|json]")
 }
 
 func hasHelpFlag(args []string) bool {
@@ -604,12 +817,30 @@ const (
 	outputFormatJSON  outputFormat = "json"
 )
 
+type manifestFormat string
+
+const (
+	manifestFormatMarkdown manifestFormat = "markdown"
+	manifestFormatJSON     manifestFormat = "json"
+)
+
 func parseOutputFormat(raw string) (outputFormat, error) {
 	switch outputFormat(strings.ToLower(strings.TrimSpace(raw))) {
 	case outputFormatHuman:
 		return outputFormatHuman, nil
 	case outputFormatJSON:
 		return outputFormatJSON, nil
+	default:
+		return "", fmt.Errorf("unsupported format %q", raw)
+	}
+}
+
+func parseManifestFormat(raw string) (manifestFormat, error) {
+	switch manifestFormat(strings.ToLower(strings.TrimSpace(raw))) {
+	case manifestFormatMarkdown:
+		return manifestFormatMarkdown, nil
+	case manifestFormatJSON:
+		return manifestFormatJSON, nil
 	default:
 		return "", fmt.Errorf("unsupported format %q", raw)
 	}
@@ -656,6 +887,69 @@ func parseEnvironmentSpec(spec string) ([]inspectsvc.Environment, error) {
 	}
 
 	return environments, nil
+}
+
+func resolveEnvironments(spec string, loaded config.Loaded) ([]inspectsvc.Environment, error) {
+	if strings.TrimSpace(spec) != "" {
+		return parseEnvironmentSpec(spec)
+	}
+
+	environments := make([]inspectsvc.Environment, 0, len(loaded.Config.Environments))
+	for _, environment := range loaded.Config.Environments {
+		environments = append(environments, inspectsvc.Environment{
+			Name:   environment.Name,
+			Branch: environment.Branch,
+		})
+	}
+	if len(environments) == 0 {
+		return nil, fmt.Errorf("at least one environment mapping is required")
+	}
+	return environments, nil
+}
+
+type commandRuntime struct {
+	loaded   config.Loaded
+	scanner  *repo.Scanner
+	finder   *ticketsvc.Service
+	diff     *diffsvc.Service
+	inspect  *inspectsvc.Service
+	planner  *plansvc.Service
+	doctor   *doctorsvc.Service
+	manifest *manifestsvc.Service
+}
+
+func newCommandRuntime(path, configPath string) (commandRuntime, error) {
+	loaded, err := config.LoadForPath(path, configPath)
+	if err != nil {
+		return commandRuntime{}, err
+	}
+
+	parser, err := ticketsvc.NewParser(loaded.Config.TicketPattern)
+	if err != nil {
+		return commandRuntime{}, err
+	}
+
+	registry := newRegistry(parser)
+	scanner := repo.NewScanner(registry)
+	planner := plansvc.NewService(scanner, registry, parser)
+
+	return commandRuntime{
+		loaded:   loaded,
+		scanner:  scanner,
+		finder:   ticketsvc.NewService(scanner, registry, parser),
+		diff:     diffsvc.NewService(scanner, registry, parser),
+		inspect:  inspectsvc.NewService(scanner, registry, parser),
+		planner:  planner,
+		doctor:   doctorsvc.NewService(scanner, registry),
+		manifest: manifestsvc.NewService(planner),
+	}, nil
+}
+
+func newRegistry(parser ticketsvc.Parser) *scm.Registry {
+	return scm.NewRegistry(
+		gitscm.NewAdapter(parser),
+		svnscm.NewAdapter(),
+	)
 }
 
 func reorderArgsWithSinglePositional(args []string, flagsWithValues ...string) ([]string, error) {

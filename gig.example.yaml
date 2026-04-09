@@ -1,0 +1,27 @@
+ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
+
+environments:
+  - name: dev
+    branch: develop
+  - name: test
+    branch: release/test
+  - name: prod
+    branch: main
+
+repositories:
+  - path: services/accounts-api
+    service: Accounts API
+    owner: Backend Team
+    kind: app
+    notes:
+      - Verify login, billing summary, and error handling in QA.
+  - path: apps/admin-web
+    service: Admin Web
+    owner: Frontend Team
+    kind: app
+  - path: db/shared-schema
+    service: Shared Schema
+    owner: Platform Team
+    kind: db
+    notes:
+      - Review migration order and rollback notes before release.

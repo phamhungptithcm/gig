@@ -31,24 +31,32 @@ Shipped:
 - `plan`
 - JSON output for release planning and review
 
+### Team Workflow Support
+
+Shipped:
+
+- config loading from `gig.yaml` style files
+- environment and branch mapping from config
+- repository catalog with service, owner, kind, and notes
+- `manifest generate` for Markdown or JSON release packets
+- `doctor` for config coverage and repo mapping checks
+
 ## What Comes Next
 
 ### Near-Term
 
-- config loading
-- environment and branch mapping from config
-- repository or service catalog
-- richer release manifest output
-- `manifest generate`
-- `doctor`
+- richer JSON contracts for downstream tooling
+- stronger release packet structure and bundle-friendly output
+- dependency trailer parsing
+- ticket snapshots
+- better multi-repo examples and docs
 
 ### After That
 
-- dependency trailer parsing
-- ticket snapshots
 - Jira work-item enrichment
 - PR and deployment evidence
 - multi-ticket release bundles
+- release-level planning such as `gig plan --release <release-id>`
 
 ### Later
 
@@ -56,7 +64,7 @@ Shipped:
 - safer backport or cherry-pick workflows
 - rollback notes
 - stronger reporting
-- SVN support
+- broader enterprise adapter coverage including SVN
 
 ## Release Philosophy
 

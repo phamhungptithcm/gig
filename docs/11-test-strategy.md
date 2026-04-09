@@ -12,6 +12,9 @@ The tests should tell us quickly if we broke:
 - environment status
 - release verification
 - promotion planning output
+- config loading
+- release packet rendering
+- doctor checks
 
 ## Main Test Types
 
@@ -23,7 +26,7 @@ Use unit tests for:
 - repo detection
 - diff orchestration
 - inspect and plan logic
-- config parsing later
+- config parsing
 
 ### Adapter Tests
 
@@ -44,14 +47,18 @@ Current good targets:
 - `env status`
 - `verify`
 - `plan`
+- `manifest generate`
+- `doctor`
 
 ### JSON Contract Tests
 
 JSON output should stay stable enough for scripts and CI tooling.
 
-Current good target:
+Current good targets:
 
 - `plan --format json`
+- `doctor --format json`
+- `manifest generate --format json`
 
 ## Current Coverage
 
@@ -63,6 +70,8 @@ Current good target:
   - enclosing repo detection
 - `internal/ticket`
   - ticket extraction, normalization, and validation
+- `internal/config`
+  - config loading and repo lookup
 - `internal/diff`
   - compare orchestration
 - `internal/inspect`
@@ -78,6 +87,6 @@ Current good target:
 ## What We Still Want Next
 
 - stronger JSON contract coverage
-- config loading tests once config exists
-- release manifest tests
+- more release packet scenarios
 - more mixed-branch and multi-repo scenarios
+- integration-focused tests once Jira and deployment evidence are added

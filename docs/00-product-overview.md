@@ -2,9 +2,9 @@
 
 ## What `gig` Is
 
-`gig` is a command-line tool for teams that release work by ticket.
+`gig` is a command-line tool for teams that release work by ticket across more than one repo.
 
-It is especially useful when one ticket can touch several repos and pick up more commits over time before it is finally approved.
+It is useful when one ticket can pick up more commits over time before it is finally approved.
 
 ## The Simple Promise
 
@@ -20,8 +20,8 @@ Before someone moves a ticket from one branch to the next, `gig` helps them answ
 `gig` is useful for:
 
 - developers who keep adding follow-up fixes to the same ticket
-- QA or UAT coordinators who want to see what changed since the last review round
-- release engineers who need a clear promotion plan
+- QA or UAT coordinators who want to know what changed since the last review round
+- release engineers who need a clear release packet and promotion plan
 - outsourcing or delivery leads who need confidence across many repos
 
 ## What The Project Can Do Today
@@ -35,6 +35,9 @@ Today, `gig` can:
 - show environment status like `dev -> test -> prod`
 - verify a promotion as `safe`, `warning`, or `blocked`
 - output a read-only promotion plan in human-readable or JSON form
+- generate a Markdown or JSON release packet
+- load team config from a file
+- check config and repo coverage with `gig doctor`
 
 ## What It Does Not Do Yet
 
@@ -42,8 +45,8 @@ Today, `gig` does not:
 
 - move commits for you
 - resolve conflicts
-- read Jira or deployment tools yet
-- know your team config from a file yet
+- read Jira, PR, or deployment tools yet
+- build multi-ticket release bundles yet
 
 That is by design.
 The project is still focused on helping teams make better release decisions before any write action happens.
