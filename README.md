@@ -123,14 +123,59 @@ There is also a ready sample here:
 
 ## Install
 
-### Option 1: Download the latest release
+Package managers publish `gig` as `gig-cli` to avoid name collisions, but the command you run after install stays `gig`.
+
+### Quick Install On macOS And Linux With Homebrew
+
+```bash
+brew install phamhungptithcm/gig/gig-cli
+gig version
+```
+
+### Quick Install On Windows With Scoop
+
+```powershell
+scoop bucket add gig https://github.com/phamhungptithcm/gig
+scoop install gig/gig-cli
+gig version
+```
+
+### Quick Install On macOS And Linux Without Homebrew
+
+Install the latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | GIG_VERSION=v0.1.0 sh
+```
+
+### Quick Install On Windows PowerShell
+
+Install the latest release:
+
+```powershell
+irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
+```
+
+Install a specific version:
+
+```powershell
+$env:GIG_VERSION="v0.1.0"; irm https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.ps1 | iex
+```
+
+### Manual Download
 
 1. Open [GitHub Releases](https://github.com/phamhungptithcm/gig/releases/latest)
 2. Download the file for your operating system
 3. Extract it
 4. Put `gig` or `gig.exe` somewhere on your `PATH`
 
-### Option 2: Build from source
+### Build From Source
 
 Requirements:
 
