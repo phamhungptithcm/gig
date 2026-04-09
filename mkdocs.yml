@@ -25,6 +25,9 @@ nav:
   - Roadmap: 13-roadmap.md
   - Codex Implementation Plan: 14-codex-implementation-plan.md
   - Branching And Release: 15-branching-and-release.md
+  - Real-World Release Workflows: 16-real-world-release-workflows.md
+  - Product Strategy: 17-product-strategy.md
+  - Operating Model: 18-operating-model.md
 
 markdown_extensions:
   - admonition

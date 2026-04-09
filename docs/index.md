@@ -25,3 +25,6 @@
 - [Test strategy](11-test-strategy.md)
 - [Roadmap](13-roadmap.md)
 - [Branching and release](15-branching-and-release.md)
+- [Real-world release workflows](16-real-world-release-workflows.md)
+- [Product strategy](17-product-strategy.md)
+- [Operating model](18-operating-model.md)
