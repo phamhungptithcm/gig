@@ -1,156 +1,51 @@
-# Codex Implementation Plan
+# Engineering Implementation Plan
 
 ## Purpose
 
-This file is for Codex-driven implementation work.
+This page tracks the internal implementation direction for the codebase.
 
-It defines:
+It is mostly useful for maintainers.
 
-- task breakdown
-- implementation order
-- definition of done
-- file ownership by area
+## What Is Implemented Now
 
-## Implementation Order
+- repository scanning
+- Git-first SCM abstraction
+- ticket search
+- branch diff
+- ticket inspection across repos
+- environment status
+- release verification
+- read-only promotion planning
+- JSON output for plan and verify
+- CLI golden tests
 
-### Step 1: Foundation
+## What The Next Engineering Slice Should Cover
 
-Tasks:
-
-- create repo structure
-- wire CLI bootstrap
-- define SCM interface
-- implement repository scanner
-
-Main files:
-
-- `cmd/gig/main.go`
-- `internal/cli/*`
-- `internal/repo/*`
-- `internal/scm/*`
-
-### Step 2: MVP Commands
-
-Tasks:
-
-- implement `scan`
-- implement `find`
-- implement `diff`
-- add output renderer
-
-Main files:
-
-- `internal/ticket/*`
-- `internal/diff/*`
-- `internal/output/*`
-- `internal/cli/*`
-
-### Step 3: Tests
-
-Tasks:
-
-- unit tests
-- Git adapter tests
-- CLI output tests later
-
-Main files:
-
-- `internal/**/*_test.go`
-
-### Step 4: Promote Design
-
-Tasks:
-
-- define promotion models
-- define dry-run flow
-- define confirmation flow
-
-Main files:
-
-- `internal/promote/*`
-- `docs/07-promotion-engine.md`
-
-### Step 5: Advanced Features
-
-Tasks:
-
-- dependency parsing
-- snapshot support
-- SVN adapter
-- Jira and Mendix extensions
-
-Main files:
-
-- `internal/dependency/*`
-- `internal/snapshot/*`
-- `internal/scm/svn/*`
+- config loading
+- environment and branch mapping from config
+- repository catalog
+- richer manifest generation
+- better JSON contracts
+- a `doctor` command
 
 ## Definition Of Done
 
-A task is done when:
+A change is done when:
 
-- code builds
+- the code builds
 - tests pass
-- behavior is documented
-- output is readable
+- docs match the real behavior
+- output is easy to read
 - no hidden destructive action is introduced
-- package boundaries stay clean
 
-## File Ownership By Area
+## Main Code Areas
 
-### CLI
-
-- `cmd/gig/*`
-- `internal/cli/*`
-
-### Domain And SCM Contracts
-
-- `internal/scm/types.go`
-- `internal/scm/registry.go`
-
-### Git Adapter
-
-- `internal/scm/git/*`
-
-### SVN Adapter
-
-- `internal/scm/svn/*`
-
-### Repository Discovery
-
-- `internal/repo/*`
-
-### Ticket Search
-
-- `internal/ticket/*`
-
-### Branch Diff
-
-- `internal/diff/*`
-
-### Output
-
-- `internal/output/*`
-
-### Future Promotion Work
-
-- `internal/promote/*`
-- `internal/dependency/*`
-- `internal/snapshot/*`
-
-## Current Status
-
-Implemented now:
-
-- foundation structure
-- Git-first scan
-- ticket find
-- branch diff
-- core tests
-
-Planned next:
-
-- config loading
-- JSON output
-- promote dry-run
-- richer dependency logic
+- CLI: `cmd/gig/*`, `internal/cli/*`
+- Repo discovery: `internal/repo/*`
+- Ticket search: `internal/ticket/*`
+- Branch diff: `internal/diff/*`
+- Ticket inspection: `internal/inspect/*`
+- Release planning and verification: `internal/plan/*`
+- Output: `internal/output/*`
+- Git adapter: `internal/scm/git/*`
+- Shared SCM contracts: `internal/scm/*`

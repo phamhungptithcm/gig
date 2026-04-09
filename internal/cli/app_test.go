@@ -182,6 +182,24 @@ func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	}
 }
 
+func TestAppRootHelpReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	stdout, stderr, exitCode := runApp(t, "--help")
+	if exitCode != 0 {
+		t.Fatalf("--help exit code = %d, want 0", exitCode)
+	}
+	if stdout != "" {
+		t.Fatalf("--help stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "gig <command> [flags]") {
+		t.Fatalf("--help stderr = %q, want root usage", stderr)
+	}
+	if !strings.Contains(stderr, "scan        Find repositories under a path") {
+		t.Fatalf("--help stderr = %q, want command summary", stderr)
+	}
+}
+
 func TestAppVersionReturnsBuildInfo(t *testing.T) {
 	t.Parallel()
 

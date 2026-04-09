@@ -3,6 +3,7 @@
 /site/
 /gig
 /.tmp-docs-venv/
+/.venv-docs/
 
 coverage.out
 *.out

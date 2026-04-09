@@ -135,3 +135,21 @@ The broader delivery metrics can still align with DORA-style outcomes such as de
 - Jira enrichment
 - Mendix and other high-risk change heuristics
 - stronger reporting for mixed environments
+
+## Where The Project Is Now
+
+Today, `gig` is between Stage 2 and Stage 3.
+
+Already available:
+
+- ticket inspection across repos
+- environment-aware status
+- risk and manual-step hints
+- read-only verification and promotion planning
+- JSON output for `plan` and `verify`
+
+Not here yet:
+
+- richer release packet generation
+- Jira, PR, and deployment evidence
+- controlled write execution

@@ -69,9 +69,9 @@ Risk signals should come from facts such as:
 - repository unavailable
 - target branch behind expected baseline
 
-## Recommended Command Direction
+## Current Command Direction
 
-The current commands are a good MVP base, but the product should grow toward:
+The current command set already covers the core read-only workflow:
 
 ### `gig inspect <ticket-id>`
 
@@ -85,6 +85,12 @@ Show what is known about the ticket in each environment line.
 
 Build a promotion plan with risks, blockers, and manual steps.
 
+### `gig verify`
+
+Run pre-release checks and emit `safe / warning / blocked` outcomes.
+
+## Recommended Next Command Additions
+
 ### `gig plan --release <release-id>`
 
 Build a release plan for multiple tickets together.
@@ -92,10 +98,6 @@ Build a release plan for multiple tickets together.
 ### `gig manifest generate`
 
 Produce a JSON or Markdown release packet for review and audit.
-
-### `gig verify`
-
-Run pre-release checks and emit `safe / warning / blocked` outcomes.
 
 ### `gig doctor`
 

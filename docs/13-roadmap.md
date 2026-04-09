@@ -1,63 +1,65 @@
 # Roadmap
 
-## Strategic Direction
+## Direction In One Sentence
 
-`gig` should evolve from a read-only ticket commit helper into a ticket-aware release reconciliation and promotion planning tool.
+`gig` is moving from a ticket commit helper into a ticket-aware release workflow tool for multi-repo teams.
 
-The roadmap should therefore optimize for five pillars:
+## What Is Already Here
 
-- visibility across repositories
-- environment-aware release evidence
-- safer promotion planning
-- machine-readable release outputs
-- enterprise and mixed-tooling support
+### Base CLI
 
-## v0.1.x: Stabilize The MVP
+Shipped:
 
-- harden `scan`, `find`, and `diff`
-- improve CLI output and regression coverage
-- keep Git-first repository discovery stable
-- tighten docs, releases, and project automation
+- `scan`
+- `find`
+- `diff`
+- `version`
 
-## v0.2.x: Add Data Contracts And Team Configuration
+### Release Visibility
+
+Shipped:
+
+- `inspect`
+- `env status`
+- risk signals for DB, config, and Mendix-style changes
+
+### Read-Only Release Decisions
+
+Shipped:
+
+- `verify`
+- `plan`
+- JSON output for release planning and review
+
+## What Comes Next
+
+### Near-Term
 
 - config loading
+- environment and branch mapping from config
 - repository or service catalog
-- environment-to-branch mapping
-- JSON output for CI and automation
-- better error models and report structure
+- richer release manifest output
+- `manifest generate`
+- `doctor`
 
-## v0.3.x: Add Ticket Inspection And Release Planning
-
-- `inspect`-style ticket view across repositories
-- richer branch comparison results
-- release manifest generation
-- dry-run promotion plan preview
-- clearer risk, warning, and blocker output
-
-## v0.4.x: Add Evidence And Dependency Awareness
+### After That
 
 - dependency trailer parsing
-- ticket snapshot support
-- pull request or merge request evidence
-- deployment or environment evidence
-- multi-ticket release bundle planning
+- ticket snapshots
+- Jira work-item enrichment
+- PR and deployment evidence
+- multi-ticket release bundles
 
-## v0.5.x: Add Controlled Promotion Execution
+### Later
 
-- confirmation-gated promote execution
-- safer cherry-pick or backport workflows
-- execution reporting
-- rollback notes and manual follow-up guidance
+- controlled promote execution
+- safer backport or cherry-pick workflows
+- rollback notes
+- stronger reporting
+- SVN support
 
-## v0.6.x: Expand Enterprise Coverage
+## Release Philosophy
 
-- SVN implementation
-- Jira enrichment
-- Mendix-specific risk heuristics
-- stronger release reporting for mixed environments
+The project follows one rule:
 
-## General Direction
-
-Each release should keep one rule:
 safe release work comes before clever automation.

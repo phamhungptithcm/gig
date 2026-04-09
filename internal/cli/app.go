@@ -509,17 +509,28 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 }
 
 func (a *App) printRootUsage() {
-	fmt.Fprintln(a.stderr, "gig helps release workflows find ticket-related commits across multiple repositories.")
+	fmt.Fprintln(a.stderr, "gig helps teams check whether a ticket is really ready for the next release step.")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig scan --path .")
-	fmt.Fprintln(a.stderr, "  gig find <ticket-id> --path .")
-	fmt.Fprintln(a.stderr, "  gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
-	fmt.Fprintln(a.stderr, "  gig inspect <ticket-id> --path .")
-	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> --path . [--envs dev=dev,test=test,prod=main]")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs ...] [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig plan --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs ...] [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig version")
+	fmt.Fprintln(a.stderr, "  gig <command> [flags]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Start here:")
+	fmt.Fprintln(a.stderr, "  gig --help")
+	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --path .")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Commands:")
+	fmt.Fprintln(a.stderr, "  scan        Find repositories under a path")
+	fmt.Fprintln(a.stderr, "  find        Find commits for one ticket")
+	fmt.Fprintln(a.stderr, "  inspect     Show the full ticket picture across repositories")
+	fmt.Fprintln(a.stderr, "  env status  Show where a ticket is present or behind across environments")
+	fmt.Fprintln(a.stderr, "  diff        Compare one branch to another for a ticket")
+	fmt.Fprintln(a.stderr, "  verify      Return safe, warning, or blocked for the next move")
+	fmt.Fprintln(a.stderr, "  plan        Build a read-only promotion plan")
+	fmt.Fprintln(a.stderr, "  version     Show the installed version")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "More help:")
+	fmt.Fprintln(a.stderr, "  gig <command> --help")
 }
 
 func (a *App) printScanUsage() {

@@ -1,5 +1,11 @@
 # Examples
 
+If you want the fastest way to learn the CLI, start with:
+
+```bash
+go run ./cmd/gig --help
+```
+
 ## Typical Workspace
 
 ```text

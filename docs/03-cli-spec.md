@@ -1,306 +1,228 @@
-# CLI Spec
+# CLI Guide
 
-## Command Style
+This page explains what each command does and when to use it.
 
-Root form:
+If you are new, start with `gig --help` and then come back here.
+
+## Start Here
+
+### Show all commands
 
 ```bash
-gig <command> [flags]
+gig --help
 ```
 
-The CLI should be easy to use in scripts and also easy to extend later for interactive mode.
+### Get help for one command
+
+```bash
+gig inspect --help
+gig verify --help
+gig plan --help
+```
+
+You can also use:
+
+```bash
+gig help
+```
+
+## Commands At A Glance
+
+| Command | Use it when you want to... |
+| --- | --- |
+| `gig scan` | find repos under a folder |
+| `gig find` | find commits for one ticket |
+| `gig inspect` | see the full ticket story across repos |
+| `gig env status` | check where a ticket is present or behind across env branches |
+| `gig diff` | compare one branch to another for a ticket |
+| `gig verify` | get a quick `safe`, `warning`, or `blocked` result |
+| `gig plan` | build a promotion plan for people or CI |
+| `gig version` | confirm what build you installed |
 
 ## Shared Rules
 
 - commands print human-readable output by default
 - errors go to stderr
 - successful commands exit with code `0`
-- failures exit with non-zero codes
-- read-only commands must never change repositories
+- usage errors return code `2`
+- runtime failures return code `1`
+- current commands are read-only and never change repositories
 
 ## `gig scan`
 
-Purpose:
-Find repositories under a path.
+Use this when you first want to know what repos `gig` can see.
 
 ```bash
 gig scan --path .
 ```
 
-Flags:
+What it shows:
 
-- `--path`: workspace path or repository path; defaults to `.`
-
-Behavior:
-
-- if `--path` is inside a repository, return that repository
-- otherwise recursively scan descendants for supported SCM markers
-- print repository name, SCM type, current branch when available, and root path
-
-Output fields:
-
-- repository name
+- repo name
 - SCM type
-- current branch if known
-- repository path
+- current branch when known
+- repo path
 
 ## `gig find`
 
-Purpose:
-Find commits that match one ticket ID across all detected repositories.
+Use this when you only want the raw commit list for one ticket.
 
 ```bash
 gig find ABC-123 --path .
 ```
 
-Arguments:
+What it shows:
 
-- `<ticket-id>`: required ticket key such as `ABC-123`
-
-Flags:
-
-- `--path`: workspace path or repository path; defaults to `.`
-
-Behavior:
-
-- discover repositories
-- search commit history for commit messages containing the ticket ID
-- group results by repository
-- print short hash, subject, and containing branches when available
-
-Output fields per commit:
-
-- short hash
-- subject
-- branches when available
-
-## `gig diff`
-
-Purpose:
-Show commits for one ticket that exist in the source branch but are still missing in the target branch.
-
-```bash
-gig diff --ticket ABC-123 --from dev --to test --path .
-```
-
-Flags:
-
-- `--ticket`: required ticket key
-- `--from`: required source branch
-- `--to`: required target branch
-- `--path`: workspace path or repository path; defaults to `.`
-
-Behavior:
-
-- discover repositories
-- collect ticket-matching commits reachable from `--from`
-- collect ticket-matching commits reachable from `--to`
-- compare the two branches
-- identify commits present in source but missing in target
-- group results by repository
-
-Output fields per repository:
-
-- source branch name
-- target branch name
-- source commit count
-- target commit count
-- missing commits list
+- matching commits
+- commit messages
+- branches containing those commits when available
 
 ## `gig inspect`
 
-Purpose:
-Show the full ticket picture across detected repositories.
+Use this when you want the full ticket picture across repos.
 
 ```bash
 gig inspect ABC-123 --path .
 ```
 
-Arguments:
+What it shows:
 
-- `<ticket-id>`: required ticket key such as `ABC-123`
-
-Flags:
-
-- `--path`: workspace path or repository path; defaults to `.`
-
-Behavior:
-
-- discover repositories
-- find ticket-matching commits across branches
-- group results by repository
-- show branches where the commits appear
-- infer simple risk signals from changed files such as DB, config, or Mendix-related changes
-
-Output fields per repository:
-
-- ticket commit count
-- branches seen
-- risk signals
-- commit list
+- repos touched by the ticket
+- ticket commit count per repo
+- branches where those commits appear
+- risk signals such as DB, config, or Mendix-style changes
 
 ## `gig env status`
 
-Purpose:
-Show where one ticket is present or behind across environment branches.
+Use this when you want to see where a ticket stands across the environment line.
 
 ```bash
 gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main
 ```
 
-Arguments:
+What it shows:
 
-- `<ticket-id>`: required ticket key such as `ABC-123`
+- whether the ticket is present in each environment branch
+- whether the next environment is behind
+- which repos still need attention before promotion
 
-Flags:
+## `gig diff`
 
-- `--path`: workspace path or repository path; defaults to `.`
-- `--envs`: comma-separated environment mapping; defaults to `dev=dev,test=test,prod=main`
+Use this when you want a simple branch-to-branch comparison for one ticket.
 
-Behavior:
+```bash
+gig diff --ticket ABC-123 --from dev --to test --path .
+```
 
-- discover repositories
-- find ticket-matching commits
-- inspect each configured environment branch
-- compare adjacent environments in the given order
-- show where the ticket is present, aligned, behind, not present, or missing because the branch does not exist
+What it shows:
 
-Output fields per repository:
-
-- ticket commit count
-- branches seen
-- risk signals
-- environment state summary
-- missing commit count from the previous environment when behind
+- commits found in the source branch
+- commits already present in the target branch
+- commits still missing in the target branch
 
 ## `gig verify`
 
-Purpose:
-Run pre-release checks and emit a clear verdict for one ticket promotion.
+Use this when you want a fast release decision.
 
 ```bash
 gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
 ```
 
-Flags:
+Optional JSON output:
 
-- `--ticket`: required ticket key
-- `--from`: required source branch
-- `--to`: required target branch
-- `--path`: workspace path or repository path; defaults to `.`
-- `--envs`: comma-separated environment mapping; defaults to `dev=dev,test=test,prod=main`
-- `--format`: `human` or `json`; defaults to `human`
+```bash
+gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
+```
 
-Behavior:
+What it shows:
 
-- build the same read-only promotion view used by `gig plan`
-- classify the result as `safe`, `warning`, or `blocked`
-- explain why the ticket is or is not ready to move forward
-- highlight manual-review steps inferred from changed files
-
-Output fields:
-
-- overall verdict
-- verification reasons
-- per-repository checks
-- manual steps
+- one overall verdict: `safe`, `warning`, or `blocked`
+- why the tool gave that verdict
+- per-repo checks
+- manual-review steps when risky files are detected
 
 ## `gig plan`
 
-Purpose:
-Build a read-only promotion plan for one ticket between two branches.
+Use this when you want a clear, read-only promotion plan.
 
 ```bash
 gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
 ```
 
-Flags:
+Optional JSON output:
 
-- `--ticket`: required ticket key
-- `--from`: required source branch
-- `--to`: required target branch
-- `--path`: workspace path or repository path; defaults to `.`
-- `--envs`: comma-separated environment mapping; defaults to `dev=dev,test=test,prod=main`
-- `--format`: `human` or `json`; defaults to `human`
+```bash
+gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
+```
 
-Behavior:
+What it shows:
 
-- discover repositories
-- inspect ticket scope across repositories
-- compare the selected source and target branches
-- detect if the source branch is behind an earlier environment in the configured flow
-- infer manual-review steps from risk signals
-- emit a promotion plan for terminal output or machine-readable automation
-
-Output fields per repository:
-
-- verdict
-- source and target commit counts
-- missing commits to include
-- environment status
+- per-repo verdict
+- commits expected to move next
+- environment status in the selected flow
 - risk signals
 - manual steps
 - planned actions
 
+This JSON output is the first release-manifest style output in the project.
+
 ## `gig version`
 
-Purpose:
-Show the installed CLI version and build metadata.
+Use this when you want to confirm what build is installed.
 
 ```bash
 gig version
 ```
 
-Output:
+## Common Examples
 
-- version string
-- commit id when available
-- build timestamp when available
-
-## `gig promote`
-
-Status:
-Planned. Not implemented in the current code yet.
-
-Purpose:
-Build and optionally execute a safe promotion plan for one ticket.
+### See what changed for a ticket
 
 ```bash
-gig promote ABC-123 --from test --to prod --dry-run --path .
+gig inspect ABC-123 --path /path/to/workspace
 ```
 
-Planned flags:
+### Check whether `test` is behind `dev`
 
-- `--path`: workspace path or repository path; defaults to `.`
-- `--from`: source branch
-- `--to`: target branch
-- `--dry-run`: show plan only
-- `--yes`: skip interactive confirmation in controlled automation
+```bash
+gig env status ABC-123 --path /path/to/workspace --envs dev=dev,test=test,prod=main
+```
 
-Planned behavior:
+### Check whether it is safe to move from `test` to `main`
 
-- collect commits for the ticket
-- compare branches
-- build a promotion plan
-- show missing commits
-- dry-run or execute after confirmation
+```bash
+gig verify --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,prod=main
+```
+
+### Generate a JSON plan for CI or review tooling
+
+```bash
+gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,prod=main --format json
+```
+
+## Output Formats
+
+- `human`
+  easy to read in terminal and good for manual review
+- `json`
+  good for CI, scripts, and future release packet tooling
+
+JSON output is currently available on:
+
+- `gig verify`
+- `gig plan`
 
 ## Exit Codes
 
 - `0`: success
 - `1`: runtime failure
 - `2`: usage error
-- `3`: partial success with warnings in a future multi-repo execution mode
+- `3`: reserved for future partial-success execution flows
 
-## Output Format
+## What Is Planned Next
 
-Human-readable default output should follow these rules:
+Planned next CLI additions include:
 
-- group by repository
-- keep headings short
-- keep commit lines easy to scan
-- show warnings clearly
-- never hide write actions behind unclear text
-
-Current JSON output is available for `gig plan` and `gig verify`.
-It should continue to use the same service results, not separate command logic.
+- `gig manifest generate`
+- `gig doctor`
+- `gig plan --release <release-id>`

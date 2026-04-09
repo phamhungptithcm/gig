@@ -1,122 +1,75 @@
 # gig
 
-`gig` helps release teams answer one question before moving code to the next environment:
+`gig` helps teams answer one release question before moving code to the next branch or environment:
 
 `Did we miss any change for this ticket?`
 
-If one ticket can touch many repos, fail review many times, and pick up extra fixes before release, `gig` is built for that workflow.
+If one ticket can touch many repos, fail review many times, and pick up extra fixes before release, `gig` is built for that exact workflow.
 
-## What You Get Right Away
+## What Problem It Solves
+
+In real teams, one ticket can touch:
+
+- backend services
+- frontend apps
+- database scripts
+- low-code apps such as Mendix
+
+The same ticket may fail in developer verify, QA verify, client review, or UAT.
+Every failed round can add more commits.
+
+By release time, teams usually need to answer questions like:
+
+- which repos changed for this ticket?
+- is `test` still behind `dev` for this ticket?
+- is `main` missing a late follow-up fix?
+- does this ticket include DB or config work that needs manual review?
+
+That is where missed commits and release mistakes happen.
+`gig` helps reduce that risk.
+
+## What You Get Today
 
 With `gig`, you can:
 
 - find every repo touched by one ticket
-- list every commit for that ticket across the workspace
-- see which environments already contain that ticket and which are behind
-- spot risky changes like DB, config, or Mendix-related files
-- compare two branches before manual cherry-pick or promotion
-- verify whether a ticket is actually safe to move forward
-- generate a promotion plan in human-readable or JSON form
+- list every commit for that ticket across a workspace
+- inspect the full ticket story across repos
+- check environment status such as `dev -> test -> prod`
+- verify whether the next promotion step looks `safe`, `warning`, or `blocked`
+- generate a read-only promotion plan in human or JSON format
 
 Today, `gig` is read-only.
-It helps you inspect and verify.
-It does not change repositories by itself.
-It works with Git repositories today.
+It helps you inspect, verify, and plan.
+It does not cherry-pick, merge, or deploy by itself.
 
-## The Problem It Solves
+## Commands You Will Actually Use
 
-In real teams, one ticket often touches more than one place:
+- `gig --help`
+  Show the command list and the main usage patterns.
+- `gig inspect ABC-123 --path .`
+  Show the full ticket picture across repos.
+- `gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main`
+  Show where the ticket is present or behind in the environment flow.
+- `gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main`
+  Tell you if the next move looks safe.
+- `gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json`
+  Generate a release-plan style JSON output for CI or review tooling.
 
-- backend service
-- frontend app
-- database script
-- low-code app such as Mendix
-
-The same ticket can also fail several times in:
-
-- developer verify
-- QA verify
-- client review
-- UAT
-
-Every failed round can add more commits.
-
-By the time the ticket is ready for production, people usually have to answer questions like:
-
-- Which repos changed for this ticket?
-- Did we move all fixes from `dev` to `test`?
-- Is `main` still missing a late follow-up commit?
-- Did we forget the DB or Mendix part of the change?
-
-That is where release mistakes happen.
-`gig` helps reduce that risk.
-
-## Who This Is For
-
-`gig` is a good fit if:
-
-- your team works in multiple repositories
-- one ticket often has many commits over time
-- you promote code through branches like `dev`, `test`, `uat`, `main`, or `prod`
-- your release flow still depends on manual checking, cherry-pick, or backport work
-
-## Will This Help My Team?
-
-`gig` is useful when your team says things like:
-
-- "This ticket changed three repos. Did we collect everything?"
-- "QA passed, but did the last fix also reach `test`?"
-- "Client asked for one more change. Did that follow-up commit reach `main` yet?"
-- "This ticket has DB work too. Did we remember that part before release?"
-
-If those questions sound familiar, this project is aimed at your workflow.
-
-## MVP Commands Available Today
-
-- `gig scan`
-  Find repositories under a folder.
-- `gig find ABC-123`
-  Find commits for one ticket.
-- `gig inspect ABC-123`
-  Show the full ticket picture by repository, commits, branches, and risk signals.
-- `gig env status ABC-123`
-  Show where the ticket is present, aligned, or behind across environments.
-- `gig diff --ticket ABC-123 --from dev --to test`
-  Show what is still missing in the target branch.
-- `gig verify --ticket ABC-123 --from test --to main`
-  Tell you whether the promotion is `safe`, `warning`, or `blocked`.
-- `gig plan --ticket ABC-123 --from test --to main`
-  Build a promotion plan with manual-review hints and machine-readable JSON output.
-- `gig version`
-  Show the installed version.
-
-## Quick Example
-
-Imagine ticket `ABC-123` changed:
-
-- `service-a`
-- `web-ui`
-- `billing-db`
-
-Run:
+## A Good First Try
 
 ```bash
-gig inspect ABC-123 --path /path/to/workspace
-gig env status ABC-123 --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main
-gig verify --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main
-gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main --format json
+gig --help
+gig inspect ABC-123 --path .
+gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
 ```
 
-From those commands, you can answer:
+If you want the full docs site:
 
-- which repos were touched
-- how many commits belong to the ticket
-- whether the ticket reached each environment branch
-- whether the approved source branch is still behind a previous environment
-- whether a later fix is still missing from the next promotion step
-- whether the ticket includes DB, config, or Mendix-style risk signals
-- whether the ticket looks safe to promote now
-- what JSON release manifest you can pass into CI or review tooling
+- GitHub Pages: [phamhungptithcm.github.io/gig](https://phamhungptithcm.github.io/gig/)
+- Quick start: [Quick Start](docs/19-quickstart.md)
+- CLI guide: [CLI Guide](docs/03-cli-spec.md)
+- Roadmap: [Roadmap](docs/13-roadmap.md)
 
 ## Install
 
@@ -127,7 +80,7 @@ From those commands, you can answer:
 3. Extract it
 4. Put `gig` or `gig.exe` somewhere on your `PATH`
 
-This is the simplest install path for most people.
+This is the simplest path for most people.
 
 ### Option 2: Build from source
 
@@ -149,136 +102,31 @@ Run:
 
 ```bash
 ./bin/gig version
+./bin/gig --help
 ```
 
-## Start In 5 Commands
-
-### 1. Scan your workspace
-
-```bash
-gig scan --path .
-```
-
-This shows:
-
-- which repos were found
-- the repo type
-- the current branch when available
-
-### 2. Find commits for one ticket
-
-```bash
-gig find ABC-123 --path .
-```
-
-This shows:
-
-- every repo where the ticket appears
-- matching commit hashes
-- commit messages
-- branch information when available
-
-### 3. Inspect the full ticket story
-
-```bash
-gig inspect ABC-123 --path .
-```
-
-This shows:
-
-- repos touched by the ticket
-- total commits per repo
-- branches where those commits appear
-- basic risk signals such as DB or config changes
-
-### 4. Check environment status and what is still missing
-
-```bash
-gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main
-```
-
-This shows:
-
-- whether the ticket is present in each environment branch
-- whether the next environment is behind
-- which repos still need attention before promotion
-
-You can also compare two specific branches directly:
-
-```bash
-gig diff --ticket ABC-123 --from dev --to test --path .
-```
-
-This shows:
-
-- commits found in the source branch
-- commits already present in the target branch
-- commits still missing from the target branch
-
-### 5. Verify and plan the promotion
-
-```bash
-gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
-gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
-```
-
-This shows:
-
-- whether promotion is `safe`, `warning`, or `blocked`
-- whether the source branch is behind an earlier environment
-- which manual steps should be reviewed before release
-- which commits are expected to move next
-
-If you want a machine-readable release manifest for CI or review tooling:
-
-```bash
-gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
-```
-
-## Why Teams Will Care
-
-`gig` is useful because it is:
-
-- simple to run
-- easy to read
-- focused on a real release pain point
-- safer than checking commit history by memory
-- useful before manual cherry-pick or backport work
-
-## What It Does Not Do Yet
+## What `gig` Does Not Do Yet
 
 Right now, `gig` does not:
 
-- promote code automatically
-- cherry-pick commits for you
-- auto-resolve conflicts
-- read Jira or deployment data yet
-- load team config yet
-- support SVN history operations yet
+- move code automatically
+- resolve merge conflicts
+- read Jira or deployment tools yet
+- load team config from a file yet
 
 That is intentional.
-The first goal is to make ticket discovery, environment visibility, verification, and release planning reliable.
+The first goal is to make release checking reliable before adding write actions.
 
 ## Project Direction
 
-`gig` is moving toward a more complete release workflow tool for teams that work across many repos and many verification rounds.
+`gig` is moving toward a ticket-aware release workflow tool for multi-repo teams.
 
-That direction includes:
+The next important steps are:
 
-- dependency checks
-- ticket snapshots
+- config loading for team-specific env and branch mapping
 - richer release manifests
-- Jira, deployment, and release evidence later
-
-## Documentation
-
-If you want more detail, start here:
-
-- [docs/index.md](docs/index.md)
-- [examples/README.md](examples/README.md)
-- [docs/16-real-world-release-workflows.md](docs/16-real-world-release-workflows.md)
-- [docs/17-product-strategy.md](docs/17-product-strategy.md)
-- [docs/18-operating-model.md](docs/18-operating-model.md)
+- `doctor` checks
+- Jira, PR, and deployment evidence
 
 ## In One Sentence
 
