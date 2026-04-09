@@ -1,0 +1,30 @@
+{
+  "version": "0.1.4",
+  "description": "CLI for tracking ticket-related commits across multiple repositories",
+  "homepage": "https://github.com/phamhungptithcm/gig",
+  "notes": "Package name is 'gig-cli', but the installed command is 'gig'. Run 'gig version' to confirm the installed build.",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/phamhungptithcm/gig/releases/download/v0.1.4/gig_0.1.4_windows_amd64.zip",
+      "hash": "de815909f5525da4e5ef3f9815d17001a60901655a86195e13b265e67144cd8c"
+    },
+    "arm64": {
+      "url": "https://github.com/phamhungptithcm/gig/releases/download/v0.1.4/gig_0.1.4_windows_arm64.zip",
+      "hash": "7c8fff43d70f49074bfd505ad80bf0ec98606b07d18cbee6d16e7129dddf5b1f"
+    }
+  },
+  "bin": "gig.exe",
+  "checkver": {
+    "github": "https://github.com/phamhungptithcm/gig"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/phamhungptithcm/gig/releases/download/v$version/gig_$version_windows_amd64.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/phamhungptithcm/gig/releases/download/v$version/gig_$version_windows_arm64.zip"
+      }
+    }
+  }
+}

@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -79,15 +80,43 @@ jobs:
             --notes-file release-notes.md \
             --target "$GITHUB_SHA"
 
-      - name: Commit package manager metadata
+      - name: Open package manager metadata PR
         if: steps.metadata.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$(git status --short -- Formula/gig-cli.rb bucket/gig-cli.json)" ]; then
             exit 0
           fi
 
+          branch="release/package-managers-${{ steps.metadata.outputs.next_tag }}"
+          title="chore(release): update package manager metadata for ${{ steps.metadata.outputs.next_tag }}"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
           git add Formula/gig-cli.rb bucket/gig-cli.json
-          git commit -m "chore(release): update package manager metadata for ${{ steps.metadata.outputs.next_tag }} [skip release]"
-          git push
+          git commit -m "$title [skip release]"
+          git push --force-with-lease --set-upstream origin "$branch"
+
+          pr_url="$(gh pr list --head "$branch" --base main --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$pr_url" ]; then
+            exit 0
+          fi
+
+          pr_body="$(cat <<EOF
+          ## Summary
+          - refresh Homebrew and Scoop metadata for ${{ steps.metadata.outputs.next_tag }}
+          - generated automatically after publishing the GitHub release
+
+          ## Notes
+          - merge this PR to publish the updated Formula and Scoop manifest in-repo
+          - commit is marked [skip release] so it will not trigger a follow-up release
+          EOF
+          )"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "$title" \
+            --body "$pr_body"
