@@ -83,7 +83,7 @@ func newScanner(t *testing.T) *repo.Scanner {
 
 	registry := scm.NewRegistry(
 		gitscm.NewAdapter(parser),
-		svnscm.NewAdapter(),
+		svnscm.NewAdapter(parser),
 	)
 
 	return repo.NewScanner(registry)

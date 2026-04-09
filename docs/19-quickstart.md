@@ -13,7 +13,12 @@ Before release, teams often ask:
 - is `main` missing a late follow-up fix?
 - does this ticket include DB, config, or Mendix work that needs manual review?
 
-`gig` helps answer those questions from Git history in a simple, read-only way.
+`gig` helps answer those questions from repository history in a simple, read-only way.
+
+Today that means:
+
+- Git for the full flow
+- SVN for `scan`, `find`, and `inspect`
 
 ## First Command To Run
 

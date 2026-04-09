@@ -1122,7 +1122,7 @@ func newCommandRuntime(path, configPath string) (commandRuntime, error) {
 func newRegistry(parser ticketsvc.Parser) *scm.Registry {
 	return scm.NewRegistry(
 		gitscm.NewAdapter(parser),
-		svnscm.NewAdapter(),
+		svnscm.NewAdapter(parser),
 	)
 }
 

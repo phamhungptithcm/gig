@@ -269,6 +269,12 @@ Use this when you want to confirm what build is installed.
 gig version
 ```
 
+## SCM Support Today
+
+- `gig scan`, `gig find`, and `gig inspect` work with Git repositories and SVN working copies
+- `gig diff`, `gig env status`, `gig verify`, `gig plan`, and `gig manifest generate` still require Git branch compare support
+- repository catalog entries currently map to detected repository roots, not subfolders inside a single monorepo
+
 ## Common Examples
 
 ### See what changed for a ticket

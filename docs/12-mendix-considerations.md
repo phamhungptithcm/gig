@@ -34,6 +34,24 @@ Good warning examples:
 - high-risk file types present
 - manual review recommended before promote
 
+## Current SVN Support
+
+`gig` can now read Mendix projects that live in SVN working copies for these commands:
+
+- `gig scan`
+- `gig find`
+- `gig inspect`
+
+That means ticket search can find SVN revisions and `inspect` can still flag risky files such as `.mpr`.
+
+It still does not compare SVN branches for promotion commands such as:
+
+- `gig diff`
+- `gig env status`
+- `gig verify`
+- `gig plan`
+- `gig manifest generate`
+
 ## Safe Direction
 
 In early promote phases, the tool should:

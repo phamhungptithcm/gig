@@ -124,6 +124,10 @@ Each entry can include:
 
 Using `path` is the safest option for real teams because repo names can repeat across larger workspaces.
 
+Today, `path` should point to a detected repository root.
+
+If one Git repo contains many services or apps in subfolders, `gig` still treats that as one repository for scan and release analysis.
+
 ## Why The Repo Catalog Matters
 
 The repo catalog is what makes the output feel useful to humans, not just correct to a machine.

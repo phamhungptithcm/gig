@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -108,7 +109,7 @@ func (s *Service) InspectInRepositories(ctx context.Context, repositories []scm.
 
 		commits, err := adapter.SearchCommits(ctx, repository.Root, scm.SearchQuery{TicketID: ticketID})
 		if err != nil {
-			if err == scm.ErrUnsupported {
+			if errors.Is(err, scm.ErrUnsupported) {
 				continue
 			}
 			return nil, err

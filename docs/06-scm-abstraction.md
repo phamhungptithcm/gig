@@ -55,16 +55,24 @@ The Git adapter:
 
 ## SVN Notes
 
-The SVN adapter is a prepared stub today.
+The SVN adapter now supports the read-only discovery flow.
 
 It can:
 
 - detect `.svn`
+- read the current working line for scan output
+- search history for ticket IDs
+- load changed files for inspect risk detection
+
+This is enough for:
+
+- `gig scan`
+- `gig find`
+- `gig inspect`
 
 It does not yet:
 
-- search history
-- compare branches
-- prepare promotion
+- compare two SVN branches for promotion safety
+- prepare promotion or cherry-pick style actions
 
-That work belongs to a later phase.
+Promotion-oriented commands still depend on Git-style branch compare support.
