@@ -1,25 +1,25 @@
 class GigCli < Formula
   desc "CLI for tracking ticket-related commits across multiple repositories"
   homepage "https://github.com/phamhungptithcm/gig"
-  version "0.1.4"
+  version "0.1.5"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.4/gig_0.1.4_darwin_arm64.tar.gz"
-      sha256 "3b847e540fa9d77ab892c27f43b85b78af77083b8d043fe450e1c06e2a9f74b8"
+      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.5/gig_0.1.5_darwin_arm64.tar.gz"
+      sha256 "cdb57fd0c4eb511bda07026d807925f2eae057e944ddf40628fdcd4209bbae49"
     else
-      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.4/gig_0.1.4_darwin_amd64.tar.gz"
-      sha256 "3cd3d07901e301a792caa388f5c171510fd435c37716a216e344ff99860532bc"
+      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.5/gig_0.1.5_darwin_amd64.tar.gz"
+      sha256 "391b2c35452c2c4c7d62214c0e2dafdd82303b81deea18bc01430264b925d6ff"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.4/gig_0.1.4_linux_arm64.tar.gz"
-      sha256 "e3237673f88cfe042bed33ebab3ed6068b49f64b49b037037dc938c569b76984"
+      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.5/gig_0.1.5_linux_arm64.tar.gz"
+      sha256 "1e8a59a9748241e77d1eaf22d03e450800312b8326ca28cf903731b12e6a9696"
     else
-      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.4/gig_0.1.4_linux_amd64.tar.gz"
-      sha256 "55f677cfe6d10c2e5c1e70f2171e0e66a1253442d661ccc8dd525536a71fd904"
+      url "https://github.com/phamhungptithcm/gig/releases/download/v0.1.5/gig_0.1.5_linux_amd64.tar.gz"
+      sha256 "439a41451b7c65ea1c6737cd4a22adad6dd09b0bb6bd4f98e651303d61785491"
     end
   end
 
@@ -30,6 +30,6 @@ class GigCli < Formula
 
   test do
     output = shell_output("#{bin}/gig version")
-    assert_match "gig 0.1.4", output
+    assert_match "gig 0.1.5", output
   end
 end
