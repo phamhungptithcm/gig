@@ -1,0 +1,33 @@
+site_name: gig
+site_description: Release workflow helper for ticket-aware multi-repository promotions
+site_url: https://phamhungptithcm.github.io/gig/
+repo_name: phamhungptithcm/gig
+repo_url: https://github.com/phamhungptithcm/gig
+
+theme:
+  name: readthedocs
+
+nav:
+  - Home: index.md
+  - Product Overview: 00-product-overview.md
+  - Problem Statement: 01-problem-statement.md
+  - Scope And Phases: 02-scope-and-phases.md
+  - CLI Spec: 03-cli-spec.md
+  - Architecture: 04-architecture.md
+  - Domain Model: 05-domain-model.md
+  - SCM Abstraction: 06-scm-abstraction.md
+  - Promotion Engine: 07-promotion-engine.md
+  - Commit Convention: 08-commit-convention.md
+  - Config Spec: 09-config-spec.md
+  - Error Handling And Logging: 10-error-handling-and-logging.md
+  - Test Strategy: 11-test-strategy.md
+  - Mendix Considerations: 12-mendix-considerations.md
+  - Roadmap: 13-roadmap.md
+  - Codex Implementation Plan: 14-codex-implementation-plan.md
+  - Branching And Release: 15-branching-and-release.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true

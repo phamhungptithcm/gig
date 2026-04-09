@@ -1,0 +1,12 @@
+/bin/
+/dist/
+/site/
+/gig
+/.tmp-docs-venv/
+
+coverage.out
+*.out
+*.test
+
+.DS_Store
+.env

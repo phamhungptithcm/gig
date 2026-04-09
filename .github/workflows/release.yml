@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --force --tags
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate release candidate
+        run: go test ./...
+
+      - name: Resolve release metadata
+        id: metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+          next_tag="$(./scripts/next-release-tag.sh)"
+          should_release="true"
+
+          if gh release view "$next_tag" >/dev/null 2>&1; then
+            should_release="false"
+          fi
+
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          echo "next_tag=$next_tag" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+
+      - name: Build release archives
+        if: steps.metadata.outputs.should_release == 'true'
+        run: ./scripts/build-release-assets.sh "${{ steps.metadata.outputs.next_tag }}" dist
+
+      - name: Generate release notes
+        if: steps.metadata.outputs.should_release == 'true'
+        run: |
+          ./scripts/release-notes.sh \
+            "${{ steps.metadata.outputs.previous_tag }}" \
+            "${{ steps.metadata.outputs.next_tag }}" > release-notes.md
+
+      - name: Publish GitHub release
+        if: steps.metadata.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.metadata.outputs.next_tag }}" \
+            dist/* \
+            --title "${{ steps.metadata.outputs.next_tag }}" \
+            --notes-file release-notes.md \
+            --target "$GITHUB_SHA"
