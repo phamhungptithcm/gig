@@ -562,6 +562,21 @@ func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	}
 }
 
+func TestAppUpdateHelpReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	stdout, stderr, exitCode := runApp(t, "update", "--help")
+	if exitCode != 0 {
+		t.Fatalf("update --help exit code = %d, want 0", exitCode)
+	}
+	if stdout != "" {
+		t.Fatalf("update --help stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "Usage: gig update") {
+		t.Fatalf("update --help stderr = %q, want usage", stderr)
+	}
+}
+
 func TestAppRootHelpReturnsZero(t *testing.T) {
 	t.Parallel()
 
@@ -589,6 +604,9 @@ func TestAppRootHelpReturnsZero(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "resolve     Inspect or resolve active Git merge conflicts") {
 		t.Fatalf("--help stderr = %q, want resolve command summary", stderr)
+	}
+	if !strings.Contains(stderr, "update      Install the latest release or a specific version") {
+		t.Fatalf("--help stderr = %q, want update command summary", stderr)
 	}
 }
 
