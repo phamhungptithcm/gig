@@ -1,0 +1,19 @@
+Ticket ABC-123
+Workspace: <WORKSPACE>
+Environments: dev=dev -> test=test -> prod=main
+Scanned repositories: 1
+Touched repositories: 1
+
+Summary
+  dev (dev): present in 1 repo(s)
+  test (test): behind in 1 repo(s)
+  prod (main): behind in 1 repo(s)
+
+[a-service] <WORKSPACE>/a-service (git)
+  ticket commits: 2
+  branches seen: dev, test
+  risk signals:
+    - db-change (manual-review)
+  dev (dev): present, commits here 2
+  test (test): behind by 1 commit(s), commits here 1
+  prod (main): behind by 1 commit(s), commits here 0

@@ -107,6 +107,72 @@ Output fields per repository:
 - target commit count
 - missing commits list
 
+## `gig inspect`
+
+Purpose:
+Show the full ticket picture across detected repositories.
+
+```bash
+gig inspect ABC-123 --path .
+```
+
+Arguments:
+
+- `<ticket-id>`: required ticket key such as `ABC-123`
+
+Flags:
+
+- `--path`: workspace path or repository path; defaults to `.`
+
+Behavior:
+
+- discover repositories
+- find ticket-matching commits across branches
+- group results by repository
+- show branches where the commits appear
+- infer simple risk signals from changed files such as DB, config, or Mendix-related changes
+
+Output fields per repository:
+
+- ticket commit count
+- branches seen
+- risk signals
+- commit list
+
+## `gig env status`
+
+Purpose:
+Show where one ticket is present or behind across environment branches.
+
+```bash
+gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main
+```
+
+Arguments:
+
+- `<ticket-id>`: required ticket key such as `ABC-123`
+
+Flags:
+
+- `--path`: workspace path or repository path; defaults to `.`
+- `--envs`: comma-separated environment mapping; defaults to `dev=dev,test=test,prod=main`
+
+Behavior:
+
+- discover repositories
+- find ticket-matching commits
+- inspect each configured environment branch
+- compare adjacent environments in the given order
+- show where the ticket is present, aligned, behind, not present, or missing because the branch does not exist
+
+Output fields per repository:
+
+- ticket commit count
+- branches seen
+- risk signals
+- environment state summary
+- missing commit count from the previous environment when behind
+
 ## `gig version`
 
 Purpose:

@@ -1,19 +1,20 @@
 # gig
 
-`gig` helps teams answer one important release question before moving code forward:
+`gig` helps release teams answer one question before moving code to the next environment:
 
-`Do we really have every change for this ticket?`
+`Did we miss any change for this ticket?`
 
-If your team works across many repos and one ticket can be fixed many times before it is finally approved, `gig` is built for that exact problem.
+If one ticket can touch many repos, fail review many times, and pick up extra fixes before release, `gig` is built for that workflow.
 
-## What You Get
+## What You Get Right Away
 
 With `gig`, you can:
 
 - find every repo touched by one ticket
-- find every commit for that ticket across the workspace
-- compare two branches and see what is still missing
-- check release readiness before manual cherry-pick or promotion
+- list every commit for that ticket across the workspace
+- see which environments already contain that ticket and which are behind
+- spot risky changes like DB, config, or Mendix-related files
+- compare two branches before manual cherry-pick or promotion
 
 Today, `gig` is read-only.
 It helps you inspect and verify.
@@ -29,7 +30,7 @@ In real teams, one ticket often touches more than one place:
 - database script
 - low-code app such as Mendix
 
-The same ticket may also fail several times in:
+The same ticket can also fail several times in:
 
 - developer verify
 - QA verify
@@ -55,23 +56,33 @@ That is where release mistakes happen.
 - your team works in multiple repositories
 - one ticket often has many commits over time
 - you promote code through branches like `dev`, `test`, `uat`, `main`, or `prod`
-- you want a safer release check before manual promotion
+- your release flow still depends on manual checking, cherry-pick, or backport work
 
-## What `gig` Can Do Today
+## Will This Help My Team?
 
-Current commands:
+`gig` is useful when your team says things like:
+
+- "This ticket changed three repos. Did we collect everything?"
+- "QA passed, but did the last fix also reach `test`?"
+- "Client asked for one more change. Did that follow-up commit reach `main` yet?"
+- "This ticket has DB work too. Did we remember that part before release?"
+
+If those questions sound familiar, this project is aimed at your workflow.
+
+## MVP Commands Available Today
 
 - `gig scan`
-- `gig find`
-- `gig diff`
+  Find repositories under a folder.
+- `gig find ABC-123`
+  Find commits for one ticket.
+- `gig inspect ABC-123`
+  Show the full ticket picture by repository, commits, branches, and risk signals.
+- `gig env status ABC-123`
+  Show where the ticket is present, aligned, or behind across environments.
+- `gig diff --ticket ABC-123 --from dev --to test`
+  Show what is still missing in the target branch.
 - `gig version`
-
-What each one does:
-
-- `gig scan` finds repositories under a folder
-- `gig find ABC-123` finds commits for one ticket
-- `gig diff --ticket ABC-123 --from dev --to test` shows what is still missing in the target branch
-- `gig version` shows the installed version
+  Show the installed version.
 
 ## Quick Example
 
@@ -84,12 +95,18 @@ Imagine ticket `ABC-123` changed:
 Run:
 
 ```bash
+gig inspect ABC-123 --path /path/to/workspace
+gig env status ABC-123 --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main
 gig diff --ticket ABC-123 --from test --to main --path /path/to/workspace
 ```
 
-`gig` will group results by repository and show where `main` is still missing ticket commits.
+From those three commands, you can answer:
 
-That is the key check before manual promotion.
+- which repos were touched
+- how many commits belong to the ticket
+- whether the ticket reached each environment branch
+- whether a later fix is still missing from the next promotion step
+- whether the ticket includes DB, config, or Mendix-style risk signals
 
 ## Install
 
@@ -124,7 +141,7 @@ Run:
 ./bin/gig version
 ```
 
-## Start In 3 Commands
+## Start In 4 Commands
 
 ### 1. Scan your workspace
 
@@ -151,7 +168,32 @@ This shows:
 - commit messages
 - branch information when available
 
-### 3. Check what is missing in the next branch
+### 3. Inspect the full ticket story
+
+```bash
+gig inspect ABC-123 --path .
+```
+
+This shows:
+
+- repos touched by the ticket
+- total commits per repo
+- branches where those commits appear
+- basic risk signals such as DB or config changes
+
+### 4. Check environment status and what is still missing
+
+```bash
+gig env status ABC-123 --path . --envs dev=dev,test=test,prod=main
+```
+
+This shows:
+
+- whether the ticket is present in each environment branch
+- whether the next environment is behind
+- which repos still need attention before promotion
+
+You can also compare two specific branches directly:
 
 ```bash
 gig diff --ticket ABC-123 --from dev --to test --path .
@@ -180,12 +222,13 @@ Right now, `gig` does not:
 - promote code automatically
 - cherry-pick commits for you
 - auto-resolve conflicts
+- read Jira or deployment data yet
 - load team config yet
 - output JSON yet
 - support SVN history operations yet
 
 That is intentional.
-The first goal is to make ticket discovery and branch comparison reliable.
+The first goal is to make ticket discovery, environment visibility, and branch comparison reliable.
 
 ## Project Direction
 

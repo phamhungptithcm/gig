@@ -131,6 +131,59 @@ func (a *Adapter) PrepareCherryPick(context.Context, string, scm.CherryPickPlan)
 	return scm.ErrUnsupported
 }
 
+func (a *Adapter) RefExists(ctx context.Context, repoRoot, ref string) (bool, error) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return false, fmt.Errorf("git executable not found: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "--verify", ref)
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (a *Adapter) CommitFiles(ctx context.Context, repoRoot string, hashes []string) (map[string][]string, error) {
+	filesByCommit := make(map[string][]string, len(hashes))
+	seen := make(map[string]struct{}, len(hashes))
+
+	for _, hash := range hashes {
+		if _, ok := seen[hash]; ok {
+			continue
+		}
+		seen[hash] = struct{}{}
+
+		output, err := a.runGit(ctx, repoRoot, "show", "--pretty=format:", "--name-only", hash)
+		if err != nil {
+			return nil, err
+		}
+
+		fileSeen := map[string]struct{}{}
+		files := make([]string, 0)
+		for _, line := range strings.Split(output, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if _, ok := fileSeen[line]; ok {
+				continue
+			}
+			fileSeen[line] = struct{}{}
+			files = append(files, line)
+		}
+
+		sort.Strings(files)
+		filesByCommit[hash] = files
+	}
+
+	return filesByCommit, nil
+}
+
 func (a *Adapter) ensureRef(ctx context.Context, repoRoot, ref string) error {
 	_, err := a.runGit(ctx, repoRoot, "rev-parse", "--verify", ref)
 	if err != nil {

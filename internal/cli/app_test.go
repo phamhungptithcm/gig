@@ -72,6 +72,66 @@ func TestAppDiffGolden(t *testing.T) {
 	assertGolden(t, "diff.golden", normalizeOutput(stdout, workspace))
 }
 
+func TestAppInspectGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "a-service")
+
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add validation fix")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "db", "migrations", "001_add_column.sql"), "alter table demo add column enabled int;\n")
+	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
+
+	runGit(t, repoRoot, "checkout", "main")
+	runGit(t, repoRoot, "checkout", "-b", "test")
+	runGit(t, repoRoot, "cherry-pick", firstHash)
+
+	stdout, stderr, exitCode := runApp(t, "inspect", "abc-123", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("inspect exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "inspect.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppEnvStatusGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "a-service")
+
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add validation fix")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "db", "migrations", "001_add_column.sql"), "alter table demo add column enabled int;\n")
+	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
+
+	runGit(t, repoRoot, "checkout", "main")
+	runGit(t, repoRoot, "checkout", "-b", "test")
+	runGit(t, repoRoot, "cherry-pick", firstHash)
+
+	stdout, stderr, exitCode := runApp(t, "env", "status", "ABC-123", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("env status exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "env_status.golden", normalizeOutput(stdout, workspace))
+}
+
 func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	t.Parallel()
 
@@ -169,6 +229,10 @@ func runGit(t *testing.T, repoRoot string, args ...string) string {
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(path), err)
+	}
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
