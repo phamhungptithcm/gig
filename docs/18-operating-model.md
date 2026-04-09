@@ -97,15 +97,21 @@ Run pre-release checks and emit `safe / warning / blocked` outcomes.
 
 Produce a Markdown or JSON release packet for QA, client review, and release managers.
 
+### `gig snapshot create --release <release-id>`
+
+Capture a repeatable ticket baseline inside a named release snapshot set.
+
+### `gig plan --release <release-id>`
+
+Build a release-level plan by aggregating saved ticket snapshots.
+
 ### `gig doctor`
 
 Check config coverage, branch mapping, and repo catalog quality.
 
 ## Recommended Next Command Additions
 
-### `gig plan --release <release-id>`
-
-Build a release plan for multiple tickets together.
+- richer Jira, PR, and deployment evidence
 
 ## Current Config Direction
 

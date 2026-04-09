@@ -19,6 +19,7 @@ gig inspect --help
 gig verify --help
 gig manifest --help
 gig doctor --help
+gig resolve --help
 ```
 
 You can also use:
@@ -38,8 +39,11 @@ gig help
 | `gig diff` | compare one branch to another for a ticket |
 | `gig verify` | get a quick `safe`, `warning`, or `blocked` result |
 | `gig plan` | build a read-only promotion plan for people or CI |
+| `gig snapshot create` | save a repeatable ticket baseline for audit and re-check |
 | `gig manifest generate` | generate a Markdown or JSON release packet |
 | `gig doctor` | check config coverage, env mapping, and repo catalog health |
+| `gig resolve status` | inspect the current Git conflict state in one repository |
+| `gig resolve start` | walk supported Git text conflicts with keyboard actions |
 | `gig version` | confirm what build you installed |
 
 ## Shared Rules
@@ -49,7 +53,8 @@ gig help
 - successful commands exit with code `0`
 - usage errors return code `2`
 - runtime failures return code `1`
-- current commands are read-only and never change repositories
+- commands are read-only by default
+- `gig resolve start` writes the working tree for the active conflicted repository, but it does not continue the Git operation or create a commit for you
 - `--ticket-file` accepts one ticket ID per line and ignores blank lines plus lines that start with `#`
 
 ## Shared Config Behavior
@@ -154,6 +159,55 @@ What it shows:
 - commits already present in the target branch
 - commits still missing in the target branch
 
+## `gig resolve status`
+
+Use this when Git has already stopped on a conflict and you want a quick picture of what is unresolved.
+
+```bash
+gig resolve status --path .
+```
+
+Optional JSON output:
+
+```bash
+gig resolve status --path . --format json
+```
+
+Optional ticket scoping:
+
+```bash
+gig resolve status --path . --ticket ABC-123
+```
+
+What it shows:
+
+- the active Git operation type such as merge, rebase, or cherry-pick
+- the current side and incoming side with branch, commit, and ticket context when available
+- unresolved files
+- which files `gig resolve start` can handle directly
+- which files still need manual resolution
+
+## `gig resolve start`
+
+Use this when Git has already stopped on a supported text conflict and you want a keyboard-first resolver.
+
+```bash
+gig resolve start --path .
+```
+
+Optional ticket scoping:
+
+```bash
+gig resolve start --path . --ticket ABC-123
+```
+
+What it does:
+
+- starts at the first supported conflict block
+- lets you accept current, incoming, or both in either order
+- lets you open the file in your editor, undo the last local choice, and stage a resolved file
+- never runs `git merge --continue`, `git rebase --continue`, `git cherry-pick --continue`, or `git commit` for you
+
 ## `gig verify`
 
 Use this when you want a fast release decision.
@@ -174,12 +228,19 @@ Batch verification from a file:
 gig verify --ticket-file tickets.txt --from test --to main --path .
 ```
 
+Release verification from saved snapshots:
+
+```bash
+gig verify --release rel-2026-04-09 --path .
+```
+
 What it shows:
 
 - one overall verdict: `safe`, `warning`, or `blocked`
 - why the tool gave that verdict
 - per-repo checks
 - manual-review steps when risky files are detected
+- or a release-wide verification bundle when `--release` is used
 
 ## `gig plan`
 
@@ -210,6 +271,61 @@ What it shows:
 - manual steps
 - planned actions
 
+## `gig snapshot create`
+
+Use this when you want to save a repeatable baseline before release review or promotion.
+
+```bash
+gig snapshot create --ticket ABC-123 --from test --to main --path . --output .gig/snapshots/abc-123.json
+```
+
+Attach the snapshot to a named release and let `gig` choose the default release path:
+
+```bash
+gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
+```
+
+Optional JSON output to stdout:
+
+```bash
+gig snapshot create --ticket ABC-123 --from test --to main --path . --format json
+```
+
+What it shows:
+
+- capture time and tool version
+- the inspection baseline for the ticket
+- the current promotion plan
+- the current verification result
+- an optional JSON artifact path when `--output` is used
+
+## `gig plan --release`
+
+Use this when you want a release-level plan built from saved ticket snapshots.
+
+```bash
+gig plan --release rel-2026-04-09 --path .
+```
+
+This command reads snapshots from:
+
+```text
+.gig/releases/<release-id>/snapshots/*.json
+```
+
+Optional JSON output:
+
+```bash
+gig plan --release rel-2026-04-09 --path . --format json
+```
+
+What it shows:
+
+- release-level verdict
+- ticket baseline summary across the release
+- repository roll-up across all saved ticket snapshots
+- shared blockers, manual steps, and planned actions
+
 ## `gig manifest generate`
 
 Use this when you want a release packet that people can copy into release communication or attach to a QA or client review.
@@ -232,6 +348,12 @@ Batch packet generation from a file:
 gig manifest generate --ticket-file tickets.txt --from test --to main --path .
 ```
 
+Release bundle generation from saved snapshots:
+
+```bash
+gig manifest generate --release rel-2026-04-09 --path .
+```
+
 What it shows:
 
 - short release summary
@@ -239,6 +361,7 @@ What it shows:
 - client review notes
 - release manager checklist
 - per-repo details, risks, notes, and commits to include
+- or a release packet bundle when `--release` is used
 
 ## `gig doctor`
 
@@ -271,7 +394,7 @@ gig version
 
 ## SCM Support Today
 
-- Git and SVN working copies both support the current read-only CLI flow: `scan`, `find`, `inspect`, `env status`, `diff`, `verify`, `plan`, `manifest generate`, and `doctor`
+- Git and SVN working copies both support the current read-only CLI flow: `scan`, `find`, `inspect`, `env status`, `diff`, `verify`, `plan`, `snapshot create`, `manifest generate`, and `doctor`
 - SVN branch comparison assumes a normal Subversion layout such as `trunk` and `branches/<name>`, or explicit branch paths in config and flags
 - repository catalog entries currently map to detected repository roots, not subfolders inside a single monorepo
 
@@ -293,6 +416,36 @@ gig env status ABC-123 --path /path/to/workspace
 
 ```bash
 gig verify --ticket ABC-123 --from test --to main --path /path/to/workspace
+```
+
+### Save a release baseline before promotion
+
+```bash
+gig snapshot create --ticket ABC-123 --from test --to main --path /path/to/workspace --output .gig/snapshots/abc-123.json
+```
+
+### Save a ticket into a named release
+
+```bash
+gig snapshot create --ticket ABC-123 --from test --to main --path /path/to/workspace --release rel-2026-04-09
+```
+
+### Review one saved release bundle
+
+```bash
+gig plan --release rel-2026-04-09 --path /path/to/workspace
+```
+
+### Re-run verification for one saved release
+
+```bash
+gig verify --release rel-2026-04-09 --path /path/to/workspace
+```
+
+### Generate one saved release bundle for people
+
+```bash
+gig manifest generate --release rel-2026-04-09 --path /path/to/workspace
 ```
 
 ### Generate a release packet for people
@@ -326,6 +479,7 @@ Output formats currently available on:
 
 - `gig verify`: `human`, `json`
 - `gig plan`: `human`, `json`
+- `gig snapshot create`: `human`, `json`
 - `gig manifest generate`: `markdown`, `json`
 - `gig doctor`: `human`, `json`
 
@@ -339,6 +493,5 @@ Output formats currently available on:
 
 Planned next CLI additions include:
 
-- `gig plan --release <release-id>`
 - richer Jira or deployment evidence
 - multi-ticket release bundles

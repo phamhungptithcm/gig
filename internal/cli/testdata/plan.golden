@@ -7,6 +7,7 @@ Touched repositories: 1
 
 Summary
   - Resolve blocked repositories before promoting this ticket.
+  - 1 dependency ticket(s) are still missing from main.
   - ready repositories: 0
   - warning repositories: 0
   - blocked repositories: 1
@@ -25,12 +26,17 @@ Summary
     - prod (main): behind by 1 commit(s), commits here 0
   risk signals:
     - db-change (manual-review): Database-related changes should be reviewed before promotion
+    - missing-dependency (blocked): Dependency ticket XYZ-456 is present in test but missing from main
+  dependency status:
+    - XYZ-456: present in test but missing from main
   manual steps:
     - Review DB migration ordering, rollback steps, and deployment timing before promotion.
   plan actions:
     - Bring test up to date before promoting to main.
     - Include 1 missing ticket commit(s) from test into main.
+    - Include dependency ticket XYZ-456 in main before promoting ABC-123.
   notes:
     - Source branch test is behind an earlier environment by 1 commit(s).
+    - Declared dependency XYZ-456 is present in test but missing from main.
   commits to include:
     - <HASH>  ABC-123 | service-a | add validation fix

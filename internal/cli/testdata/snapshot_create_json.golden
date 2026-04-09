@@ -1,0 +1,333 @@
+{
+  "command": "snapshot create",
+  "snapshot": {
+    "schemaVersion": "1",
+    "capturedAt": "<TIMESTAMP>",
+    "toolVersion": "gig dev",
+    "workspace": "<WORKSPACE>",
+    "ticketId": "ABC-123",
+    "fromBranch": "test",
+    "toBranch": "main",
+    "environments": [
+      {
+        "Name": "dev",
+        "Branch": "dev"
+      },
+      {
+        "Name": "test",
+        "Branch": "test"
+      },
+      {
+        "Name": "prod",
+        "Branch": "main"
+      }
+    ],
+    "inspection": {
+      "scannedRepositories": 1,
+      "touchedRepositories": 1,
+      "totalCommits": 2,
+      "repositories": [
+        {
+          "Repository": {
+            "Name": "a-service",
+            "Root": "<WORKSPACE>/a-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "Commits": [
+            {
+              "Hash": "<HASH>",
+              "Subject": "ABC-123 | service-a | add migration",
+              "Branches": [
+                "dev"
+              ]
+            },
+            {
+              "Hash": "<HASH>",
+              "Subject": "ABC-123 | service-a | add validation fix",
+              "Branches": [
+                "dev",
+                "test"
+              ]
+            }
+          ],
+          "Branches": [
+            "dev",
+            "test"
+          ],
+          "RiskSignals": [
+            {
+              "Code": "db-change",
+              "Level": "manual-review",
+              "Summary": "Database-related changes should be reviewed before promotion",
+              "Examples": [
+                "db/migrations/001_add_column.sql"
+              ]
+            }
+          ],
+          "DeclaredDependencies": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "CommitHash": "<HASH>",
+              "CommitSubject": "ABC-123 | service-a | add validation fix",
+              "TrailerKey": "Depends-On"
+            }
+          ]
+        }
+      ]
+    },
+    "plan": {
+      "ticketId": "ABC-123",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "environments": [
+        {
+          "Name": "dev",
+          "Branch": "dev"
+        },
+        {
+          "Name": "test",
+          "Branch": "test"
+        },
+        {
+          "Name": "prod",
+          "Branch": "main"
+        }
+      ],
+      "summary": {
+        "scannedRepositories": 1,
+        "touchedRepositories": 1,
+        "readyRepositories": 0,
+        "warningRepositories": 0,
+        "blockedRepositories": 1,
+        "totalCommitsToPromote": 1,
+        "totalManualSteps": 1
+      },
+      "verdict": "blocked",
+      "notes": [
+        "Resolve blocked repositories before promoting this ticket.",
+        "1 dependency ticket(s) are still missing from main."
+      ],
+      "repositories": [
+        {
+          "repository": {
+            "Name": "a-service",
+            "Root": "<WORKSPACE>/a-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "compare": {
+            "FromBranch": "test",
+            "ToBranch": "main",
+            "SourceCommits": [
+              {
+                "Hash": "<HASH>",
+                "Subject": "ABC-123 | service-a | add validation fix",
+                "Branches": [
+                  "test"
+                ]
+              }
+            ],
+            "TargetCommits": [],
+            "MissingCommits": [
+              {
+                "Hash": "<HASH>",
+                "Subject": "ABC-123 | service-a | add validation fix",
+                "Branches": [
+                  "test"
+                ]
+              }
+            ]
+          },
+          "branches": [
+            "dev",
+            "test"
+          ],
+          "riskSignals": [
+            {
+              "Code": "db-change",
+              "Level": "manual-review",
+              "Summary": "Database-related changes should be reviewed before promotion",
+              "Examples": [
+                "db/migrations/001_add_column.sql"
+              ]
+            },
+            {
+              "Code": "missing-dependency",
+              "Level": "blocked",
+              "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+              "Examples": [
+                "XYZ-456"
+              ]
+            }
+          ],
+          "declaredDependencies": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "CommitHash": "<HASH>",
+              "CommitSubject": "ABC-123 | service-a | add validation fix",
+              "TrailerKey": "Depends-On"
+            }
+          ],
+          "dependencyResolutions": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "Status": "missing-target",
+              "FoundInSource": true,
+              "FoundInTarget": false,
+              "EvidenceCommits": [
+                "<HASH>"
+              ]
+            }
+          ],
+          "environmentStatuses": [
+            {
+              "Environment": {
+                "Name": "dev",
+                "Branch": "dev"
+              },
+              "State": "present",
+              "CommitCount": 2,
+              "MissingFromPrevious": 0
+            },
+            {
+              "Environment": {
+                "Name": "test",
+                "Branch": "test"
+              },
+              "State": "behind",
+              "CommitCount": 1,
+              "MissingFromPrevious": 1
+            },
+            {
+              "Environment": {
+                "Name": "prod",
+                "Branch": "main"
+              },
+              "State": "behind",
+              "CommitCount": 0,
+              "MissingFromPrevious": 1
+            }
+          ],
+          "manualSteps": [
+            {
+              "code": "review-db-rollout",
+              "summary": "Review DB migration ordering, rollback steps, and deployment timing before promotion."
+            }
+          ],
+          "actions": [
+            {
+              "code": "sync-source-environment",
+              "summary": "Bring test up to date before promoting to main."
+            },
+            {
+              "code": "include-missing-commits",
+              "summary": "Include 1 missing ticket commit(s) from test into main."
+            },
+            {
+              "code": "include-missing-dependency",
+              "summary": "Include dependency ticket XYZ-456 in main before promoting ABC-123."
+            }
+          ],
+          "verdict": "blocked",
+          "notes": [
+            "Source branch test is behind an earlier environment by 1 commit(s).",
+            "Declared dependency XYZ-456 is present in test but missing from main."
+          ]
+        }
+      ]
+    },
+    "verification": {
+      "ticketId": "ABC-123",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "environments": [
+        {
+          "Name": "dev",
+          "Branch": "dev"
+        },
+        {
+          "Name": "test",
+          "Branch": "test"
+        },
+        {
+          "Name": "prod",
+          "Branch": "main"
+        }
+      ],
+      "summary": {
+        "scannedRepositories": 1,
+        "touchedRepositories": 1,
+        "readyRepositories": 0,
+        "warningRepositories": 0,
+        "blockedRepositories": 1,
+        "totalCommitsToPromote": 1,
+        "totalManualSteps": 1
+      },
+      "verdict": "blocked",
+      "reasons": [
+        "At least one repository is missing the correct source or target release evidence.",
+        "1 ticket commit(s) are still planned for promotion.",
+        "1 manual review step(s) were inferred from the changed files.",
+        "1 dependency ticket(s) are still missing from main."
+      ],
+      "repositories": [
+        {
+          "repository": {
+            "Name": "a-service",
+            "Root": "<WORKSPACE>/a-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "verdict": "blocked",
+          "checks": [
+            "test contains 1 ticket commit(s).",
+            "main is missing 1 ticket commit(s).",
+            "Source branch test is behind an earlier environment by 1 commit(s).",
+            "Declared dependency XYZ-456 is present in test but missing from main.",
+            "2 risk signal(s) require review."
+          ],
+          "riskSignals": [
+            {
+              "Code": "db-change",
+              "Level": "manual-review",
+              "Summary": "Database-related changes should be reviewed before promotion",
+              "Examples": [
+                "db/migrations/001_add_column.sql"
+              ]
+            },
+            {
+              "Code": "missing-dependency",
+              "Level": "blocked",
+              "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+              "Examples": [
+                "XYZ-456"
+              ]
+            }
+          ],
+          "dependencyResolutions": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "Status": "missing-target",
+              "FoundInSource": true,
+              "FoundInTarget": false,
+              "EvidenceCommits": [
+                "<HASH>"
+              ]
+            }
+          ],
+          "manualSteps": [
+            {
+              "code": "review-db-rollout",
+              "summary": "Review DB migration ordering, rollback steps, and deployment timing before promotion."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

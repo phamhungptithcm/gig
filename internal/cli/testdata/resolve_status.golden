@@ -1,0 +1,16 @@
+Repository: <WORKSPACE>/a-service
+Operation: merge
+Branch: main
+Current side: Current | main | <HASH> | OPS-99 tighten validation | tickets=OPS-99
+Incoming side: Incoming | feature/ABC-123 | <HASH> | ABC-123 update app behavior | tickets=ABC-123
+Target branch: main
+Scoped ticket: ABC-123
+Resolvable files: 1
+Unsupported files: 0
+
+Files:
+  - app.txt [UU, supported] (1 block(s))
+    note: Accept current would drop the only visible scoped ticket on this conflict side.
+    note: This looks like a straightforward line conflict. Accept one side or combine, then verify the result.
+
+Next: Run `gig resolve start --path <WORKSPACE>/a-service` to walk the supported text conflicts.

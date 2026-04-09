@@ -1,0 +1,29 @@
+Ticket snapshot ABC-123
+Workspace: <WORKSPACE>
+Promotion baseline: test -> main
+Environments: dev=dev -> test=test -> prod=main
+Captured at: <TIMESTAMP>
+Tool version: gig dev
+Saved to: <WORKSPACE>/.gig/snapshots/abc-123.json
+Plan verdict: blocked
+Verification verdict: blocked
+Scanned repositories: 1
+Touched repositories: 1
+Recorded commits: 2
+
+[a-service] <WORKSPACE>/a-service (git)
+  plan verdict: blocked
+  verify verdict: blocked
+  ticket commits recorded: 2
+  commits to include: 1
+  branches seen: dev, test
+  environment status:
+    - dev (dev): present, commits here 2
+    - test (test): behind by 1 commit(s), commits here 1
+    - prod (main): behind by 1 commit(s), commits here 0
+  dependency status:
+    - XYZ-456: present in test but missing from main
+  planned actions:
+    - Bring test up to date before promoting to main.
+    - Include 1 missing ticket commit(s) from test into main.
+    - Include dependency ticket XYZ-456 in main before promoting ABC-123.

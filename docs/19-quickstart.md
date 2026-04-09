@@ -33,6 +33,11 @@ That shows the full command list and the main usage patterns.
 gig scan --path .
 gig inspect ABC-123 --path .
 gig verify --ticket ABC-123 --from test --to main --path .
+gig snapshot create --ticket ABC-123 --from test --to main --path . --output .gig/snapshots/abc-123.json
+gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
+gig plan --release rel-2026-04-09 --path .
+gig verify --release rel-2026-04-09 --path .
+gig manifest generate --release rel-2026-04-09 --path .
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 gig doctor --path .
 ```
@@ -59,6 +64,10 @@ Use this to see which repos changed, what commits were found, and whether risky 
 
 ```bash
 gig verify --ticket ABC-123 --from test --to main --path .
+gig snapshot create --ticket ABC-123 --from test --to main --path . --output .gig/snapshots/abc-123.json
+gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
+gig plan --release rel-2026-04-09 --path .
+gig verify --release rel-2026-04-09 --path .
 ```
 
 Use this when you want a quick release decision:
@@ -124,6 +133,10 @@ Then run:
 
 ```bash
 gig verify --ticket ABC-123 --from test --to main --path .
+gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
+gig plan --release rel-2026-04-09 --path .
+gig verify --release rel-2026-04-09 --path .
+gig manifest generate --release rel-2026-04-09 --path .
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 gig doctor --path .
 ```

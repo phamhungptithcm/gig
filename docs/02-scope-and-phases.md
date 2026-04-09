@@ -55,9 +55,9 @@ The job of the current MVP is simple:
 
 - richer release packet structure
 - stronger JSON contracts
-- dependency trailer parsing
-- ticket snapshots
 - better release-level planning
+- snapshot-backed release-level planning
+- better multi-repo examples and docs
 
 ### Later Release Focus
 

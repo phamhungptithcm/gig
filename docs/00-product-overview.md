@@ -35,6 +35,7 @@ Today, `gig` can:
 - show environment status like `dev -> test -> prod`
 - verify a promotion as `safe`, `warning`, or `blocked`
 - output a read-only promotion plan in human-readable or JSON form
+- capture a repeatable ticket snapshot for audit and re-check
 - generate a Markdown or JSON release packet
 - load team config from a file
 - check config and repo coverage with `gig doctor`

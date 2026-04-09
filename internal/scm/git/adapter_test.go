@@ -91,6 +91,74 @@ func TestAdapterCompareBranchesDetectsMissingAndCherryPickedCommits(t *testing.T
 	}
 }
 
+func TestAdapterCommitMessagesReturnsRawCommitMessages(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required for adapter tests")
+	}
+
+	repoRoot := initRepository(t)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 wire dependency checks", "-m", "Depends-On: XYZ-456\nDepends-On: OPS-99")
+	hash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	adapter := newAdapter(t)
+	messages, err := adapter.CommitMessages(context.Background(), repoRoot, []string{hash})
+	if err != nil {
+		t.Fatalf("CommitMessages() error = %v", err)
+	}
+
+	if len(messages) != 1 {
+		t.Fatalf("CommitMessages() returned %d messages, want 1", len(messages))
+	}
+	if !strings.Contains(messages[hash], "ABC-123 wire dependency checks") {
+		t.Fatalf("CommitMessages() message = %q, want subject included", messages[hash])
+	}
+	if !strings.Contains(messages[hash], "Depends-On: XYZ-456") {
+		t.Fatalf("CommitMessages() message = %q, want trailer included", messages[hash])
+	}
+}
+
+func TestAdapterCommitMessagesDeduplicatesHashes(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required for adapter tests")
+	}
+
+	repoRoot := initRepository(t)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "one")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 first change", "-m", "Depends-On: XYZ-456")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "two")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 second change", "-m", "Depends-On: OPS-99")
+	secondHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	adapter := newAdapter(t)
+	messages, err := adapter.CommitMessages(context.Background(), repoRoot, []string{firstHash, firstHash, secondHash, " "})
+	if err != nil {
+		t.Fatalf("CommitMessages() error = %v", err)
+	}
+
+	if len(messages) != 2 {
+		t.Fatalf("CommitMessages() returned %d messages, want 2", len(messages))
+	}
+	if _, ok := messages[firstHash]; !ok {
+		t.Fatalf("CommitMessages() missing first hash %q", firstHash)
+	}
+	if _, ok := messages[secondHash]; !ok {
+		t.Fatalf("CommitMessages() missing second hash %q", secondHash)
+	}
+}
+
 func newAdapter(t *testing.T) *gitscm.Adapter {
 	t.Helper()
 

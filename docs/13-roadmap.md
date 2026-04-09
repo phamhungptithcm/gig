@@ -47,8 +47,7 @@ Shipped:
 
 - richer JSON contracts for downstream tooling
 - stronger release packet structure and bundle-friendly output
-- dependency trailer parsing
-- ticket snapshots
+- release-level planning backed by ticket snapshots
 - better multi-repo examples and docs
 
 ### After That
@@ -56,7 +55,6 @@ Shipped:
 - Jira work-item enrichment
 - PR and deployment evidence
 - multi-ticket release bundles
-- release-level planning such as `gig plan --release <release-id>`
 
 ### Later
 

@@ -1,0 +1,148 @@
+# Release Packet Bundle: rel-2026-04-09
+
+- Snapshot directory: `<WORKSPACE>/.gig/releases/rel-2026-04-09/snapshots`
+- Tickets: `2`
+- Safe: `1`
+- Warning: `0`
+- Blocked: `1`
+
+---
+
+# Release Packet: ABC-123
+
+## Overview
+- Workspace: `<WORKSPACE>`
+- Promotion: `test -> main`
+- Verdict: `blocked`
+- Touched repositories: `1`
+- Commits to promote: `1`
+- Manual steps: `1`
+
+## Summary
+- This ticket currently touches 1 repository in the selected workspace.
+- 1 commit(s) are still planned from test to main.
+- Promotion is blocked until the repository issues below are resolved.
+- 1 manual review step(s) were inferred from risky file changes.
+- 1 dependency ticket(s) are still missing from main.
+
+## QA Checklist
+- Use this section when QA needs a short release packet instead of reading raw git history.
+
+Checklist:
+- Verify the final ticket behavior on main after the promotion is complete.
+- Confirm every follow-up fix from test is visible in main.
+- Re-check a-service because release evidence is still blocked or incomplete.
+- Do focused regression checks for a-service because risky file changes were detected.
+
+## Client Review Notes
+- This packet summarizes what is expected to move from test to main for ticket ABC-123.
+
+Checklist:
+- Use the repository summary below to confirm the final scope that is moving forward.
+- Confirm the latest client feedback and follow-up fixes are included in the target branch.
+- Review the commit list for each affected repo if you want to confirm the exact follow-up fixes included in this release packet.
+- Call out any DB, config, or Mendix-related work because those changes usually need extra communication during release review.
+
+## Release Manager Checklist
+- Use this section to coordinate the actual promotion, communication, and rollback readiness.
+
+Checklist:
+- Use test as the approved source and main as the target for this ticket.
+- Record release evidence after promotion so future checks can compare against a clean baseline.
+- Bring test up to date before promoting to main.
+- Include 1 missing ticket commit(s) from test into main.
+- Include dependency ticket XYZ-456 in main before promoting ABC-123.
+- Review DB migration ordering, rollback steps, and deployment timing before promotion.
+
+## Repository Details
+
+### a-service
+
+- Repo path: `<WORKSPACE>/a-service`
+- SCM: `git`
+- Verdict: `blocked`
+
+Environment status:
+- dev (dev): present, commits here 2
+- test (test): behind by 1 commit(s), commits here 1
+- prod (main): behind by 1 commit(s), commits here 0
+
+Risk signals:
+- `db-change` (manual-review): Database-related changes should be reviewed before promotion [db/migrations/001_add_column.sql]
+- `missing-dependency` (blocked): Dependency ticket XYZ-456 is present in test but missing from main [XYZ-456]
+
+Dependency status:
+- XYZ-456: present in test but missing from main
+
+Manual steps:
+- Review DB migration ordering, rollback steps, and deployment timing before promotion.
+
+Planned actions:
+- Bring test up to date before promoting to main.
+- Include 1 missing ticket commit(s) from test into main.
+- Include dependency ticket XYZ-456 in main before promoting ABC-123.
+
+Notes:
+- Source branch test is behind an earlier environment by 1 commit(s).
+- Declared dependency XYZ-456 is present in test but missing from main.
+
+Commits to include:
+- `<HASH>` ABC-123 | service-a | add validation fix
+
+---
+
+# Release Packet: XYZ-999
+
+## Overview
+- Workspace: `<WORKSPACE>`
+- Promotion: `test -> main`
+- Verdict: `safe`
+- Touched repositories: `1`
+- Commits to promote: `0`
+- Manual steps: `0`
+
+## Summary
+- This ticket currently touches 1 repository in the selected workspace.
+- 0 commit(s) are still planned from test to main.
+- No blocking repository issues were found for the selected move.
+
+## QA Checklist
+- Use this section when QA needs a short release packet instead of reading raw git history.
+
+Checklist:
+- Verify the final ticket behavior on main after the promotion is complete.
+- Confirm every follow-up fix from test is visible in main.
+
+## Client Review Notes
+- This packet summarizes what is expected to move from test to main for ticket XYZ-999.
+
+Checklist:
+- Use the repository summary below to confirm the final scope that is moving forward.
+- Confirm the latest client feedback and follow-up fixes are included in the target branch.
+
+## Release Manager Checklist
+- Use this section to coordinate the actual promotion, communication, and rollback readiness.
+
+Checklist:
+- Use test as the approved source and main as the target for this ticket.
+- Record release evidence after promotion so future checks can compare against a clean baseline.
+- No ticket commits are missing in main.
+
+## Repository Details
+
+### b-service
+
+- Repo path: `<WORKSPACE>/b-service`
+- SCM: `git`
+- Verdict: `safe`
+
+Environment status:
+- dev (dev): present, commits here 1
+- test (test): aligned, commits here 1
+- prod (main): aligned, commits here 1
+
+Planned actions:
+- No ticket commits are missing in main.
+
+Notes:
+- Target branch main already contains the ticket commits from test.
