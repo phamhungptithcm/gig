@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gig/internal/buildinfo"
 	"gig/internal/config"
 	diffsvc "gig/internal/diff"
 	"gig/internal/output"
@@ -64,6 +65,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runFind(ctx, args[1:])
 	case "diff":
 		return a.runDiff(ctx, args[1:])
+	case "version", "-v", "--version":
+		return a.runVersion()
 	case "help", "-h", "--help":
 		a.printRootUsage()
 		return 0
@@ -115,6 +118,14 @@ func (a *App) runScan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runFind(ctx context.Context, args []string) int {
+	reorderedArgs, err := reorderFindArgs(args)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
+		a.printFindUsage()
+		return usageExitCode
+	}
+	args = reorderedArgs
+
 	if hasHelpFlag(args) {
 		a.printFindUsage()
 		return 0
@@ -219,6 +230,7 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  gig scan --path .")
 	fmt.Fprintln(a.stderr, "  gig find <ticket-id> --path .")
 	fmt.Fprintln(a.stderr, "  gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
+	fmt.Fprintln(a.stderr, "  gig version")
 }
 
 func (a *App) printScanUsage() {
@@ -253,4 +265,44 @@ func normalizeCLIPath(path string) (string, error) {
 
 func normalizeTicketID(ticketID string) string {
 	return strings.ToUpper(strings.TrimSpace(ticketID))
+}
+
+func (a *App) runVersion() int {
+	fmt.Fprintln(a.stdout, buildinfo.Summary())
+	fmt.Fprintf(a.stdout, "commit: %s\n", buildinfo.Commit)
+	fmt.Fprintf(a.stdout, "built: %s\n", buildinfo.Date)
+	return 0
+}
+
+func reorderFindArgs(args []string) ([]string, error) {
+	reordered := make([]string, 0, len(args))
+	positionals := make([]string, 0, 1)
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case arg == "-h" || arg == "--help":
+			reordered = append(reordered, arg)
+		case arg == "-path" || arg == "--path":
+			reordered = append(reordered, arg)
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("flag %q requires a value", arg)
+			}
+			reordered = append(reordered, args[i+1])
+			i++
+		case strings.HasPrefix(arg, "-path=") || strings.HasPrefix(arg, "--path="):
+			reordered = append(reordered, arg)
+		case strings.HasPrefix(arg, "-"):
+			reordered = append(reordered, arg)
+		default:
+			positionals = append(positionals, arg)
+		}
+	}
+
+	if len(positionals) > 1 {
+		return nil, fmt.Errorf("find requires exactly one <ticket-id> argument")
+	}
+
+	return append(reordered, positionals...), nil
 }

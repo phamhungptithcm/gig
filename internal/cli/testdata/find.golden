@@ -1,0 +1,7 @@
+Ticket ABC-123
+Workspace: <WORKSPACE>
+Scanned repositories: 1
+
+[a-service] <WORKSPACE>/a-service (git)
+  - <HASH>  ABC-123 | service-a | fix login validation
+    branches: main

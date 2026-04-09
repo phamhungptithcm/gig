@@ -1,0 +1,10 @@
+Ticket ABC-123
+Workspace: <WORKSPACE>
+Compare: dev -> test
+Scanned repositories: 1
+
+[a-service] <WORKSPACE>/a-service (git)
+  source commits: 1
+  target commits: 0
+  missing in test:
+    - <HASH>  ABC-123 | service-a | add validation fix

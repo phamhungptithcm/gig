@@ -107,6 +107,21 @@ Output fields per repository:
 - target commit count
 - missing commits list
 
+## `gig version`
+
+Purpose:
+Show the installed CLI version and build metadata.
+
+```bash
+gig version
+```
+
+Output:
+
+- version string
+- commit id when available
+- build timestamp when available
+
 ## `gig promote`
 
 Status:
