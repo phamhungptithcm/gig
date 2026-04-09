@@ -21,7 +21,7 @@ When code is pushed to `main`:
 - release archives are built for macOS, Linux, and Windows
 - release notes are generated from the commits since the previous tag
 - GitHub Release assets are published
-- Homebrew and Scoop metadata are regenerated
+- package-manager metadata for `gig-cli` is regenerated from this same repository
 
 ## Docs Deployment
 

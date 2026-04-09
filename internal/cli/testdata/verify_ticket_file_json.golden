@@ -1,0 +1,106 @@
+{
+  "command": "verify",
+  "workspace": "<WORKSPACE>",
+  "ticketFile": "<WORKSPACE>/tickets.txt",
+  "verifications": [
+    {
+      "ticketId": "ABC-123",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "environments": [
+        {
+          "Name": "dev",
+          "Branch": "dev"
+        },
+        {
+          "Name": "test",
+          "Branch": "test"
+        },
+        {
+          "Name": "prod",
+          "Branch": "main"
+        }
+      ],
+      "summary": {
+        "scannedRepositories": 1,
+        "touchedRepositories": 1,
+        "readyRepositories": 0,
+        "warningRepositories": 0,
+        "blockedRepositories": 1,
+        "totalCommitsToPromote": 1,
+        "totalManualSteps": 1
+      },
+      "verdict": "blocked",
+      "reasons": [
+        "At least one repository is missing the correct source or target release evidence.",
+        "1 ticket commit(s) are still planned for promotion.",
+        "1 manual review step(s) were inferred from the changed files."
+      ],
+      "repositories": [
+        {
+          "repository": {
+            "Name": "a-service",
+            "Root": "<WORKSPACE>/a-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "verdict": "blocked",
+          "checks": [
+            "test contains 1 ticket commit(s).",
+            "main is missing 1 ticket commit(s).",
+            "Source branch test is behind an earlier environment by 1 commit(s).",
+            "1 risk signal(s) require review."
+          ],
+          "riskSignals": [
+            {
+              "Code": "db-change",
+              "Level": "manual-review",
+              "Summary": "Database-related changes should be reviewed before promotion",
+              "Examples": [
+                "db/migrations/001_add_column.sql"
+              ]
+            }
+          ],
+          "manualSteps": [
+            {
+              "code": "review-db-rollout",
+              "summary": "Review DB migration ordering, rollback steps, and deployment timing before promotion."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ticketId": "XYZ-999",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "environments": [
+        {
+          "Name": "dev",
+          "Branch": "dev"
+        },
+        {
+          "Name": "test",
+          "Branch": "test"
+        },
+        {
+          "Name": "prod",
+          "Branch": "main"
+        }
+      ],
+      "summary": {
+        "scannedRepositories": 1,
+        "touchedRepositories": 0,
+        "readyRepositories": 0,
+        "warningRepositories": 0,
+        "blockedRepositories": 0,
+        "totalCommitsToPromote": 0,
+        "totalManualSteps": 0
+      },
+      "verdict": "blocked",
+      "reasons": [
+        "The ticket was not found in detected repositories."
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ dist_dir="${2:-dist}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist_path="${repo_root}/${dist_dir}"
 repo="phamhungptithcm/gig"
+package_name="gig-cli"
 version_without_v="${version#v}"
 
 require_file() {
@@ -55,10 +56,10 @@ linux_arm64_sha="$(sha256_for "${linux_arm64}")"
 windows_amd64_sha="$(sha256_for "${windows_amd64}")"
 windows_arm64_sha="$(sha256_for "${windows_arm64}")"
 
-mkdir -p "${repo_root}/Formula" "${repo_root}/Scoop"
+mkdir -p "${repo_root}/Formula" "${repo_root}/bucket"
 
-cat > "${repo_root}/Formula/gig.rb" <<EOF
-class Gig < Formula
+cat > "${repo_root}/Formula/${package_name}.rb" <<EOF
+class GigCli < Formula
   desc "CLI for tracking ticket-related commits across multiple repositories"
   homepage "https://github.com/${repo}"
   version "${version_without_v}"
@@ -95,12 +96,12 @@ class Gig < Formula
 end
 EOF
 
-cat > "${repo_root}/Scoop/gig.json" <<EOF
+cat > "${repo_root}/bucket/${package_name}.json" <<EOF
 {
   "version": "${version_without_v}",
   "description": "CLI for tracking ticket-related commits across multiple repositories",
   "homepage": "https://github.com/${repo}",
-  "notes": "Run 'gig version' to confirm the installed build.",
+  "notes": "Package name is '${package_name}', but the installed command is 'gig'. Run 'gig version' to confirm the installed build.",
   "architecture": {
     "64bit": {
       "url": "https://github.com/${repo}/releases/download/${version}/gig_${version_without_v}_windows_amd64.zip",

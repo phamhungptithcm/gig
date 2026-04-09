@@ -123,19 +123,24 @@ There is also a ready sample here:
 
 ## Install
 
-### Quick Install On macOS With Homebrew
+Package managers publish `gig` as `gig-cli` to avoid name collisions, but the command you run after install stays `gig`.
+
+### Quick Install On macOS And Linux With Homebrew
 
 ```bash
-brew install https://raw.githubusercontent.com/phamhungptithcm/gig/main/Formula/gig.rb
+brew install phamhungptithcm/gig/gig-cli
+gig version
 ```
 
 ### Quick Install On Windows With Scoop
 
 ```powershell
-scoop install https://raw.githubusercontent.com/phamhungptithcm/gig/main/Scoop/gig.json
+scoop bucket add gig https://github.com/phamhungptithcm/gig
+scoop install gig/gig-cli
+gig version
 ```
 
-### Quick Install On macOS And Linux
+### Quick Install On macOS And Linux Without Homebrew
 
 Install the latest release:
 

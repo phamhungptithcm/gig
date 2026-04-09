@@ -50,6 +50,7 @@ gig help
 - usage errors return code `2`
 - runtime failures return code `1`
 - current commands are read-only and never change repositories
+- `--ticket-file` accepts one ticket ID per line and ignores blank lines plus lines that start with `#`
 
 ## Shared Config Behavior
 
@@ -167,6 +168,12 @@ Optional JSON output:
 gig verify --ticket ABC-123 --from test --to main --path . --format json
 ```
 
+Batch verification from a file:
+
+```bash
+gig verify --ticket-file tickets.txt --from test --to main --path .
+```
+
 What it shows:
 
 - one overall verdict: `safe`, `warning`, or `blocked`
@@ -186,6 +193,12 @@ Optional JSON output:
 
 ```bash
 gig plan --ticket ABC-123 --from test --to main --path . --format json
+```
+
+Batch planning from a file:
+
+```bash
+gig plan --ticket-file tickets.txt --from test --to main --path .
 ```
 
 What it shows:
@@ -211,6 +224,12 @@ Optional JSON output:
 
 ```bash
 gig manifest generate --ticket ABC-123 --from test --to main --path . --format json
+```
+
+Batch packet generation from a file:
+
+```bash
+gig manifest generate --ticket-file tickets.txt --from test --to main --path .
 ```
 
 What it shows:
@@ -249,6 +268,12 @@ Use this when you want to confirm what build is installed.
 ```bash
 gig version
 ```
+
+## SCM Support Today
+
+- Git and SVN working copies both support the current read-only CLI flow: `scan`, `find`, `inspect`, `env status`, `diff`, `verify`, `plan`, `manifest generate`, and `doctor`
+- SVN branch comparison assumes a normal Subversion layout such as `trunk` and `branches/<name>`, or explicit branch paths in config and flags
+- repository catalog entries currently map to detected repository roots, not subfolders inside a single monorepo
 
 ## Common Examples
 

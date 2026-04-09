@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -108,7 +109,7 @@ func (s *Service) InspectInRepositories(ctx context.Context, repositories []scm.
 
 		commits, err := adapter.SearchCommits(ctx, repository.Root, scm.SearchQuery{TicketID: ticketID})
 		if err != nil {
-			if err == scm.ErrUnsupported {
+			if errors.Is(err, scm.ErrUnsupported) {
 				continue
 			}
 			return nil, err
@@ -211,6 +212,9 @@ func (s *Service) EnvironmentStatusInRepositories(ctx context.Context, repositor
 				return nil, err
 			}
 
+			if statuses[i].CommitCount == 0 && len(compareResult.SourceCommits) > 0 && len(compareResult.MissingCommits) == 0 {
+				statuses[i].CommitCount = inferredCommitCount(compareResult)
+			}
 			statuses[i].MissingFromPrevious = len(compareResult.MissingCommits)
 			statuses[i].State = deriveEnvironmentState(statuses, i)
 		}
@@ -386,4 +390,11 @@ func deriveEnvironmentState(statuses []EnvironmentResult, index int) Environment
 		return EnvStatePresent
 	}
 	return EnvStateAligned
+}
+
+func inferredCommitCount(compareResult scm.CompareResult) int {
+	if len(compareResult.TargetCommits) > 0 {
+		return len(compareResult.TargetCommits)
+	}
+	return len(compareResult.SourceCommits)
 }
