@@ -15,6 +15,8 @@ With `gig`, you can:
 - see which environments already contain that ticket and which are behind
 - spot risky changes like DB, config, or Mendix-related files
 - compare two branches before manual cherry-pick or promotion
+- verify whether a ticket is actually safe to move forward
+- generate a promotion plan in human-readable or JSON form
 
 Today, `gig` is read-only.
 It helps you inspect and verify.
@@ -81,6 +83,10 @@ If those questions sound familiar, this project is aimed at your workflow.
   Show where the ticket is present, aligned, or behind across environments.
 - `gig diff --ticket ABC-123 --from dev --to test`
   Show what is still missing in the target branch.
+- `gig verify --ticket ABC-123 --from test --to main`
+  Tell you whether the promotion is `safe`, `warning`, or `blocked`.
+- `gig plan --ticket ABC-123 --from test --to main`
+  Build a promotion plan with manual-review hints and machine-readable JSON output.
 - `gig version`
   Show the installed version.
 
@@ -97,16 +103,20 @@ Run:
 ```bash
 gig inspect ABC-123 --path /path/to/workspace
 gig env status ABC-123 --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main
-gig diff --ticket ABC-123 --from test --to main --path /path/to/workspace
+gig verify --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main
+gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --envs dev=dev,test=test,uat=uat,prod=main --format json
 ```
 
-From those three commands, you can answer:
+From those commands, you can answer:
 
 - which repos were touched
 - how many commits belong to the ticket
 - whether the ticket reached each environment branch
+- whether the approved source branch is still behind a previous environment
 - whether a later fix is still missing from the next promotion step
 - whether the ticket includes DB, config, or Mendix-style risk signals
+- whether the ticket looks safe to promote now
+- what JSON release manifest you can pass into CI or review tooling
 
 ## Install
 
@@ -141,7 +151,7 @@ Run:
 ./bin/gig version
 ```
 
-## Start In 4 Commands
+## Start In 5 Commands
 
 ### 1. Scan your workspace
 
@@ -205,6 +215,26 @@ This shows:
 - commits already present in the target branch
 - commits still missing from the target branch
 
+### 5. Verify and plan the promotion
+
+```bash
+gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+```
+
+This shows:
+
+- whether promotion is `safe`, `warning`, or `blocked`
+- whether the source branch is behind an earlier environment
+- which manual steps should be reviewed before release
+- which commits are expected to move next
+
+If you want a machine-readable release manifest for CI or review tooling:
+
+```bash
+gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main --format json
+```
+
 ## Why Teams Will Care
 
 `gig` is useful because it is:
@@ -224,11 +254,10 @@ Right now, `gig` does not:
 - auto-resolve conflicts
 - read Jira or deployment data yet
 - load team config yet
-- output JSON yet
 - support SVN history operations yet
 
 That is intentional.
-The first goal is to make ticket discovery, environment visibility, and branch comparison reliable.
+The first goal is to make ticket discovery, environment visibility, verification, and release planning reliable.
 
 ## Project Direction
 
@@ -236,10 +265,9 @@ The first goal is to make ticket discovery, environment visibility, and branch c
 
 That direction includes:
 
-- safer promotion planning
 - dependency checks
 - ticket snapshots
-- release manifests
+- richer release manifests
 - Jira, deployment, and release evidence later
 
 ## Documentation

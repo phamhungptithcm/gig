@@ -13,6 +13,7 @@ import (
 	diffsvc "gig/internal/diff"
 	inspectsvc "gig/internal/inspect"
 	"gig/internal/output"
+	plansvc "gig/internal/plan"
 	"gig/internal/repo"
 	"gig/internal/scm"
 	gitscm "gig/internal/scm/git"
@@ -29,6 +30,7 @@ type App struct {
 	finder  *ticketsvc.Service
 	diff    *diffsvc.Service
 	inspect *inspectsvc.Service
+	planner *plansvc.Service
 }
 
 func NewApp(stdout, stderr io.Writer) (*App, error) {
@@ -52,6 +54,7 @@ func NewApp(stdout, stderr io.Writer) (*App, error) {
 		finder:  ticketsvc.NewService(scanner, registry, parser),
 		diff:    diffsvc.NewService(scanner, registry, parser),
 		inspect: inspectsvc.NewService(scanner, registry, parser),
+		planner: plansvc.NewService(scanner, registry, parser),
 	}, nil
 }
 
@@ -72,6 +75,10 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runInspect(ctx, args[1:])
 	case "env":
 		return a.runEnv(ctx, args[1:])
+	case "plan":
+		return a.runPlan(ctx, args[1:])
+	case "verify":
+		return a.runVerify(ctx, args[1:])
 	case "version", "-v", "--version":
 		return a.runVersion()
 	case "help", "-h", "--help":
@@ -351,6 +358,156 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	return 0
 }
 
+func (a *App) runPlan(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printPlanUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	ticketID := fs.String("ticket", "", "Ticket ID to plan")
+	fromBranch := fs.String("from", "", "Source branch")
+	toBranch := fs.String("to", "", "Target branch")
+	envsSpec := fs.String("envs", defaultEnvironmentSpec, "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printPlanUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "plan does not accept positional arguments")
+		a.printPlanUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return usageExitCode
+	}
+
+	environments, err := parseEnvironmentSpec(*envsSpec)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return 1
+	}
+
+	normalizedTicketID := normalizeTicketID(*ticketID)
+	promotionPlan, err := a.planner.BuildPromotionPlan(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderPromotionPlan(a.stdout, promotionPlan); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command   string                `json:"command"`
+			Workspace string                `json:"workspace"`
+			Plan      plansvc.PromotionPlan `json:"plan"`
+		}{
+			Command:   "plan",
+			Workspace: resolvedPath,
+			Plan:      promotionPlan,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func (a *App) runVerify(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printVerifyUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	ticketID := fs.String("ticket", "", "Ticket ID to verify")
+	fromBranch := fs.String("from", "", "Source branch")
+	toBranch := fs.String("to", "", "Target branch")
+	envsSpec := fs.String("envs", defaultEnvironmentSpec, "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printVerifyUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "verify does not accept positional arguments")
+		a.printVerifyUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return usageExitCode
+	}
+
+	environments, err := parseEnvironmentSpec(*envsSpec)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return 1
+	}
+
+	normalizedTicketID := normalizeTicketID(*ticketID)
+	verification, err := a.planner.VerifyPromotion(ctx, resolvedPath, normalizedTicketID, *fromBranch, *toBranch, environments)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderVerification(a.stdout, verification); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command      string               `json:"command"`
+			Workspace    string               `json:"workspace"`
+			Verification plansvc.Verification `json:"verification"`
+		}{
+			Command:      "verify",
+			Workspace:    resolvedPath,
+			Verification: verification,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
 func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "gig helps release workflows find ticket-related commits across multiple repositories.")
 	fmt.Fprintln(a.stderr)
@@ -360,6 +517,8 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
 	fmt.Fprintln(a.stderr, "  gig inspect <ticket-id> --path .")
 	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> --path . [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs ...] [--format human|json]")
+	fmt.Fprintln(a.stderr, "  gig plan --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs ...] [--format human|json]")
 	fmt.Fprintln(a.stderr, "  gig version")
 }
 
@@ -386,6 +545,14 @@ func (a *App) printEnvUsage() {
 
 func (a *App) printEnvStatusUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> --path . [--envs dev=dev,test=test,prod=main]")
+}
+
+func (a *App) printPlanUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig plan --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs dev=dev,test=test,prod=main] [--format human|json]")
+}
+
+func (a *App) printVerifyUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig verify --ticket <ticket-id> --from <branch> --to <branch> --path . [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func hasHelpFlag(args []string) bool {
@@ -418,6 +585,24 @@ func (a *App) runVersion() int {
 }
 
 const defaultEnvironmentSpec = "dev=dev,test=test,prod=main"
+
+type outputFormat string
+
+const (
+	outputFormatHuman outputFormat = "human"
+	outputFormatJSON  outputFormat = "json"
+)
+
+func parseOutputFormat(raw string) (outputFormat, error) {
+	switch outputFormat(strings.ToLower(strings.TrimSpace(raw))) {
+	case outputFormatHuman:
+		return outputFormatHuman, nil
+	case outputFormatJSON:
+		return outputFormatJSON, nil
+	default:
+		return "", fmt.Errorf("unsupported format %q", raw)
+	}
+}
 
 func parseEnvironmentSpec(spec string) ([]inspectsvc.Environment, error) {
 	spec = strings.TrimSpace(spec)

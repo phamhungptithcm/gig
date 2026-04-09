@@ -173,6 +173,75 @@ Output fields per repository:
 - environment state summary
 - missing commit count from the previous environment when behind
 
+## `gig verify`
+
+Purpose:
+Run pre-release checks and emit a clear verdict for one ticket promotion.
+
+```bash
+gig verify --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+```
+
+Flags:
+
+- `--ticket`: required ticket key
+- `--from`: required source branch
+- `--to`: required target branch
+- `--path`: workspace path or repository path; defaults to `.`
+- `--envs`: comma-separated environment mapping; defaults to `dev=dev,test=test,prod=main`
+- `--format`: `human` or `json`; defaults to `human`
+
+Behavior:
+
+- build the same read-only promotion view used by `gig plan`
+- classify the result as `safe`, `warning`, or `blocked`
+- explain why the ticket is or is not ready to move forward
+- highlight manual-review steps inferred from changed files
+
+Output fields:
+
+- overall verdict
+- verification reasons
+- per-repository checks
+- manual steps
+
+## `gig plan`
+
+Purpose:
+Build a read-only promotion plan for one ticket between two branches.
+
+```bash
+gig plan --ticket ABC-123 --from test --to main --path . --envs dev=dev,test=test,prod=main
+```
+
+Flags:
+
+- `--ticket`: required ticket key
+- `--from`: required source branch
+- `--to`: required target branch
+- `--path`: workspace path or repository path; defaults to `.`
+- `--envs`: comma-separated environment mapping; defaults to `dev=dev,test=test,prod=main`
+- `--format`: `human` or `json`; defaults to `human`
+
+Behavior:
+
+- discover repositories
+- inspect ticket scope across repositories
+- compare the selected source and target branches
+- detect if the source branch is behind an earlier environment in the configured flow
+- infer manual-review steps from risk signals
+- emit a promotion plan for terminal output or machine-readable automation
+
+Output fields per repository:
+
+- verdict
+- source and target commit counts
+- missing commits to include
+- environment status
+- risk signals
+- manual steps
+- planned actions
+
 ## `gig version`
 
 Purpose:
@@ -233,4 +302,5 @@ Human-readable default output should follow these rules:
 - show warnings clearly
 - never hide write actions behind unclear text
 
-Future JSON output should use the same service results, not separate command logic.
+Current JSON output is available for `gig plan` and `gig verify`.
+It should continue to use the same service results, not separate command logic.

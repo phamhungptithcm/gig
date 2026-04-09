@@ -90,9 +90,7 @@ func TestAppInspectGolden(t *testing.T) {
 	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
 	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
 
-	runGit(t, repoRoot, "checkout", "main")
-	runGit(t, repoRoot, "checkout", "-b", "test")
-	runGit(t, repoRoot, "cherry-pick", firstHash)
+	runGit(t, repoRoot, "checkout", "-b", "test", firstHash)
 
 	stdout, stderr, exitCode := runApp(t, "inspect", "abc-123", "--path", workspace)
 	if exitCode != 0 {
@@ -120,9 +118,7 @@ func TestAppEnvStatusGolden(t *testing.T) {
 	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
 	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
 
-	runGit(t, repoRoot, "checkout", "main")
-	runGit(t, repoRoot, "checkout", "-b", "test")
-	runGit(t, repoRoot, "cherry-pick", firstHash)
+	runGit(t, repoRoot, "checkout", "-b", "test", firstHash)
 
 	stdout, stderr, exitCode := runApp(t, "env", "status", "ABC-123", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
 	if exitCode != 0 {
@@ -130,6 +126,45 @@ func TestAppEnvStatusGolden(t *testing.T) {
 	}
 
 	assertGolden(t, "env_status.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppPlanGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "plan", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("plan exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "plan.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppPlanJSONGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "plan", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("plan json exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "plan_json.golden", normalizeOutput(stdout, workspace))
+}
+
+func TestAppVerifyGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
+		t.Fatalf("verify exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "verify.golden", normalizeOutput(stdout, workspace))
 }
 
 func TestAppSubcommandHelpReturnsZero(t *testing.T) {
@@ -237,4 +272,27 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
 	}
+}
+
+func createPromotionFixture(t *testing.T) string {
+	t.Helper()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "a-service")
+
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "dev")
+
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "hello")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add validation fix")
+	firstHash := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
+
+	writeFile(t, filepath.Join(repoRoot, "db", "migrations", "001_add_column.sql"), "alter table demo add column enabled int;\n")
+	runGit(t, repoRoot, "add", "db/migrations/001_add_column.sql")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 | service-a | add migration")
+
+	runGit(t, repoRoot, "checkout", "-b", "test", firstHash)
+
+	return workspace
 }
