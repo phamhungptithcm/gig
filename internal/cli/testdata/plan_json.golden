@@ -30,7 +30,8 @@
     },
     "verdict": "blocked",
     "notes": [
-      "Resolve blocked repositories before promoting this ticket."
+      "Resolve blocked repositories before promoting this ticket.",
+      "1 dependency ticket(s) are still missing from main."
     ],
     "repositories": [
       {
@@ -74,6 +75,35 @@
             "Summary": "Database-related changes should be reviewed before promotion",
             "Examples": [
               "db/migrations/001_add_column.sql"
+            ]
+          },
+          {
+            "Code": "missing-dependency",
+            "Level": "blocked",
+            "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+            "Examples": [
+              "XYZ-456"
+            ]
+          }
+        ],
+        "declaredDependencies": [
+          {
+            "TicketID": "ABC-123",
+            "DependsOn": "XYZ-456",
+            "CommitHash": "<HASH>",
+            "CommitSubject": "ABC-123 | service-a | add validation fix",
+            "TrailerKey": "Depends-On"
+          }
+        ],
+        "dependencyResolutions": [
+          {
+            "TicketID": "ABC-123",
+            "DependsOn": "XYZ-456",
+            "Status": "missing-target",
+            "FoundInSource": true,
+            "FoundInTarget": false,
+            "EvidenceCommits": [
+              "<HASH>"
             ]
           }
         ],
@@ -120,11 +150,16 @@
           {
             "code": "include-missing-commits",
             "summary": "Include 1 missing ticket commit(s) from test into main."
+          },
+          {
+            "code": "include-missing-dependency",
+            "summary": "Include dependency ticket XYZ-456 in main before promoting ABC-123."
           }
         ],
         "verdict": "blocked",
         "notes": [
-          "Source branch test is behind an earlier environment by 1 commit(s)."
+          "Source branch test is behind an earlier environment by 1 commit(s).",
+          "Declared dependency XYZ-456 is present in test but missing from main."
         ]
       }
     ]

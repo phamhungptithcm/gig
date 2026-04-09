@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gig/internal/config"
+	depsvc "gig/internal/dependency"
 	inspectsvc "gig/internal/inspect"
 	plansvc "gig/internal/plan"
 	"gig/internal/scm"
@@ -19,15 +20,16 @@ type AudienceSection struct {
 }
 
 type RepositoryPacket struct {
-	Repository          scm.Repository                 `json:"repository"`
-	ConfigEntry         *config.Repository             `json:"configEntry,omitempty"`
-	Verdict             plansvc.Verdict                `json:"verdict"`
-	EnvironmentStatuses []inspectsvc.EnvironmentResult `json:"environmentStatuses,omitempty"`
-	RiskSignals         []inspectsvc.RiskSignal        `json:"riskSignals,omitempty"`
-	ManualSteps         []plansvc.Action               `json:"manualSteps,omitempty"`
-	Actions             []plansvc.Action               `json:"actions,omitempty"`
-	Notes               []string                       `json:"notes,omitempty"`
-	CommitsToInclude    []scm.Commit                   `json:"commitsToInclude,omitempty"`
+	Repository            scm.Repository                 `json:"repository"`
+	ConfigEntry           *config.Repository             `json:"configEntry,omitempty"`
+	Verdict               plansvc.Verdict                `json:"verdict"`
+	EnvironmentStatuses   []inspectsvc.EnvironmentResult `json:"environmentStatuses,omitempty"`
+	RiskSignals           []inspectsvc.RiskSignal        `json:"riskSignals,omitempty"`
+	DependencyResolutions []depsvc.Resolution            `json:"dependencyResolutions,omitempty"`
+	ManualSteps           []plansvc.Action               `json:"manualSteps,omitempty"`
+	Actions               []plansvc.Action               `json:"actions,omitempty"`
+	Notes                 []string                       `json:"notes,omitempty"`
+	CommitsToInclude      []scm.Commit                   `json:"commitsToInclude,omitempty"`
 }
 
 type ReleasePacket struct {
@@ -72,15 +74,16 @@ func BuildReleasePacket(workspacePath string, loaded config.Loaded, promotionPla
 		}
 
 		repositories = append(repositories, RepositoryPacket{
-			Repository:          repositoryPlan.Repository,
-			ConfigEntry:         configEntry,
-			Verdict:             repositoryPlan.Verdict,
-			EnvironmentStatuses: repositoryPlan.EnvironmentStatuses,
-			RiskSignals:         repositoryPlan.RiskSignals,
-			ManualSteps:         repositoryPlan.ManualSteps,
-			Actions:             repositoryPlan.Actions,
-			Notes:               append(configNotes(configEntry), repositoryPlan.Notes...),
-			CommitsToInclude:    repositoryPlan.Compare.MissingCommits,
+			Repository:            repositoryPlan.Repository,
+			ConfigEntry:           configEntry,
+			Verdict:               repositoryPlan.Verdict,
+			EnvironmentStatuses:   repositoryPlan.EnvironmentStatuses,
+			RiskSignals:           repositoryPlan.RiskSignals,
+			DependencyResolutions: repositoryPlan.DependencyResolutions,
+			ManualSteps:           repositoryPlan.ManualSteps,
+			Actions:               repositoryPlan.Actions,
+			Notes:                 append(configNotes(configEntry), repositoryPlan.Notes...),
+			CommitsToInclude:      repositoryPlan.Compare.MissingCommits,
 		})
 	}
 
@@ -96,7 +99,7 @@ func BuildReleasePacket(workspacePath string, loaded config.Loaded, promotionPla
 		ToBranch:       promotionPlan.ToBranch,
 		Verdict:        promotionPlan.Verdict,
 		Summary:        promotionPlan.Summary,
-		Highlights:     buildHighlights(promotionPlan),
+		Highlights:     buildHighlights(promotionPlan, repositories),
 		QA:             buildQASection(promotionPlan, repositories),
 		Client:         buildClientSection(promotionPlan, repositories),
 		ReleaseManager: buildReleaseManagerSection(promotionPlan, repositories),
@@ -104,7 +107,7 @@ func BuildReleasePacket(workspacePath string, loaded config.Loaded, promotionPla
 	}
 }
 
-func buildHighlights(promotionPlan plansvc.PromotionPlan) []string {
+func buildHighlights(promotionPlan plansvc.PromotionPlan, repositories []RepositoryPacket) []string {
 	highlights := []string{
 		fmt.Sprintf("This ticket currently touches %d %s in the selected workspace.", promotionPlan.Summary.TouchedRepositories, pluralize(promotionPlan.Summary.TouchedRepositories, "repository", "repositories")),
 		fmt.Sprintf("%d commit(s) are still planned from %s to %s.", promotionPlan.Summary.TotalCommitsToPromote, promotionPlan.FromBranch, promotionPlan.ToBranch),
@@ -121,6 +124,13 @@ func buildHighlights(promotionPlan plansvc.PromotionPlan) []string {
 
 	if promotionPlan.Summary.TotalManualSteps > 0 {
 		highlights = append(highlights, fmt.Sprintf("%d manual review step(s) were inferred from risky file changes.", promotionPlan.Summary.TotalManualSteps))
+	}
+	missingDependencies, unresolvedDependencies := dependencyCounts(repositories)
+	if missingDependencies > 0 {
+		highlights = append(highlights, fmt.Sprintf("%d dependency ticket(s) are still missing from %s.", missingDependencies, promotionPlan.ToBranch))
+	}
+	if unresolvedDependencies > 0 {
+		highlights = append(highlights, fmt.Sprintf("%d declared dependency ticket(s) could not be confirmed in the scanned workspace.", unresolvedDependencies))
 	}
 
 	return highlights
@@ -229,6 +239,28 @@ func hasRiskSignals(repositories []RepositoryPacket) bool {
 		}
 	}
 	return false
+}
+
+func dependencyCounts(repositories []RepositoryPacket) (int, int) {
+	statuses := map[string]depsvc.Status{}
+	for _, repository := range repositories {
+		for _, resolution := range repository.DependencyResolutions {
+			statuses[resolution.DependsOn] = resolution.Status
+		}
+	}
+
+	missingDependencies := 0
+	unresolvedDependencies := 0
+	for _, status := range statuses {
+		switch status {
+		case depsvc.StatusMissingTarget:
+			missingDependencies++
+		case depsvc.StatusUnresolved:
+			unresolvedDependencies++
+		}
+	}
+
+	return missingDependencies, unresolvedDependencies
 }
 
 func dedupeStrings(values []string) []string {

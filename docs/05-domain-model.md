@@ -79,6 +79,7 @@ Contains:
 - commits
 - branches seen
 - risk signals
+- declared dependencies
 
 ## Environment
 
@@ -128,6 +129,7 @@ Each repo plan can include:
 
 - compare result
 - risk signals
+- dependency resolutions
 - environment statuses
 - manual steps
 - planned actions
@@ -145,6 +147,26 @@ Contains:
 - human-readable reasons
 - per-repo checks
 - manual steps
+
+## Ticket Snapshot
+
+Used by `gig snapshot create`.
+
+Represents a repeatable baseline for one ticket move.
+
+Contains:
+
+- schema version
+- capture time
+- tool version
+- workspace and config path
+- ticket ID
+- source branch
+- target branch
+- environment mapping
+- inspection baseline
+- promotion plan
+- verification result
 
 ## Why These Models Matter
 

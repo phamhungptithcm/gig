@@ -1,0 +1,52 @@
+Release rel-2026-04-09
+Workspace: <WORKSPACE>
+Snapshot directory: <WORKSPACE>/.gig/releases/rel-2026-04-09/snapshots
+Promotion baseline: test -> main
+Environments: dev=dev -> test=test -> prod=main
+Verdict: blocked
+Tickets: 2
+Touched repositories: 2
+
+Summary
+  - safe tickets: 1
+  - warning tickets: 0
+  - blocked tickets: 1
+  - commits to promote: 1
+  - manual steps: 1
+
+Notes
+  - 1 manual review step(s) are still open across this release.
+  - 1 ticket snapshot(s) are currently blocked.
+  - 1 total ticket commit(s) are still planned for main.
+
+Ticket baselines
+  - ABC-123: blocked, captured <TIMESTAMP>, repos 1, commits 1, manual steps 1
+  - XYZ-999: safe, captured <TIMESTAMP>, repos 1, commits 0, manual steps 0
+
+[a-service] <WORKSPACE>/a-service (git)
+  tickets: ABC-123
+  verdict: blocked
+  commits to include: 1
+  risk signals:
+    - db-change (manual-review): Database-related changes should be reviewed before promotion
+    - missing-dependency (blocked): Dependency ticket XYZ-456 is present in test but missing from main
+  dependency status:
+    - XYZ-456: present in test but missing from main
+  manual steps:
+    - ABC-123: Review DB migration ordering, rollback steps, and deployment timing before promotion.
+  planned actions:
+    - ABC-123: Bring test up to date before promoting to main.
+    - ABC-123: Include 1 missing ticket commit(s) from test into main.
+    - ABC-123: Include dependency ticket XYZ-456 in main before promoting ABC-123.
+  notes:
+    - ABC-123: Source branch test is behind an earlier environment by 1 commit(s).
+    - ABC-123: Declared dependency XYZ-456 is present in test but missing from main.
+
+[b-service] <WORKSPACE>/b-service (git)
+  tickets: XYZ-999
+  verdict: safe
+  commits to include: 0
+  planned actions:
+    - XYZ-999: No ticket commits are missing in main.
+  notes:
+    - XYZ-999: Target branch main already contains the ticket commits from test.

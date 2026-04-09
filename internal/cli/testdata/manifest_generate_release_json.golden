@@ -1,0 +1,273 @@
+{
+  "command": "manifest generate",
+  "workspace": "<WORKSPACE>",
+  "releaseId": "rel-2026-04-09",
+  "snapshotDir": "<WORKSPACE>/.gig/releases/rel-2026-04-09/snapshots",
+  "packets": [
+    {
+      "workspace": "<WORKSPACE>",
+      "ticketId": "ABC-123",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "verdict": "blocked",
+      "summary": {
+        "scannedRepositories": 2,
+        "touchedRepositories": 1,
+        "readyRepositories": 0,
+        "warningRepositories": 0,
+        "blockedRepositories": 1,
+        "totalCommitsToPromote": 1,
+        "totalManualSteps": 1
+      },
+      "highlights": [
+        "This ticket currently touches 1 repository in the selected workspace.",
+        "1 commit(s) are still planned from test to main.",
+        "Promotion is blocked until the repository issues below are resolved.",
+        "1 manual review step(s) were inferred from risky file changes.",
+        "1 dependency ticket(s) are still missing from main."
+      ],
+      "qa": {
+        "title": "QA Checklist",
+        "summary": [
+          "Use this section when QA needs a short release packet instead of reading raw git history."
+        ],
+        "checklist": [
+          "Verify the final ticket behavior on main after the promotion is complete.",
+          "Confirm every follow-up fix from test is visible in main.",
+          "Re-check a-service because release evidence is still blocked or incomplete.",
+          "Do focused regression checks for a-service because risky file changes were detected."
+        ]
+      },
+      "client": {
+        "title": "Client Review Notes",
+        "summary": [
+          "This packet summarizes what is expected to move from test to main for ticket ABC-123."
+        ],
+        "checklist": [
+          "Use the repository summary below to confirm the final scope that is moving forward.",
+          "Confirm the latest client feedback and follow-up fixes are included in the target branch.",
+          "Review the commit list for each affected repo if you want to confirm the exact follow-up fixes included in this release packet.",
+          "Call out any DB, config, or Mendix-related work because those changes usually need extra communication during release review."
+        ]
+      },
+      "releaseManager": {
+        "title": "Release Manager Checklist",
+        "summary": [
+          "Use this section to coordinate the actual promotion, communication, and rollback readiness."
+        ],
+        "checklist": [
+          "Use test as the approved source and main as the target for this ticket.",
+          "Record release evidence after promotion so future checks can compare against a clean baseline.",
+          "Bring test up to date before promoting to main.",
+          "Include 1 missing ticket commit(s) from test into main.",
+          "Include dependency ticket XYZ-456 in main before promoting ABC-123.",
+          "Review DB migration ordering, rollback steps, and deployment timing before promotion."
+        ]
+      },
+      "repositories": [
+        {
+          "repository": {
+            "Name": "a-service",
+            "Root": "<WORKSPACE>/a-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "verdict": "blocked",
+          "environmentStatuses": [
+            {
+              "Environment": {
+                "Name": "dev",
+                "Branch": "dev"
+              },
+              "State": "present",
+              "CommitCount": 2,
+              "MissingFromPrevious": 0
+            },
+            {
+              "Environment": {
+                "Name": "test",
+                "Branch": "test"
+              },
+              "State": "behind",
+              "CommitCount": 1,
+              "MissingFromPrevious": 1
+            },
+            {
+              "Environment": {
+                "Name": "prod",
+                "Branch": "main"
+              },
+              "State": "behind",
+              "CommitCount": 0,
+              "MissingFromPrevious": 1
+            }
+          ],
+          "riskSignals": [
+            {
+              "Code": "db-change",
+              "Level": "manual-review",
+              "Summary": "Database-related changes should be reviewed before promotion",
+              "Examples": [
+                "db/migrations/001_add_column.sql"
+              ]
+            },
+            {
+              "Code": "missing-dependency",
+              "Level": "blocked",
+              "Summary": "Dependency ticket XYZ-456 is present in test but missing from main",
+              "Examples": [
+                "XYZ-456"
+              ]
+            }
+          ],
+          "dependencyResolutions": [
+            {
+              "TicketID": "ABC-123",
+              "DependsOn": "XYZ-456",
+              "Status": "missing-target",
+              "FoundInSource": true,
+              "FoundInTarget": false,
+              "EvidenceCommits": [
+                "<HASH>"
+              ]
+            }
+          ],
+          "manualSteps": [
+            {
+              "code": "review-db-rollout",
+              "summary": "Review DB migration ordering, rollback steps, and deployment timing before promotion."
+            }
+          ],
+          "actions": [
+            {
+              "code": "sync-source-environment",
+              "summary": "Bring test up to date before promoting to main."
+            },
+            {
+              "code": "include-missing-commits",
+              "summary": "Include 1 missing ticket commit(s) from test into main."
+            },
+            {
+              "code": "include-missing-dependency",
+              "summary": "Include dependency ticket XYZ-456 in main before promoting ABC-123."
+            }
+          ],
+          "notes": [
+            "Source branch test is behind an earlier environment by 1 commit(s).",
+            "Declared dependency XYZ-456 is present in test but missing from main."
+          ],
+          "commitsToInclude": [
+            {
+              "Hash": "<HASH>",
+              "Subject": "ABC-123 | service-a | add validation fix",
+              "Branches": [
+                "test"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "workspace": "<WORKSPACE>",
+      "ticketId": "XYZ-999",
+      "fromBranch": "test",
+      "toBranch": "main",
+      "verdict": "safe",
+      "summary": {
+        "scannedRepositories": 2,
+        "touchedRepositories": 1,
+        "readyRepositories": 1,
+        "warningRepositories": 0,
+        "blockedRepositories": 0,
+        "totalCommitsToPromote": 0,
+        "totalManualSteps": 0
+      },
+      "highlights": [
+        "This ticket currently touches 1 repository in the selected workspace.",
+        "0 commit(s) are still planned from test to main.",
+        "No blocking repository issues were found for the selected move."
+      ],
+      "qa": {
+        "title": "QA Checklist",
+        "summary": [
+          "Use this section when QA needs a short release packet instead of reading raw git history."
+        ],
+        "checklist": [
+          "Verify the final ticket behavior on main after the promotion is complete.",
+          "Confirm every follow-up fix from test is visible in main."
+        ]
+      },
+      "client": {
+        "title": "Client Review Notes",
+        "summary": [
+          "This packet summarizes what is expected to move from test to main for ticket XYZ-999."
+        ],
+        "checklist": [
+          "Use the repository summary below to confirm the final scope that is moving forward.",
+          "Confirm the latest client feedback and follow-up fixes are included in the target branch."
+        ]
+      },
+      "releaseManager": {
+        "title": "Release Manager Checklist",
+        "summary": [
+          "Use this section to coordinate the actual promotion, communication, and rollback readiness."
+        ],
+        "checklist": [
+          "Use test as the approved source and main as the target for this ticket.",
+          "Record release evidence after promotion so future checks can compare against a clean baseline.",
+          "No ticket commits are missing in main."
+        ]
+      },
+      "repositories": [
+        {
+          "repository": {
+            "Name": "b-service",
+            "Root": "<WORKSPACE>/b-service",
+            "Type": "git",
+            "CurrentBranch": "test"
+          },
+          "verdict": "safe",
+          "environmentStatuses": [
+            {
+              "Environment": {
+                "Name": "dev",
+                "Branch": "dev"
+              },
+              "State": "present",
+              "CommitCount": 1,
+              "MissingFromPrevious": 0
+            },
+            {
+              "Environment": {
+                "Name": "test",
+                "Branch": "test"
+              },
+              "State": "aligned",
+              "CommitCount": 1,
+              "MissingFromPrevious": 0
+            },
+            {
+              "Environment": {
+                "Name": "prod",
+                "Branch": "main"
+              },
+              "State": "aligned",
+              "CommitCount": 1,
+              "MissingFromPrevious": 0
+            }
+          ],
+          "actions": [
+            {
+              "code": "already-aligned",
+              "summary": "No ticket commits are missing in main."
+            }
+          ],
+          "notes": [
+            "Target branch main already contains the ticket commits from test."
+          ]
+        }
+      ]
+    }
+  ]
+}

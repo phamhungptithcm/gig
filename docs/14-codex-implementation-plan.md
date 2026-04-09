@@ -30,6 +30,10 @@ It is mostly useful for maintainers.
 - release-level planning
 - Jira or deployment evidence integration
 
+Detailed slice plan:
+
+- [Dependency Parsing And Missing-Dependency Risk](20-dependency-risk-slice.md)
+
 ## Definition Of Done
 
 A change is done when:

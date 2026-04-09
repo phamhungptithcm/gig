@@ -33,6 +33,7 @@ nav:
       - Product Strategy: 17-product-strategy.md
       - Operating Model: 18-operating-model.md
       - Engineering Implementation Plan: 14-codex-implementation-plan.md
+      - Dependency Parsing And Missing-Dependency Risk: 20-dependency-risk-slice.md
 
 markdown_extensions:
   - admonition

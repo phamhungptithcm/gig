@@ -9,6 +9,7 @@ Why
   - At least one repository is missing the correct source or target release evidence.
   - 1 ticket commit(s) are still planned for promotion.
   - 1 manual review step(s) were inferred from the changed files.
+  - 1 dependency ticket(s) are still missing from main.
 
 [a-service] <WORKSPACE>/a-service (git)
   verdict: blocked
@@ -16,6 +17,9 @@ Why
     - test contains 1 ticket commit(s).
     - main is missing 1 ticket commit(s).
     - Source branch test is behind an earlier environment by 1 commit(s).
-    - 1 risk signal(s) require review.
+    - Declared dependency XYZ-456 is present in test but missing from main.
+    - 2 risk signal(s) require review.
+  dependency status:
+    - XYZ-456: present in test but missing from main
   manual steps:
     - Review DB migration ordering, rollback steps, and deployment timing before promotion.

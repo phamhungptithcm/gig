@@ -14,6 +14,7 @@ With the current version of `gig`, you can:
 - inspect the full ticket story across repos
 - see where a ticket is present, aligned, or behind across env branches
 - verify whether the next release move looks `safe`, `warning`, or `blocked`
+- capture a repeatable ticket baseline before release review
 - generate a Markdown release packet for QA, client review, and release managers
 - generate JSON output for CI and scripts
 - use a config file for real branch names, repo owners, service names, and repo types
@@ -30,6 +31,7 @@ If you are new, read these in order:
 2. [CLI Guide](03-cli-spec.md)
 3. [Config Spec](09-config-spec.md)
 4. [Roadmap](13-roadmap.md)
+5. [Dependency Slice Plan](20-dependency-risk-slice.md)
 
 ## Most Useful Commands
 
@@ -37,6 +39,11 @@ If you are new, read these in order:
 gig --help
 gig inspect ABC-123 --path .
 gig verify --ticket ABC-123 --from test --to main --path .
+gig snapshot create --ticket ABC-123 --from test --to main --path . --output .gig/snapshots/abc-123.json
+gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
+gig plan --release rel-2026-04-09 --path .
+gig verify --release rel-2026-04-09 --path .
+gig manifest generate --release rel-2026-04-09 --path .
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 gig doctor --path .
 ```
@@ -62,6 +69,8 @@ gig doctor --path .
   understand this repo's own release flow
 - [Roadmap](13-roadmap.md)
   see what is shipped, what is next, and what is later
+- [Dependency Slice Plan](20-dependency-risk-slice.md)
+  see the concrete implementation breakdown for dependency parsing and missing-dependency risk
 
 ## Current Direction
 
@@ -70,5 +79,6 @@ gig doctor --path .
 The short version:
 
 - today it helps you see, verify, and package release information
+- today it can also save ticket snapshots for audit and re-check
 - next it should add richer evidence from Jira, PRs, and deployments
 - later it can support release bundles and controlled execution

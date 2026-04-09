@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	depsvc "gig/internal/dependency"
 	inspectsvc "gig/internal/inspect"
 	"gig/internal/repo"
 	"gig/internal/scm"
@@ -44,15 +45,17 @@ type Summary struct {
 }
 
 type RepositoryPlan struct {
-	Repository          scm.Repository                 `json:"repository"`
-	Compare             scm.CompareResult              `json:"compare"`
-	Branches            []string                       `json:"branches,omitempty"`
-	RiskSignals         []inspectsvc.RiskSignal        `json:"riskSignals,omitempty"`
-	EnvironmentStatuses []inspectsvc.EnvironmentResult `json:"environmentStatuses,omitempty"`
-	ManualSteps         []Action                       `json:"manualSteps,omitempty"`
-	Actions             []Action                       `json:"actions,omitempty"`
-	Verdict             Verdict                        `json:"verdict"`
-	Notes               []string                       `json:"notes,omitempty"`
+	Repository            scm.Repository                 `json:"repository"`
+	Compare               scm.CompareResult              `json:"compare"`
+	Branches              []string                       `json:"branches,omitempty"`
+	RiskSignals           []inspectsvc.RiskSignal        `json:"riskSignals,omitempty"`
+	DeclaredDependencies  []depsvc.DeclaredDependency    `json:"declaredDependencies,omitempty"`
+	DependencyResolutions []depsvc.Resolution            `json:"dependencyResolutions,omitempty"`
+	EnvironmentStatuses   []inspectsvc.EnvironmentResult `json:"environmentStatuses,omitempty"`
+	ManualSteps           []Action                       `json:"manualSteps,omitempty"`
+	Actions               []Action                       `json:"actions,omitempty"`
+	Verdict               Verdict                        `json:"verdict"`
+	Notes                 []string                       `json:"notes,omitempty"`
 }
 
 type PromotionPlan struct {
@@ -67,11 +70,12 @@ type PromotionPlan struct {
 }
 
 type RepositoryVerification struct {
-	Repository  scm.Repository          `json:"repository"`
-	Verdict     Verdict                 `json:"verdict"`
-	Checks      []string                `json:"checks"`
-	RiskSignals []inspectsvc.RiskSignal `json:"riskSignals,omitempty"`
-	ManualSteps []Action                `json:"manualSteps,omitempty"`
+	Repository            scm.Repository          `json:"repository"`
+	Verdict               Verdict                 `json:"verdict"`
+	Checks                []string                `json:"checks"`
+	RiskSignals           []inspectsvc.RiskSignal `json:"riskSignals,omitempty"`
+	DependencyResolutions []depsvc.Resolution     `json:"dependencyResolutions,omitempty"`
+	ManualSteps           []Action                `json:"manualSteps,omitempty"`
 }
 
 type Verification struct {
@@ -129,6 +133,16 @@ func (s *Service) BuildPromotionPlanInRepositories(ctx context.Context, reposito
 	if err != nil {
 		return PromotionPlan{}, err
 	}
+	allDeclaredDependencies := collectDeclaredDependencies(repositoryStatuses)
+	dependencyResolver := depsvc.NewResolver(s.adapters, s.parser)
+	resolvedDependencies, err := dependencyResolver.ResolveInRepositories(ctx, repositories, allDeclaredDependencies, fromBranch, toBranch)
+	if err != nil {
+		return PromotionPlan{}, err
+	}
+	resolvedDependenciesByTicket := make(map[string]depsvc.Resolution, len(resolvedDependencies))
+	for _, resolution := range resolvedDependencies {
+		resolvedDependenciesByTicket[resolution.DependsOn] = resolution
+	}
 
 	plans := make([]RepositoryPlan, 0, len(repositoryStatuses))
 	summary := Summary{
@@ -153,7 +167,11 @@ func (s *Service) BuildPromotionPlanInRepositories(ctx context.Context, reposito
 
 		notes := make([]string, 0, 4)
 		actions := make([]Action, 0, 4)
-		manualSteps := manualStepsForRiskSignals(repositoryStatus.RiskSignals)
+		dependencyResolutions := resolveRepositoryDependencies(repositoryStatus.DeclaredDependencies, resolvedDependenciesByTicket)
+		riskSignals := append([]inspectsvc.RiskSignal{}, repositoryStatus.RiskSignals...)
+		riskSignals = append(riskSignals, dependencyRiskSignals(dependencyResolutions, fromBranch, toBranch)...)
+		sortRiskSignals(riskSignals)
+		manualSteps := manualStepsForRiskSignals(riskSignals)
 		compare := scm.CompareResult{
 			FromBranch: fromBranch,
 			ToBranch:   toBranch,
@@ -215,7 +233,9 @@ func (s *Service) BuildPromotionPlanInRepositories(ctx context.Context, reposito
 			})
 		}
 
-		verdict := deriveRepositoryVerdict(fromExists, toExists, compare, fromStatus, manualSteps)
+		notes = append(notes, dependencyNotes(dependencyResolutions, fromBranch, toBranch)...)
+		actions = append(actions, dependencyActions(dependencyResolutions, ticketID, toBranch)...)
+		verdict := deriveRepositoryVerdict(fromExists, toExists, compare, fromStatus, riskSignals, manualSteps)
 		summary.TotalCommitsToPromote += len(compare.MissingCommits)
 		summary.TotalManualSteps += len(manualSteps)
 
@@ -229,15 +249,17 @@ func (s *Service) BuildPromotionPlanInRepositories(ctx context.Context, reposito
 		}
 
 		plans = append(plans, RepositoryPlan{
-			Repository:          repositoryStatus.Repository,
-			Compare:             compare,
-			Branches:            repositoryStatus.Branches,
-			RiskSignals:         repositoryStatus.RiskSignals,
-			EnvironmentStatuses: repositoryStatus.Statuses,
-			ManualSteps:         manualSteps,
-			Actions:             actions,
-			Verdict:             verdict,
-			Notes:               notes,
+			Repository:            repositoryStatus.Repository,
+			Compare:               compare,
+			Branches:              repositoryStatus.Branches,
+			RiskSignals:           riskSignals,
+			DeclaredDependencies:  repositoryStatus.DeclaredDependencies,
+			DependencyResolutions: dependencyResolutions,
+			EnvironmentStatuses:   repositoryStatus.Statuses,
+			ManualSteps:           manualSteps,
+			Actions:               actions,
+			Verdict:               verdict,
+			Notes:                 notes,
 		})
 	}
 
@@ -252,7 +274,7 @@ func (s *Service) BuildPromotionPlanInRepositories(ctx context.Context, reposito
 		Environments: environments,
 		Summary:      summary,
 		Verdict:      derivePlanVerdict(summary),
-		Notes:        buildPlanNotes(summary),
+		Notes:        append(buildPlanNotes(summary), buildDependencyPlanNotes(plans, toBranch)...),
 		Repositories: plans,
 	}
 
@@ -291,11 +313,12 @@ func BuildVerification(promotionPlan PromotionPlan) Verification {
 		}
 
 		repositories = append(repositories, RepositoryVerification{
-			Repository:  repositoryPlan.Repository,
-			Verdict:     repositoryPlan.Verdict,
-			Checks:      checks,
-			RiskSignals: repositoryPlan.RiskSignals,
-			ManualSteps: repositoryPlan.ManualSteps,
+			Repository:            repositoryPlan.Repository,
+			Verdict:               repositoryPlan.Verdict,
+			Checks:                checks,
+			RiskSignals:           repositoryPlan.RiskSignals,
+			DependencyResolutions: repositoryPlan.DependencyResolutions,
+			ManualSteps:           repositoryPlan.ManualSteps,
 		})
 	}
 
@@ -311,7 +334,7 @@ func BuildVerification(promotionPlan PromotionPlan) Verification {
 	}
 }
 
-func deriveRepositoryVerdict(fromExists, toExists bool, compare scm.CompareResult, fromStatus *inspectsvc.EnvironmentResult, manualSteps []Action) Verdict {
+func deriveRepositoryVerdict(fromExists, toExists bool, compare scm.CompareResult, fromStatus *inspectsvc.EnvironmentResult, riskSignals []inspectsvc.RiskSignal, manualSteps []Action) Verdict {
 	if !fromExists || !toExists {
 		return VerdictBlocked
 	}
@@ -321,7 +344,10 @@ func deriveRepositoryVerdict(fromExists, toExists bool, compare scm.CompareResul
 	if len(compare.SourceCommits) == 0 {
 		return VerdictBlocked
 	}
-	if len(manualSteps) > 0 {
+	if hasBlockedRiskSignals(riskSignals) {
+		return VerdictBlocked
+	}
+	if len(manualSteps) > 0 || hasWarningRiskSignals(riskSignals) {
 		return VerdictWarning
 	}
 	return VerdictSafe
@@ -382,6 +408,13 @@ func buildVerificationReasons(promotionPlan PromotionPlan) []string {
 	if summary.TotalManualSteps > 0 {
 		reasons = append(reasons, fmt.Sprintf("%d manual review step(s) were inferred from the changed files.", summary.TotalManualSteps))
 	}
+	missingDependencies, unresolvedDependencies := dependencyCountsFromPlans(promotionPlan.Repositories)
+	if missingDependencies > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d dependency ticket(s) are still missing from %s.", missingDependencies, promotionPlan.ToBranch))
+	}
+	if unresolvedDependencies > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d declared dependency ticket(s) could not be confirmed in the scanned workspace.", unresolvedDependencies))
+	}
 	return reasons
 }
 
@@ -422,6 +455,172 @@ func lookupEnvironmentStatus(statuses []inspectsvc.EnvironmentResult, branch str
 	}
 
 	return nil
+}
+
+func collectDeclaredDependencies(results []inspectsvc.RepositoryEnvironmentStatus) []depsvc.DeclaredDependency {
+	dependencies := make([]depsvc.DeclaredDependency, 0)
+	for _, result := range results {
+		dependencies = append(dependencies, result.DeclaredDependencies...)
+	}
+	return dependencies
+}
+
+func resolveRepositoryDependencies(declared []depsvc.DeclaredDependency, resolvedByTicket map[string]depsvc.Resolution) []depsvc.Resolution {
+	resolutions := make([]depsvc.Resolution, 0, len(declared))
+	seen := make(map[string]struct{}, len(declared))
+	for _, dependency := range declared {
+		resolution, ok := resolvedByTicket[dependency.DependsOn]
+		if !ok {
+			continue
+		}
+		if _, ok := seen[dependency.DependsOn]; ok {
+			continue
+		}
+		seen[dependency.DependsOn] = struct{}{}
+
+		copyResolution := resolution
+		copyResolution.EvidenceCommits = evidenceCommitsForDependency(declared, dependency.DependsOn)
+		resolutions = append(resolutions, copyResolution)
+	}
+
+	sort.Slice(resolutions, func(i, j int) bool {
+		return resolutions[i].DependsOn < resolutions[j].DependsOn
+	})
+	return resolutions
+}
+
+func evidenceCommitsForDependency(declared []depsvc.DeclaredDependency, dependsOn string) []string {
+	evidence := make([]string, 0, 2)
+	seen := map[string]struct{}{}
+	for _, dependency := range declared {
+		if dependency.DependsOn != dependsOn {
+			continue
+		}
+		if _, ok := seen[dependency.CommitHash]; ok {
+			continue
+		}
+		seen[dependency.CommitHash] = struct{}{}
+		evidence = append(evidence, dependency.CommitHash)
+	}
+	sort.Strings(evidence)
+	return evidence
+}
+
+func dependencyRiskSignals(resolutions []depsvc.Resolution, fromBranch, toBranch string) []inspectsvc.RiskSignal {
+	signals := make([]inspectsvc.RiskSignal, 0, len(resolutions))
+	for _, resolution := range resolutions {
+		switch resolution.Status {
+		case depsvc.StatusMissingTarget:
+			signals = append(signals, inspectsvc.RiskSignal{
+				Code:     "missing-dependency",
+				Level:    "blocked",
+				Summary:  fmt.Sprintf("Dependency ticket %s is present in %s but missing from %s", resolution.DependsOn, fromBranch, toBranch),
+				Examples: []string{resolution.DependsOn},
+			})
+		case depsvc.StatusUnresolved:
+			signals = append(signals, inspectsvc.RiskSignal{
+				Code:     "unresolved-dependency",
+				Level:    "warning",
+				Summary:  fmt.Sprintf("Dependency ticket %s was declared but could not be confirmed in %s or %s", resolution.DependsOn, fromBranch, toBranch),
+				Examples: []string{resolution.DependsOn},
+			})
+		}
+	}
+	return signals
+}
+
+func dependencyNotes(resolutions []depsvc.Resolution, fromBranch, toBranch string) []string {
+	notes := make([]string, 0, len(resolutions))
+	for _, resolution := range resolutions {
+		switch resolution.Status {
+		case depsvc.StatusMissingTarget:
+			notes = append(notes, fmt.Sprintf("Declared dependency %s is present in %s but missing from %s.", resolution.DependsOn, fromBranch, toBranch))
+		case depsvc.StatusUnresolved:
+			notes = append(notes, fmt.Sprintf("Declared dependency %s could not be confirmed in %s or %s within the scanned workspace.", resolution.DependsOn, fromBranch, toBranch))
+		}
+	}
+	return notes
+}
+
+func dependencyActions(resolutions []depsvc.Resolution, ticketID, toBranch string) []Action {
+	actions := make([]Action, 0, len(resolutions))
+	for _, resolution := range resolutions {
+		switch resolution.Status {
+		case depsvc.StatusMissingTarget:
+			actions = append(actions, Action{
+				Code:    "include-missing-dependency",
+				Summary: fmt.Sprintf("Include dependency ticket %s in %s before promoting %s.", resolution.DependsOn, toBranch, ticketID),
+			})
+		case depsvc.StatusUnresolved:
+			actions = append(actions, Action{
+				Code:    "verify-dependency-scope",
+				Summary: fmt.Sprintf("Confirm whether dependency ticket %s must travel with %s before promotion.", resolution.DependsOn, ticketID),
+			})
+		}
+	}
+	return actions
+}
+
+func buildDependencyPlanNotes(plans []RepositoryPlan, toBranch string) []string {
+	missingDependencies, unresolvedDependencies := dependencyCountsFromPlans(plans)
+	notes := make([]string, 0, 2)
+	if missingDependencies > 0 {
+		notes = append(notes, fmt.Sprintf("%d dependency ticket(s) are still missing from %s.", missingDependencies, toBranch))
+	}
+	if unresolvedDependencies > 0 {
+		notes = append(notes, fmt.Sprintf("%d declared dependency ticket(s) could not be confirmed in the scanned workspace.", unresolvedDependencies))
+	}
+	return notes
+}
+
+func hasBlockedRiskSignals(riskSignals []inspectsvc.RiskSignal) bool {
+	for _, riskSignal := range riskSignals {
+		if riskSignal.Level == "blocked" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWarningRiskSignals(riskSignals []inspectsvc.RiskSignal) bool {
+	for _, riskSignal := range riskSignals {
+		switch riskSignal.Level {
+		case "warning", "manual-review":
+			return true
+		}
+	}
+	return false
+}
+
+func sortRiskSignals(riskSignals []inspectsvc.RiskSignal) {
+	sort.Slice(riskSignals, func(i, j int) bool {
+		if riskSignals[i].Code == riskSignals[j].Code {
+			return riskSignals[i].Summary < riskSignals[j].Summary
+		}
+		return riskSignals[i].Code < riskSignals[j].Code
+	})
+}
+
+func dependencyCountsFromPlans(plans []RepositoryPlan) (int, int) {
+	statuses := map[string]depsvc.Status{}
+	for _, plan := range plans {
+		for _, resolution := range plan.DependencyResolutions {
+			statuses[resolution.DependsOn] = resolution.Status
+		}
+	}
+
+	missingDependencies := 0
+	unresolvedDependencies := 0
+	for _, status := range statuses {
+		switch status {
+		case depsvc.StatusMissingTarget:
+			missingDependencies++
+		case depsvc.StatusUnresolved:
+			unresolvedDependencies++
+		}
+	}
+
+	return missingDependencies, unresolvedDependencies
 }
 
 func refExists(ctx context.Context, adapter scm.Adapter, repoRoot, ref string) (bool, error) {

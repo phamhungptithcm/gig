@@ -226,6 +226,39 @@ func (a *Adapter) CommitFiles(ctx context.Context, repoRoot string, hashes []str
 	return filesByCommit, nil
 }
 
+func (a *Adapter) CommitMessages(ctx context.Context, repoRoot string, hashes []string) (map[string]string, error) {
+	messagesByCommit := make(map[string]string, len(hashes))
+	seen := make(map[string]struct{}, len(hashes))
+
+	for _, hash := range hashes {
+		revision := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(hash), "r"), "R")
+		if revision == "" {
+			continue
+		}
+		if _, ok := seen[revision]; ok {
+			continue
+		}
+		seen[revision] = struct{}{}
+
+		output, err := a.runSVN(ctx, "log", "--xml", "-r", revision, repoRoot)
+		if err != nil {
+			return nil, err
+		}
+
+		entries, err := parseLogEntries(output)
+		if err != nil {
+			return nil, err
+		}
+		if len(entries) == 0 {
+			continue
+		}
+
+		messagesByCommit[revisionHash(revision)] = strings.TrimRight(entries[0].Message, "\n")
+	}
+
+	return messagesByCommit, nil
+}
+
 func (a *Adapter) searchCommitsAtTarget(ctx context.Context, target, ticketID, defaultBranch string) ([]scm.Commit, error) {
 	output, err := a.runSVN(ctx, "log", "--xml", "--verbose", target)
 	if err != nil {
