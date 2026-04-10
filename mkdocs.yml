@@ -34,6 +34,7 @@ nav:
       - Operating Model: 18-operating-model.md
       - Engineering Implementation Plan: 14-codex-implementation-plan.md
       - Dependency Parsing And Missing-Dependency Risk: 20-dependency-risk-slice.md
+      - Product Reset Audit: 22-product-reset-audit.md
 
 markdown_extensions:
   - admonition

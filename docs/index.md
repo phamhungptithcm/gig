@@ -32,6 +32,7 @@ If you are new, read these in order:
 3. [Config Spec](09-config-spec.md)
 4. [Roadmap](13-roadmap.md)
 5. [Dependency Slice Plan](20-dependency-risk-slice.md)
+6. [Product Reset Audit](22-product-reset-audit.md)
 
 ## Most Useful Commands
 
@@ -71,6 +72,8 @@ gig doctor --path .
   see what is shipped, what is next, and what is later
 - [Dependency Slice Plan](20-dependency-risk-slice.md)
   see the concrete implementation breakdown for dependency parsing and missing-dependency risk
+- [Product Reset Audit](22-product-reset-audit.md)
+  evaluate the current product shape and the recommended remote-first reset
 
 ## Current Direction
 
