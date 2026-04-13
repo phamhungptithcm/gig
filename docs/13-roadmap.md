@@ -38,6 +38,7 @@ Priority work:
 - GitHub, GitLab, Bitbucket, and Azure DevOps remote repository connection
 - protected-branch and release-flow auto-detection
 - default ticket search without repeated `--from`, `--to`, or `--config`
+- saving inferred branch topology back into the current workarea after a successful remote run
 - a simpler first-run command surface on top of the initial guided dashboard
 
 ### Phase 2. Remote Audit Core

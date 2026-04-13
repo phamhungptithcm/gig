@@ -6,7 +6,7 @@ If you want to know what `gig` does and try it fast, start here.
 
 The product direction is moving toward:
 
-`install -> login -> choose workarea -> inspect`
+`install -> login -> inspect -> keep going`
 
 The commands below stay within what the current build can already do today.
 
@@ -40,7 +40,9 @@ Today that means:
 gig
 ```
 
-That opens the guided front door with the current workarea, next commands, and the optional DeerFlow doctor plus setup hints.
+That opens the guided front door.
+If a current project already exists and you are in an interactive terminal, `gig` offers quick actions first, then asks for a ticket ID and can run `inspect`, `verify`, `manifest generate`, or `assist audit` directly from there.
+If no current project exists yet, it offers a quick-start path to enter or discover a remote repository target first.
 
 ## Full Command List
 
@@ -48,19 +50,23 @@ That opens the guided front door with the current workarea, next commands, and t
 gig --help
 ```
 
-That shows the full command list and the compact help patterns.
+That shows the full command list and the examples-first help patterns.
+Command help now groups the most useful information as:
+
+- `Start here`
+- `Common flags`
+- `Next commands`
 
 ## The Fastest Current Flow
 
 ```bash
 gig login github
-gig workarea add --provider github --use
-gig inspect ABC-123
-gig verify --ticket ABC-123
+gig inspect ABC-123 --repo github:owner/name
+gig verify --ticket ABC-123 --repo github:owner/name
 gig assist doctor
 gig assist setup
-gig manifest generate --ticket ABC-123
-gig assist audit --ticket ABC-123 --audience release-manager
+gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
 ```
 
 Supported remote repository targets today:
@@ -85,7 +91,17 @@ gig login svn
 
 Use this when you want live inspection without cloning first.
 
-### 2. Save a workarea for one project
+### 2. Inspect one remote repository directly
+
+```bash
+gig inspect ABC-123 --repo github:owner/name
+gig verify --ticket ABC-123 --repo github:owner/name
+```
+
+Use this when you want the shortest path after login.
+After a successful remote run, `gig` remembers that repository as your current project automatically.
+
+### 3. Optional: Save or pick a workarea for one project
 
 ```bash
 gig workarea add --provider github --use
@@ -98,7 +114,7 @@ Use this when you want `gig` to remember repo scope and promotion defaults so la
 If you omit `--repo` and `--path`, `gig` can discover a repository from a logged-in GitHub, GitLab, Bitbucket, or Azure DevOps account and let you choose it interactively.
 The picker accepts either a number or filter text, and recent workareas or repositories are promoted to the top.
 
-### 3. Inspect one ticket directly on a remote repository or the current workarea
+### 4. Inspect one ticket directly on a remote repository or the current workarea
 
 ```bash
 gig inspect ABC-123
@@ -111,8 +127,9 @@ gig inspect ABC-123 --repo svn:https://svn.example.com/repos/app/branches/stagin
 
 Use this to see what changed, which branches contain the ticket, and whether risky files were touched.
 On GitHub, GitLab, Bitbucket, and Azure DevOps, `gig` also shows pull request and deployment evidence when the provider can confirm it.
+The terminal output now starts with a compact summary and a recommended next step before the repo-by-repo evidence.
 
-### 4. Check whether the next move looks safe
+### 5. Check whether the next move looks safe
 
 ```bash
 gig verify --ticket ABC-123
@@ -124,6 +141,8 @@ Use this when you want a quick release decision:
 - `safe`
 - `warning`
 - `blocked`
+
+The terminal output leads with the verdict, core counts, and the recommended follow-up command before the detailed repo checks.
 
 ### 5. Generate a release packet people can actually read
 
@@ -203,9 +222,11 @@ Use local mode when:
 - you need broad workspace scanning
 - your team depends on explicit branch overrides or repo catalog metadata
 
-## If Your Team Uses Real Branch Names
+## Optional Team Overrides
 
-You do not have to keep passing `--envs` manually.
+Most teams should start without a repo config file.
+
+Only add `gig.yaml` when `gig` infers the wrong branch topology, or when you want richer repo metadata such as service names, owners, kinds, and release notes.
 
 Create a `gig.yaml` like this:
 

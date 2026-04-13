@@ -1,9 +1,10 @@
-Ticket ABC-123
-Verification: test -> main
-Environments: dev=dev -> test=test -> prod=main
-Verdict: blocked
-Scanned repositories: 1
-Touched repositories: 1
+Verify ABC-123
+Promotion     test -> main
+Verdict       BLOCKED
+Environments  dev=dev -> test=test -> prod=main
+Repositories  1 touched / 1 scanned
+Manual steps  1 manual step
+Dependencies  1 dependency gap
 
 Why
   - At least one repository is missing the correct source or target release evidence.
@@ -11,15 +12,22 @@ Why
   - 1 manual review step(s) were inferred from the changed files.
   - 1 dependency ticket(s) are still missing from main.
 
-[a-service] <WORKSPACE>/a-service (git)
-  verdict: blocked
-  checks:
+Recommended next step
+  - Run gig plan --ticket ABC-123 with the same scope to review missing commits, dependencies, and manual steps.
+
+Repository a-service
+  Scope         <WORKSPACE>/a-service (git)
+  Verdict       BLOCKED
+  Checks        5 checks
+  Dependencies  1 finding
+  Manual steps  1 step
+  Checks
     - test contains 1 ticket commit(s).
     - main is missing 1 ticket commit(s).
     - Source branch test is behind an earlier environment by 1 commit(s).
     - Declared dependency XYZ-456 is present in test but missing from main.
     - 2 risk signal(s) require review.
-  dependency status:
+  Dependency status
     - XYZ-456: present in test but missing from main
-  manual steps:
+  Manual steps
     - Review DB migration ordering, rollback steps, and deployment timing before promotion.

@@ -37,14 +37,28 @@ Running `gig` with no subcommand opens the guided front door with:
 
 - the current workarea, if one is selected
 - the next inspect, verify, manifest, and assist commands
+- a calmer summary block for scope and promotion context
 - the optional `gig assist doctor` readiness check for the bundled DeerFlow sidecar
 - the optional `gig assist setup` hint for the bundled DeerFlow sidecar
+
+In an interactive terminal, `gig` also offers a quick-start prompt:
+
+- if a current project exists, it offers quick actions, then asks for a ticket ID and can run `inspect`, `verify`, `manifest generate`, or `assist audit` immediately
+- if no current project exists, it can accept a remote repo target, discover one from a provider, or switch to a saved workarea
 
 For the full command list:
 
 ```bash
 gig --help
 ```
+
+Help screens are examples-first and grouped for scanning speed:
+
+- `Start here`
+- `Common flags`
+- `Next commands`
+
+Human `inspect`, `verify`, and `plan` outputs also lead with a compact summary block and a recommended next step before the per-repository detail.
 
 ### Get help for one command
 
@@ -83,7 +97,7 @@ gig help
 | `gig plan` | build a read-only promotion plan for people or CI |
 | `gig snapshot create` | save a repeatable ticket baseline for audit and re-check |
 | `gig manifest generate` | generate a Markdown or JSON release packet |
-| `gig doctor` | check config coverage, env mapping, and repo catalog health |
+| `gig doctor` | check inferred topology, optional overrides, and repo health |
 | `gig resolve status` | inspect the current Git conflict state in one repository |
 | `gig resolve start` | walk supported Git text conflicts with keyboard actions |
 | `gig update` | refresh the installed CLI to the latest release or a specific version |
@@ -120,12 +134,12 @@ When you use `--repo github:owner/name`, `--repo gitlab:group/project`, `--repo 
 ## Shared Workarea Behavior
 
 Ticket-aware commands can also inherit defaults from a saved workarea.
+If you start with a direct `--repo` command, `gig` can remember that repository as the current project automatically after the first successful remote run.
 
 Example:
 
 ```bash
-gig workarea add --provider github --use
-gig workarea add payments --repo github:owner/name --from staging --to main --use
+gig inspect ABC-123 --repo github:owner/name
 gig inspect ABC-123
 gig verify --ticket ABC-123
 gig manifest generate --ticket ABC-123
@@ -181,12 +195,16 @@ Today the remote live flow supports:
 Use this when you want `gig` to remember one project so you do not have to keep typing repo targets and branch defaults.
 
 ```bash
+gig inspect ABC-123 --repo github:owner/name
 gig workarea add --provider github --use
 gig workarea add payments --repo github:owner/name --from staging --to main --use
 gig workarea list
 gig workarea use payments
 gig workarea show
 ```
+
+The first command above is enough for many teams.
+After it succeeds, `gig` can remember that remote repository as the current project automatically.
 
 This command supports:
 
@@ -614,7 +632,7 @@ What it shows:
 
 ## `gig doctor`
 
-Use this when you want to check whether the workspace and config are in a healthy state.
+Use this when you want to check whether the workspace, inferred branch topology, and optional team overrides are in a healthy state.
 
 ```bash
 gig doctor --path .
@@ -628,10 +646,10 @@ gig doctor --path . --format json
 
 What it checks:
 
-- whether a config file was found
-- whether repo catalog entries match real repos
-- whether configured environment branches exist
-- whether service, owner, and kind are filled in
+- whether `gig` can scan the selected workspace
+- whether inferred or configured environment branches exist
+- whether optional repo catalog entries match real repos
+- whether optional service, owner, and kind fields are filled in when you use overrides
 
 ## `gig update`
 
@@ -751,7 +769,7 @@ gig manifest generate --ticket ABC-123 --from test --to main --path /path/to/wor
 gig plan --ticket ABC-123 --from test --to main --path /path/to/workspace --format json
 ```
 
-### Check whether your config is good enough to trust
+### Check inferred topology or optional overrides
 
 ```bash
 gig doctor --path /path/to/workspace

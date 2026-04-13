@@ -17,8 +17,9 @@ With the current version of `gig`, you can:
 - capture a repeatable ticket baseline before release review
 - generate a Markdown release packet for QA, client review, and release managers
 - generate JSON output for CI and scripts
-- use a config file for real branch names, repo owners, service names, and repo types
-- run `gig doctor` to check config coverage and environment mapping health
+- save workareas and let `gig` remember inferred branch topology for repeat use
+- use an optional config file only when your team needs explicit branch or repo metadata overrides
+- run `gig doctor` to check inferred topology, optional overrides, and repository health
 
 The product direction is broader than the current build:
 

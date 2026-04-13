@@ -102,12 +102,12 @@ The intended front door is:
 1. install `gig`
 2. run `gig`
 3. sign in to a provider if needed
-4. choose or create a project workarea
-5. inspect a ticket or release
+4. let `gig` prompt for an action, ticket, or remote repo in the terminal
+5. let `gig` remember the project automatically or switch to a saved workarea later
 6. get a clear audit result with evidence, risk, and next actions
 
 That is the direction.
-The current build already has useful release logic, but it still leans more on local workspace scanning and manual config than the target product should.
+The current build already has useful release logic, but some advanced paths still surface local scanning and manual overrides more often than the target product should.
 
 ## What You Can Do With It Today
 
@@ -121,12 +121,14 @@ The current build already does these parts well:
 - inspect remote SVN repositories directly with stored or env-backed credentials
 - save project defaults as workareas and switch back to them later
 - scan a local workspace when remote access is not enough
-- load team config and branch overrides when a mature team needs more control
+- remember inferred branch topology in workareas after a successful remote run
+- load team overrides when a mature team needs more control
 - inspect and walk supported Git text conflicts from the terminal
 
 Most commands are still read-only.
 `gig` helps you inspect, verify, and prepare.
 It now also helps with active Git conflict resolution, but it still does not cherry-pick, merge, or deploy for you automatically.
+Human terminal output now favors a stronger top summary, clearer verdict emphasis, and a recommended next step so users can scan the answer quickly before drilling into repo detail.
 
 ## Who This Is For
 
@@ -144,13 +146,12 @@ If you want the best current workflow today, start with a remote repository firs
 ```bash
 gig
 gig login github
-gig workarea add --provider github --use
-gig inspect ABC-123
-gig verify --ticket ABC-123
+gig inspect ABC-123 --repo github:owner/name
+gig verify --ticket ABC-123 --repo github:owner/name
 gig assist doctor
 gig assist setup
-gig manifest generate --ticket ABC-123
-gig assist audit --ticket ABC-123 --audience release-manager
+gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
 ```
 
 Supported remote repository targets today:
@@ -161,6 +162,16 @@ Supported remote repository targets today:
 - `azure-devops:org/project/repo`
 - `svn:https://svn.example.com/repos/app/branches/staging/ProductName`
 
+Help screens now lead with start-here examples, common flags, and next commands instead of a flat usage dump:
+
+```bash
+gig --help
+gig inspect --help
+gig verify --help
+gig plan --help
+gig manifest --help
+```
+
 If your team needs local fallback or explicit overrides, add:
 
 ```bash
@@ -170,7 +181,8 @@ gig resolve status --path .
 gig assist resolve --path . --ticket ABC-123 --audience release-manager
 ```
 
-If you want a team-specific setup, create a `gig.yaml` file and then run the same commands without repeating `--envs` every time.
+Most teams should start without any repo config file.
+Only add `gig.yaml` when inference is wrong or when you want richer repo metadata such as service, owner, kind, and notes.
 If you are working directly against GitHub, GitLab, Bitbucket, or Azure DevOps, `gig` can authenticate through the provider login flow and read repository state live without cloning first.
 On macOS, Bitbucket API tokens are stored in Keychain by default. In CI or other non-interactive environments, use `GIG_BITBUCKET_EMAIL` and `GIG_BITBUCKET_API_TOKEN`.
 For remote SVN, use `gig login svn` once or set `GIG_SVN_USERNAME` and `GIG_SVN_PASSWORD` for non-interactive runs.
@@ -188,7 +200,17 @@ gig login azure-devops
 gig login svn
 ```
 
-### 2. Save a workarea once
+### 2. Inspect a remote repository directly
+
+```bash
+gig inspect ABC-123 --repo github:owner/name
+gig verify --ticket ABC-123 --repo github:owner/name
+```
+
+Use this when you want the shortest path after login.
+After a successful remote run, `gig` remembers that repository as your current project automatically.
+
+### 3. Optionally save or pick a workarea once
 
 ```bash
 gig workarea add --provider github --use
@@ -202,7 +224,7 @@ Use this when you want `gig` to remember one project so later commands do not ne
 If you omit `--repo` and `--path`, `gig` can now discover a repository from your logged-in GitHub, GitLab, Bitbucket, or Azure DevOps account and let you choose it interactively.
 The picker accepts either a number or filter text, and recent workareas or repositories are promoted to the top so repeated project switching stays short.
 
-### 3. Inspect one ticket directly on a remote repository or the current workarea
+### 4. Inspect one ticket directly on a remote repository or the current workarea
 
 ```bash
 gig inspect ABC-123
@@ -213,7 +235,7 @@ gig inspect ABC-123 --repo azure-devops:org/project/repo
 gig inspect ABC-123 --repo svn:https://svn.example.com/repos/app/branches/staging/ProductName
 ```
 
-### 4. Check whether the next move looks safe
+### 5. Check whether the next move looks safe
 
 ```bash
 gig verify --ticket ABC-123
@@ -223,14 +245,14 @@ gig verify --ticket ABC-123 --repo github:owner/name
 `gig` will try to infer the protected-branch release path automatically for supported remote repositories.
 On GitHub, GitLab, Bitbucket, and Azure DevOps, inspect, verify, plan, and manifest outputs now also surface pull request and deployment evidence when the provider can confirm it.
 
-### 5. Generate a release packet people can actually read
+### 6. Generate a release packet people can actually read
 
 ```bash
 gig manifest generate --ticket ABC-123
 gig manifest generate --ticket ABC-123 --repo github:owner/name
 ```
 
-### 5.1. Optionally ask DeerFlow for an audience-specific ticket briefing
+### 6.1. Optionally ask DeerFlow for an audience-specific ticket briefing
 
 If you have not bootstrapped the local DeerFlow sidecar yet, start with:
 
@@ -307,9 +329,11 @@ gig assist resolve --path . --ticket ABC-123 --audience release-manager
 gig resolve start --path .
 ```
 
-## Team Config In One Minute
+## Optional Team Overrides
 
-If your branches are not just `dev`, `test`, and `main`, add a config file like this:
+Most teams should not start here.
+
+If `gig` cannot infer the right branch topology, or if you want richer team metadata in output, add a config file like this:
 
 ```yaml
 ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
@@ -338,7 +362,7 @@ Supported file names:
 - `.gig.yaml`
 - `.gig.yml`
 
-`gig` will auto-detect the file from the path you run against, or you can pass `--config`.
+If you do add one, `gig` will auto-detect the file from the path you run against, or you can pass `--config`.
 
 There is also a ready sample here:
 

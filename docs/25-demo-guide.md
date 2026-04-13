@@ -23,6 +23,7 @@ Run the scripted terminal walkthrough:
 What it shows:
 
 - `gig` with no args opening the guided front door
+- the calmer current-project summary and quick-action path
 - saving a remote-style workarea
 - `gig` showing the current project shortcuts
 - `gig assist doctor` reporting DeerFlow readiness

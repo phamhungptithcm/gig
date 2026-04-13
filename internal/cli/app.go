@@ -40,6 +40,7 @@ import (
 )
 
 const usageExitCode = 2
+const optionalOverrideFileHelp = "Optional gig override file"
 
 type App struct {
 	stdin   io.Reader
@@ -172,7 +173,7 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	if err := fs.Parse(args); err != nil {
@@ -216,6 +217,7 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
+	a.rememberProjectMemory(scope, commandDefaults{}, runtime, repositories, nil, "", "")
 
 	return 0
 }
@@ -230,7 +232,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	ticketID := fs.String("ticket", "", "Ticket ID to compare")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
@@ -296,7 +298,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	if err := fs.Parse(args); err != nil {
@@ -304,7 +306,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(a.stderr, "inspect requires exactly one <ticket-id> argument")
+		printUsageFailure(a.stderr, "inspect", "provide exactly one ticket ID.", "gig inspect ABC-123", "gig inspect ABC-123 --repo github:owner/name")
 		a.printInspectUsage()
 		return usageExitCode
 	}
@@ -340,6 +342,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
+	a.rememberProjectMemory(scope, commandDefaults{}, runtime, repositories, nil, "", "")
 
 	return 0
 }
@@ -378,7 +381,7 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
@@ -417,6 +420,7 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return usageExitCode
 	}
+	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, "", "")
 
 	ticketID := normalizeTicketID(fs.Arg(0))
 	results, err := runtime.inspect.EnvironmentStatusInRepositories(ctx, repositories, ticketID, environments)
@@ -443,7 +447,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to plan from saved snapshots")
@@ -459,7 +463,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(a.stderr, "plan does not accept positional arguments")
+		printUsageFailure(a.stderr, "plan", "use flags instead of positional arguments.", "gig plan --ticket ABC-123", "gig plan --release rel-2026-04-09 --path .")
 		a.printPlanUsage()
 		return usageExitCode
 	}
@@ -488,17 +492,17 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			fmt.Fprintln(a.stderr, "plan failed: --repo is not used with --release")
+			printUsageFailure(a.stderr, "plan", "do not combine --release with an explicit --repo target.", "gig plan --release rel-2026-04-09 --path .", "gig plan --ticket ABC-123 --repo github:owner/name")
 			a.printPlanUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			fmt.Fprintln(a.stderr, "plan failed: use either --release or ticket-based flags, not both")
+			printUsageFailure(a.stderr, "plan", "choose either --release or ticket-based flags, not both.", "gig plan --release rel-2026-04-09 --path .", "gig plan --ticket ABC-123 --repo github:owner/name")
 			a.printPlanUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			fmt.Fprintln(a.stderr, "plan failed: --from, --to, and --envs are not used with --release")
+			printUsageFailure(a.stderr, "plan", "--from, --to, and --envs are only for ticket-based planning.", "gig plan --release rel-2026-04-09 --path .", "gig plan --ticket ABC-123 --from test --to main --path .")
 			a.printPlanUsage()
 			return usageExitCode
 		}
@@ -561,6 +565,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return usageExitCode
 	}
+	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	promotionPlans := make([]plansvc.PromotionPlan, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
@@ -630,7 +635,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to verify from saved snapshots")
@@ -646,7 +651,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(a.stderr, "verify does not accept positional arguments")
+		printUsageFailure(a.stderr, "verify", "use flags instead of positional arguments.", "gig verify --ticket ABC-123", "gig verify --release rel-2026-04-09 --path .")
 		a.printVerifyUsage()
 		return usageExitCode
 	}
@@ -675,17 +680,17 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			fmt.Fprintln(a.stderr, "verify failed: --repo is not used with --release")
+			printUsageFailure(a.stderr, "verify", "do not combine --release with an explicit --repo target.", "gig verify --release rel-2026-04-09 --path .", "gig verify --ticket ABC-123 --repo github:owner/name")
 			a.printVerifyUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			fmt.Fprintln(a.stderr, "verify failed: use either --release or ticket-based flags, not both")
+			printUsageFailure(a.stderr, "verify", "choose either --release or ticket-based flags, not both.", "gig verify --release rel-2026-04-09 --path .", "gig verify --ticket ABC-123 --repo github:owner/name")
 			a.printVerifyUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			fmt.Fprintln(a.stderr, "verify failed: --from, --to, and --envs are not used with --release")
+			printUsageFailure(a.stderr, "verify", "--from, --to, and --envs are only for ticket-based verification.", "gig verify --release rel-2026-04-09 --path .", "gig verify --ticket ABC-123 --from test --to main --path .")
 			a.printVerifyUsage()
 			return usageExitCode
 		}
@@ -751,6 +756,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
 	}
+	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	verifications := make([]plansvc.Verification, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
@@ -836,7 +842,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to package from saved snapshots")
@@ -852,7 +858,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(a.stderr, "manifest generate does not accept positional arguments")
+		printUsageFailure(a.stderr, "manifest generate", "use flags instead of positional arguments.", "gig manifest generate --ticket ABC-123", "gig manifest generate --release rel-2026-04-09 --path .")
 		a.printManifestGenerateUsage()
 		return usageExitCode
 	}
@@ -881,17 +887,17 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			fmt.Fprintln(a.stderr, "manifest generate failed: --repo is not used with --release")
+			printUsageFailure(a.stderr, "manifest generate", "do not combine --release with an explicit --repo target.", "gig manifest generate --release rel-2026-04-09 --path .", "gig manifest generate --ticket ABC-123 --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			fmt.Fprintln(a.stderr, "manifest generate failed: use either --release or ticket-based flags, not both")
+			printUsageFailure(a.stderr, "manifest generate", "choose either --release or ticket-based flags, not both.", "gig manifest generate --release rel-2026-04-09 --path .", "gig manifest generate --ticket ABC-123 --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			fmt.Fprintln(a.stderr, "manifest generate failed: --from, --to, and --envs are not used with --release")
+			printUsageFailure(a.stderr, "manifest generate", "--from, --to, and --envs are only for ticket-based packets.", "gig manifest generate --release rel-2026-04-09 --path .", "gig manifest generate --ticket ABC-123 --from test --to main --path .")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
@@ -957,6 +963,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return usageExitCode
 	}
+	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	packets := make([]manifestsvc.ReleasePacket, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
@@ -1064,7 +1071,7 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	ticketID := fs.String("ticket", "", "Ticket ID to brief")
@@ -1140,6 +1147,7 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
 		return usageExitCode
 	}
+	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	commandTarget := fmt.Sprintf("--path %s", shellSingleQuote(scope.WorkspacePath))
 	if strings.TrimSpace(scope.RepoSpec) != "" {
@@ -1201,7 +1209,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to brief from saved snapshots")
@@ -1297,6 +1305,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
 			return usageExitCode
 		}
+		a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 		if strings.TrimSpace(scope.RepoSpec) != "" {
 			commandTarget = fmt.Sprintf("--repo %s", strings.TrimSpace(scope.RepoSpec))
@@ -1397,7 +1406,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	ticketID := fs.String("ticket", "", "Ticket ID to capture")
@@ -1468,6 +1477,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
 	}
+	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	normalizedReleaseID := ""
 	if strings.TrimSpace(*releaseID) != "" {
@@ -1545,7 +1555,7 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
 
 	if err := fs.Parse(args); err != nil {
@@ -1614,7 +1624,7 @@ func (a *App) runAssistResolve(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a Git repository or a child path inside it")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	ticketID := fs.String("ticket", "", "Optional ticket ID used for scope warnings")
 	deerflowURL := fs.String("url", "", "Base URL for DeerFlow, for example http://localhost:2026")
 	mode := fs.String("mode", string(assistsvc.ModePro), "Execution mode: flash, standard, pro, or ultra")
@@ -1739,7 +1749,7 @@ func (a *App) runResolveStatus(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a Git repository or a child path inside it")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	ticketID := fs.String("ticket", "", "Optional ticket ID used for scope warnings")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
 	if err := fs.Parse(args); err != nil {
@@ -1812,7 +1822,7 @@ func (a *App) runResolveStart(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a Git repository or a child path inside it")
-	configPath := fs.String("config", "", "Path to a gig config file")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	ticketID := fs.String("ticket", "", "Optional ticket ID used for scope warnings")
 	if err := fs.Parse(args); err != nil {
 		a.printResolveStartUsage()
@@ -2099,51 +2109,43 @@ func powerShellSingleQuote(value string) string {
 	return strings.ReplaceAll(value, "'", "''")
 }
 func (a *App) printRootUsage() {
-	fmt.Fprintln(a.stderr, "gig helps teams check whether a ticket is really ready for the next release step.")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig <command> [flags]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Start here:")
-	fmt.Fprintln(a.stderr, "  gig login github")
-	fmt.Fprintln(a.stderr, "  gig login gitlab")
-	fmt.Fprintln(a.stderr, "  gig login bitbucket")
-	fmt.Fprintln(a.stderr, "  gig workarea add --provider github --use")
-	fmt.Fprintln(a.stderr, "  gig workarea use")
-	fmt.Fprintln(a.stderr, "  gig --help")
-	fmt.Fprintln(a.stderr, "  gig inspect ABC-123")
-	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --repo github:owner/name")
-	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --workarea payments")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123")
-	fmt.Fprintln(a.stderr, "  gig assist doctor")
-	fmt.Fprintln(a.stderr, "  gig assist setup")
-	fmt.Fprintln(a.stderr, "  gig assist audit --ticket ABC-123 --repo github:owner/name")
-	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 --path .")
-	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 --from test --to main --path .")
-	fmt.Fprintln(a.stderr, "  gig doctor --path .")
-	fmt.Fprintln(a.stderr, "  gig update")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Commands:")
-	fmt.Fprintln(a.stderr, "  workarea    Save and switch project defaults for repeat use")
-	fmt.Fprintln(a.stderr, "  login       Authenticate to a live source-control provider")
-	fmt.Fprintln(a.stderr, "  scan        Find repositories under a path")
-	fmt.Fprintln(a.stderr, "  find        Find commits for one ticket")
-	fmt.Fprintln(a.stderr, "  inspect     Show the full ticket picture across repositories")
-	fmt.Fprintln(a.stderr, "  env status  Show where a ticket is present or behind across environments")
-	fmt.Fprintln(a.stderr, "  diff        Compare one branch to another for a ticket")
-	fmt.Fprintln(a.stderr, "  verify      Return safe, warning, or blocked for the next move")
-	fmt.Fprintln(a.stderr, "  plan        Build a read-only promotion plan")
-	fmt.Fprintln(a.stderr, "  manifest    Generate a release packet for QA, client, and release review")
-	fmt.Fprintln(a.stderr, "  snapshot    Save a repeatable ticket baseline for audit and re-check")
-	fmt.Fprintln(a.stderr, "  assist      Generate an AI briefing from gig evidence (experimental)")
-	fmt.Fprintln(a.stderr, "  doctor      Check config coverage, env mappings, and repo catalog health")
-	fmt.Fprintln(a.stderr, "  resolve     Inspect or resolve active Git merge conflicts")
-	fmt.Fprintln(a.stderr, "  update      Install the latest release or a specific version")
-	fmt.Fprintln(a.stderr, "  version     Show the installed version")
+	printHelpHeading(a.stderr, "gig", "Remote-first release audit CLI")
+	printHelpUsage(a.stderr, "gig <command> [flags]")
+	printHelpCommands(a.stderr, "Start here",
+		"gig",
+		"gig login github",
+		"gig inspect ABC-123 --repo github:owner/name",
+		"gig verify --ticket ABC-123 --repo github:owner/name",
+	)
+	printHelpCommands(a.stderr, "Common flows",
+		"gig inspect ABC-123",
+		"gig verify --ticket ABC-123",
+		"gig plan --ticket ABC-123",
+		"gig manifest generate --ticket ABC-123",
+		"gig assist doctor",
+		"gig assist setup",
+		"gig assist audit --ticket ABC-123 --repo github:owner/name",
+	)
+	printHelpRows(a.stderr, "Commands",
+		helpRow{Label: "workarea", Value: "Save and switch project defaults for repeat use"},
+		helpRow{Label: "login", Value: "Authenticate to a live source-control provider"},
+		helpRow{Label: "scan", Value: "Find repositories under a path"},
+		helpRow{Label: "find", Value: "Find commits for one ticket"},
+		helpRow{Label: "inspect", Value: "Show the full ticket picture across repositories"},
+		helpRow{Label: "env status", Value: "Show where a ticket is present or behind across environments"},
+		helpRow{Label: "diff", Value: "Compare one branch to another for a ticket"},
+		helpRow{Label: "verify", Value: "Return safe, warning, or blocked for the next move"},
+		helpRow{Label: "plan", Value: "Build a read-only promotion plan"},
+		helpRow{Label: "manifest", Value: "Generate a release packet for QA, client, and release review"},
+		helpRow{Label: "snapshot", Value: "Save a repeatable ticket baseline for audit and re-check"},
+		helpRow{Label: "assist", Value: "Generate an AI briefing from gig evidence (experimental)"},
+		helpRow{Label: "doctor", Value: "Check inferred topology, optional overrides, and repo health"},
+		helpRow{Label: "resolve", Value: "Inspect or resolve active Git merge conflicts"},
+		helpRow{Label: "update", Value: "Install the latest release or a specific version"},
+		helpRow{Label: "version", Value: "Show the installed version"},
+	)
 	a.printCurrentWorkareaHint()
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "More help:")
-	fmt.Fprintln(a.stderr, "  gig <command> --help")
+	printHelpCommands(a.stderr, "More help", "gig <command> --help")
 }
 
 func (a *App) printLoginUsage() {
@@ -2156,52 +2158,114 @@ func (a *App) printScanUsage() {
 }
 
 func (a *App) printFindUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml]")
+	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> [--workarea name] [--path . | --repo <provider-target>]")
 }
 
 func (a *App) printDiffUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig diff --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml]")
+	fmt.Fprintln(a.stderr, "Usage: gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
 }
 
 func (a *App) printInspectUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml]")
+	printHelpHeading(a.stderr, "gig inspect", "Show the full ticket story across repositories.")
+	printHelpUsage(a.stderr, "gig inspect <ticket-id> [--workarea name] [--path . | --repo <provider-target>]")
+	printHelpCommands(a.stderr, "Start here",
+		"gig inspect ABC-123",
+		"gig inspect ABC-123 --repo github:owner/name",
+		"gig inspect ABC-123 --workarea payments",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--repo", Value: "Inspect a live remote repository without cloning first"},
+		helpRow{Label: "--workarea", Value: "Reuse a remembered project and its inferred defaults"},
+		helpRow{Label: "--path", Value: "Use local workspace mode when remote access is not enough"},
+		helpRow{Label: "--config", Value: "Optional override file when inference needs help"},
+	)
+	printHelpCommands(a.stderr, "Next commands",
+		"gig verify --ticket ABC-123",
+		"gig plan --ticket ABC-123",
+		"gig manifest generate --ticket ABC-123",
+	)
 }
 
 func (a *App) printEnvUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printEnvStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printPlanUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig plan --release <release-id> --path . [--config gig.yaml] [--format human|json]")
-	fmt.Fprintln(a.stderr, "   or: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	printHelpHeading(a.stderr, "gig plan", "Build a read-only promotion plan for one ticket or a saved release.")
+	printHelpUsage(a.stderr,
+		"gig plan --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
+		"gig plan --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
+		"gig plan --release rel-2026-04-09 --path . [--format human|json]",
+	)
+	printHelpCommands(a.stderr, "Start here",
+		"gig plan --ticket ABC-123",
+		"gig plan --ticket ABC-123 --repo github:owner/name",
+		"gig plan --release rel-2026-04-09 --path .",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--repo", Value: "Plan directly against a live remote repository"},
+		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
+		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
+		helpRow{Label: "--envs", Value: "Override environment mapping only when needed"},
+		helpRow{Label: "--format", Value: "Use json for automation or human for terminal review"},
+	)
+	printHelpCommands(a.stderr, "Next commands",
+		"gig verify --ticket ABC-123",
+		"gig manifest generate --ticket ABC-123",
+	)
 }
 
 func (a *App) printVerifyUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]")
-	fmt.Fprintln(a.stderr, "  gig verify --release rel-2026-04-09 --path .")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Tips:")
-	fmt.Fprintln(a.stderr, "  use the current workarea when no --repo or --path is set")
-	fmt.Fprintln(a.stderr, "  add --from/--to only when gig cannot infer the promotion path")
-	fmt.Fprintln(a.stderr, "  add --format json for automation")
+	printHelpHeading(a.stderr, "gig verify", "Turn ticket evidence into a safe, warning, or blocked release verdict.")
+	printHelpUsage(a.stderr,
+		"gig verify --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
+		"gig verify --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
+		"gig verify --release rel-2026-04-09 --path .",
+	)
+	printHelpCommands(a.stderr, "Start here",
+		"gig verify --ticket ABC-123",
+		"gig verify --ticket ABC-123 --repo github:owner/name",
+		"gig verify --release rel-2026-04-09 --path .",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--repo", Value: "Verify directly against a live remote repository"},
+		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
+		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
+		helpRow{Label: "--format", Value: "Add json output for automation"},
+	)
+	printHelpCommands(a.stderr, "Next commands",
+		"gig plan --ticket ABC-123",
+		"gig manifest generate --ticket ABC-123",
+	)
 }
 
 func (a *App) printManifestUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
-	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]")
-	fmt.Fprintln(a.stderr, "  gig manifest generate --release rel-2026-04-09 --path .")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Tips:")
-	fmt.Fprintln(a.stderr, "  use the current workarea when no --repo or --path is set")
-	fmt.Fprintln(a.stderr, "  add --format json for tooling or keep markdown for handoff")
+	printHelpHeading(a.stderr, "gig manifest generate", "Generate a release packet for QA, client, and release review.")
+	printHelpUsage(a.stderr,
+		"gig manifest generate --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
+		"gig manifest generate --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
+		"gig manifest generate --release rel-2026-04-09 --path .",
+	)
+	printHelpCommands(a.stderr, "Start here",
+		"gig manifest generate --ticket ABC-123",
+		"gig manifest generate --ticket ABC-123 --repo github:owner/name",
+		"gig manifest generate --release rel-2026-04-09 --path .",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--repo", Value: "Generate a packet directly from a live remote repository"},
+		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
+		helpRow{Label: "--format", Value: "Keep markdown for handoff or use json for tooling"},
+		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
+	)
+	printHelpCommands(a.stderr, "Next commands",
+		"gig assist audit --ticket ABC-123 --audience release-manager",
+		"gig assist release --release rel-2026-04-09 --path .",
+	)
 }
 
 func (a *App) printManifestGenerateUsage() {
@@ -2210,11 +2274,11 @@ func (a *App) printManifestGenerateUsage() {
 
 func (a *App) printSnapshotUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
 }
 
 func (a *App) printSnapshotCreateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
 }
 
 func (a *App) printAssistUsage() {
@@ -2271,21 +2335,25 @@ func (a *App) printAssistResolveUsage() {
 }
 
 func (a *App) printDoctorUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig doctor --path . [--config gig.yaml] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig doctor --path . [--format human|json]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Tips:")
+	fmt.Fprintln(a.stderr, "  gig uses provider metadata, inferred branch topology, and built-in defaults when no override file is present")
+	fmt.Fprintln(a.stderr, "  add --config only when your team needs explicit branch or repository metadata overrides")
 }
 
 func (a *App) printResolveUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig resolve status --path . [--config gig.yaml] [--ticket ABC-123] [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig resolve start --path . [--config gig.yaml] [--ticket ABC-123]")
+	fmt.Fprintln(a.stderr, "  gig resolve status --path . [--ticket ABC-123] [--format human|json]")
+	fmt.Fprintln(a.stderr, "  gig resolve start --path . [--ticket ABC-123]")
 }
 
 func (a *App) printResolveStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig resolve status --path . [--config gig.yaml] [--ticket ABC-123] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig resolve status --path . [--ticket ABC-123] [--format human|json]")
 }
 
 func (a *App) printResolveStartUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig resolve start --path . [--config gig.yaml] [--ticket ABC-123]")
+	fmt.Fprintln(a.stderr, "Usage: gig resolve start --path . [--ticket ABC-123]")
 }
 
 func (a *App) printUpdateUsage() {

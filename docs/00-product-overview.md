@@ -25,7 +25,7 @@ The intended direction is:
 
 - login once to a remote provider and inspect live repository state
 - auto-detect branch topology, ticket evidence, and likely release paths
-- let users create workareas for each project so setup is remembered
+- let users create workareas for each project so setup and inferred topology are remembered
 - give `gig` with no subcommand a guided terminal front door instead of only raw help text
 - keep config optional and only use it to improve quality or override detection
 - make the console UX clean enough that users can stay inside `gig` while working across many repos
@@ -49,7 +49,7 @@ Today, the project already has useful release logic:
 - Markdown and JSON release packets
 - GitHub, GitLab, Bitbucket, and Azure DevOps-backed remote inspection for selected flows
 - remote SVN inspection with login-backed credentials
-- initial workarea save and switch flow for project defaults
+- initial workarea save and switch flow for project defaults plus remembered inferred branch topology
 - a guided root dashboard when users run `gig` with no subcommand
 - a local `gig assist doctor` readiness check for the bundled DeerFlow sidecar
 - experimental DeerFlow-backed ticket, release, and conflict briefings built from `gig` evidence bundles
@@ -129,6 +129,6 @@ After install, users should be able to:
 
 1. run `gig`
 2. log in once if needed
-3. pick or create a workarea for one project
-4. search a ticket online across remote branches
+3. inspect a ticket online across remote branches
+4. let `gig` remember that project automatically or switch to a saved workarea later
 5. understand risk and missing changes without wiring config first
