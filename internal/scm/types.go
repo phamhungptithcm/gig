@@ -8,9 +8,22 @@ import (
 type Type string
 
 const (
-	TypeGit Type = "git"
-	TypeSVN Type = "svn"
+	TypeGit         Type = "git"
+	TypeGitHub      Type = "github"
+	TypeGitLab      Type = "gitlab"
+	TypeBitbucket   Type = "bitbucket"
+	TypeAzureDevOps Type = "azure-devops"
+	TypeSVN         Type = "svn"
 )
+
+func (t Type) IsRemote() bool {
+	switch t {
+	case TypeGitHub, TypeGitLab, TypeBitbucket, TypeAzureDevOps:
+		return true
+	default:
+		return false
+	}
+}
 
 var ErrUnsupported = errors.New("operation not supported")
 
@@ -67,4 +80,8 @@ type Adapter interface {
 	SearchCommits(ctx context.Context, repoRoot string, query SearchQuery) ([]Commit, error)
 	CompareBranches(ctx context.Context, repoRoot string, query CompareQuery) (CompareResult, error)
 	PrepareCherryPick(ctx context.Context, repoRoot string, plan CherryPickPlan) error
+}
+
+type ProtectedBranchProvider interface {
+	ProtectedBranches(ctx context.Context, repoRoot string) ([]string, error)
 }

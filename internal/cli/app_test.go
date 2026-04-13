@@ -463,6 +463,110 @@ func TestAppManifestGenerateReleaseJSONGolden(t *testing.T) {
 	assertGolden(t, "manifest_generate_release_json.golden", normalizeOutput(stdout, workspace))
 }
 
+func TestAppInspectRemoteGitHubAutoLogin(t *testing.T) {
+	stateFile := filepath.Join(t.TempDir(), "gh-auth-state")
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments": `{"default_branch":"main"}`,
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1": `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"repos/acme/payments/commits?sha=staging&per_page=100&page=1":     `[{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}}]`,
+		"repos/acme/payments/commits?sha=main&per_page=100&page=1":        `[]`,
+		"repos/acme/payments/commits/abc123456789":                        `{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"},"files":[{"filename":"db/migrations/001_add_column.sql"}]}`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GH_STATE", stateFile)
+	t.Setenv("FAKE_GH_REQUIRE_LOGIN", "1")
+
+	stdout, stderr, exitCode := runApp(t, "inspect", "ABC-123", "--repo", "github:acme/payments")
+	if exitCode != 0 {
+		t.Fatalf("inspect remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stderr, "Starting gh auth login") {
+		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	}
+	if !strings.Contains(stdout, "github:acme/payments") {
+		t.Fatalf("stdout = %q, want remote repository label", stdout)
+	}
+	if !strings.Contains(stdout, "declared dependencies") {
+		t.Fatalf("stdout = %q, want declared dependency output", stdout)
+	}
+}
+
+func TestAppVerifyRemoteGitHubInfersProtectedBranches(t *testing.T) {
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments": `{"default_branch":"main"}`,
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1": `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"repos/acme/payments/branches/staging":                            `{"name":"staging","protected":true}`,
+		"repos/acme/payments/branches/main":                               `{"name":"main","protected":true}`,
+		"repos/acme/payments/commits?sha=staging&per_page=100&page=1":     `[{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"}}]`,
+		"repos/acme/payments/commits?sha=main&per_page=100&page=1":        `[]`,
+		"repos/acme/payments/commits/abc123456789":                        `{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"},"files":[{"filename":"service/app.txt"}]}`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--repo", "github:acme/payments")
+	if exitCode != 0 {
+		t.Fatalf("verify remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stdout, "Verification: staging -> main") {
+		t.Fatalf("stdout = %q, want inferred staging -> main verification", stdout)
+	}
+}
+
+func TestAppInspectRemoteGitLabAutoLogin(t *testing.T) {
+	stateFile := filepath.Join(t.TempDir(), "glab-auth-state")
+	glabDir := installFakeGitLabCLI(t, map[string]string{
+		"projects/acme%2Fplatform%2Fpayments":                                                          `{"default_branch":"main"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches?per_page=100&page=1":                  `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=staging&per_page=100&page=1":  `[{"id":"abc123456789","message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=main&per_page=100&page=1":     `[]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789":                          `{"id":"abc123456789","message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/diff?per_page=100&page=1": `[{"new_path":"db/migrations/001_add_column.sql"}]`,
+	})
+	t.Setenv("PATH", glabDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GLAB_STATE", stateFile)
+	t.Setenv("FAKE_GLAB_REQUIRE_LOGIN", "1")
+
+	stdout, stderr, exitCode := runApp(t, "inspect", "ABC-123", "--repo", "gitlab:acme/platform/payments")
+	if exitCode != 0 {
+		t.Fatalf("inspect remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stderr, "Starting glab auth login") {
+		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	}
+	if !strings.Contains(stdout, "gitlab:acme/platform/payments") {
+		t.Fatalf("stdout = %q, want remote repository label", stdout)
+	}
+	if !strings.Contains(stdout, "declared dependencies") {
+		t.Fatalf("stdout = %q, want declared dependency output", stdout)
+	}
+}
+
+func TestAppVerifyRemoteGitLabInfersProtectedBranches(t *testing.T) {
+	glabDir := installFakeGitLabCLI(t, map[string]string{
+		"projects/acme%2Fplatform%2Fpayments":                                                          `{"default_branch":"main"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches?per_page=100&page=1":                  `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches/staging":                              `{"name":"staging","protected":true}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches/main":                                 `{"name":"main","protected":true}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=staging&per_page=100&page=1":  `[{"id":"abc123456789","message":"ABC-123 fix payments"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=main&per_page=100&page=1":     `[]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789":                          `{"id":"abc123456789","message":"ABC-123 fix payments"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/diff?per_page=100&page=1": `[{"new_path":"service/app.txt"}]`,
+	})
+	t.Setenv("PATH", glabDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--repo", "gitlab:acme/platform/payments")
+	if exitCode != 0 {
+		t.Fatalf("verify remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stdout, "Verification: staging -> main") {
+		t.Fatalf("stdout = %q, want inferred staging -> main verification", stdout)
+	}
+}
+
 func TestAppResolveStatusGolden(t *testing.T) {
 	t.Parallel()
 
@@ -709,6 +813,114 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
 	}
+}
+
+func installFakeGitHubCLI(t *testing.T, endpoints map[string]string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "gh")
+
+	var script strings.Builder
+	script.WriteString("#!/bin/sh\n")
+	script.WriteString("set -eu\n")
+	script.WriteString("state=\"${FAKE_GH_STATE:-}\"\n")
+	script.WriteString("require_login=\"${FAKE_GH_REQUIRE_LOGIN:-0}\"\n")
+	script.WriteString("cmd=\"${1:-}\"\n")
+	script.WriteString("sub=\"${2:-}\"\n")
+	script.WriteString("if [ \"$cmd\" = \"auth\" ] && [ \"$sub\" = \"status\" ]; then\n")
+	script.WriteString("  if [ \"$require_login\" = \"1\" ] && [ ! -f \"$state\" ]; then\n")
+	script.WriteString("    echo \"not logged in\" >&2\n")
+	script.WriteString("    exit 1\n")
+	script.WriteString("  fi\n")
+	script.WriteString("  echo \"Logged in\"\n")
+	script.WriteString("  exit 0\n")
+	script.WriteString("fi\n")
+	script.WriteString("if [ \"$cmd\" = \"auth\" ] && [ \"$sub\" = \"login\" ]; then\n")
+	script.WriteString("  if [ -n \"$state\" ]; then touch \"$state\"; fi\n")
+	script.WriteString("  echo \"Logged in\"\n")
+	script.WriteString("  exit 0\n")
+	script.WriteString("fi\n")
+	script.WriteString("if [ \"$cmd\" = \"api\" ]; then\n")
+	script.WriteString("  for last; do true; done\n")
+	script.WriteString("  endpoint=\"$last\"\n")
+	for endpoint, output := range endpoints {
+		script.WriteString("  if [ \"$endpoint\" = ")
+		script.WriteString(shellQuote(endpoint))
+		script.WriteString(" ]; then\n")
+		script.WriteString("    cat <<'EOF'\n")
+		script.WriteString(output)
+		script.WriteString("\nEOF\n")
+		script.WriteString("    exit 0\n")
+		script.WriteString("  fi\n")
+	}
+	script.WriteString("  echo \"unexpected endpoint: $endpoint\" >&2\n")
+	script.WriteString("  exit 1\n")
+	script.WriteString("fi\n")
+	script.WriteString("echo \"unsupported gh invocation: $*\" >&2\n")
+	script.WriteString("exit 1\n")
+
+	if err := os.WriteFile(scriptPath, []byte(script.String()), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", scriptPath, err)
+	}
+
+	return dir
+}
+
+func installFakeGitLabCLI(t *testing.T, endpoints map[string]string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "glab")
+
+	var script strings.Builder
+	script.WriteString("#!/bin/sh\n")
+	script.WriteString("set -eu\n")
+	script.WriteString("state=\"${FAKE_GLAB_STATE:-}\"\n")
+	script.WriteString("require_login=\"${FAKE_GLAB_REQUIRE_LOGIN:-0}\"\n")
+	script.WriteString("cmd=\"${1:-}\"\n")
+	script.WriteString("sub=\"${2:-}\"\n")
+	script.WriteString("if [ \"$cmd\" = \"auth\" ] && [ \"$sub\" = \"status\" ]; then\n")
+	script.WriteString("  if [ \"$require_login\" = \"1\" ] && [ ! -f \"$state\" ]; then\n")
+	script.WriteString("    echo \"not logged in\" >&2\n")
+	script.WriteString("    exit 1\n")
+	script.WriteString("  fi\n")
+	script.WriteString("  echo \"Logged in\"\n")
+	script.WriteString("  exit 0\n")
+	script.WriteString("fi\n")
+	script.WriteString("if [ \"$cmd\" = \"auth\" ] && [ \"$sub\" = \"login\" ]; then\n")
+	script.WriteString("  if [ -n \"$state\" ]; then touch \"$state\"; fi\n")
+	script.WriteString("  echo \"Logged in\"\n")
+	script.WriteString("  exit 0\n")
+	script.WriteString("fi\n")
+	script.WriteString("if [ \"$cmd\" = \"api\" ]; then\n")
+	script.WriteString("  for last; do true; done\n")
+	script.WriteString("  endpoint=\"$last\"\n")
+	for endpoint, output := range endpoints {
+		script.WriteString("  if [ \"$endpoint\" = ")
+		script.WriteString(shellQuote(endpoint))
+		script.WriteString(" ]; then\n")
+		script.WriteString("    cat <<'EOF'\n")
+		script.WriteString(output)
+		script.WriteString("\nEOF\n")
+		script.WriteString("    exit 0\n")
+		script.WriteString("  fi\n")
+	}
+	script.WriteString("  echo \"unexpected endpoint: $endpoint\" >&2\n")
+	script.WriteString("  exit 1\n")
+	script.WriteString("fi\n")
+	script.WriteString("echo \"unsupported glab invocation: $*\" >&2\n")
+	script.WriteString("exit 1\n")
+
+	if err := os.WriteFile(scriptPath, []byte(script.String()), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", scriptPath, err)
+	}
+
+	return dir
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func createPromotionFixture(t *testing.T) string {

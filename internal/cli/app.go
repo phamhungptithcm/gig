@@ -27,8 +27,11 @@ import (
 	"gig/internal/repo"
 	"gig/internal/scm"
 	gitscm "gig/internal/scm/git"
+	githubscm "gig/internal/scm/github"
+	gitlabscm "gig/internal/scm/gitlab"
 	svnscm "gig/internal/scm/svn"
 	snapshotsvc "gig/internal/snapshot"
+	"gig/internal/sourcecontrol"
 	ticketsvc "gig/internal/ticket"
 	updatesvc "gig/internal/update"
 )
@@ -85,6 +88,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runManifest(ctx, args[1:])
 	case "snapshot":
 		return a.runSnapshot(ctx, args[1:])
+	case "login":
+		return a.runLogin(ctx, args[1:])
 	case "doctor":
 		return a.runDoctor(ctx, args[1:])
 	case "resolve":
@@ -144,7 +149,7 @@ func (a *App) runScan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runFind(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		a.printFindUsage()
@@ -162,6 +167,7 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	if err := fs.Parse(args); err != nil {
 		a.printFindUsage()
 		return usageExitCode
@@ -179,13 +185,14 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 	}
 
 	ticketID := normalizeTicketID(fs.Arg(0))
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
 	}
 
-	repositories, err := runtime.scanner.Discover(ctx, resolvedPath)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
@@ -197,7 +204,7 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	if err := output.RenderFind(a.stdout, ticketID, resolvedPath, len(repositories), results); err != nil {
+	if err := output.RenderFind(a.stdout, ticketID, scopeLabel, len(repositories), results); err != nil {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
@@ -264,7 +271,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 }
 
 func (a *App) runInspect(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		a.printInspectUsage()
@@ -282,6 +289,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	if err := fs.Parse(args); err != nil {
 		a.printInspectUsage()
 		return usageExitCode
@@ -299,19 +307,26 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	}
 
 	ticketID := normalizeTicketID(fs.Arg(0))
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
 	}
 
-	results, scannedRepoCount, err := runtime.inspect.Inspect(ctx, resolvedPath, ticketID)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
 	}
 
-	if err := output.RenderInspect(a.stdout, ticketID, resolvedPath, scannedRepoCount, results); err != nil {
+	results, err := runtime.inspect.InspectInRepositories(ctx, repositories, ticketID)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
+		return 1
+	}
+
+	if err := output.RenderInspect(a.stdout, ticketID, scopeLabel, len(repositories), results); err != nil {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
@@ -336,7 +351,7 @@ func (a *App) runEnv(ctx context.Context, args []string) int {
 }
 
 func (a *App) runEnvStatus(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs", "-repo", "--repo")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		a.printEnvStatusUsage()
@@ -355,6 +370,7 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	if err := fs.Parse(args); err != nil {
 		a.printEnvStatusUsage()
 		return usageExitCode
@@ -371,26 +387,32 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
 
-	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
+		return 1
+	}
+	environments, err := resolveOperationEnvironments(ctx, runtime, repositories, *envsSpec)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return usageExitCode
 	}
 
 	ticketID := normalizeTicketID(fs.Arg(0))
-	results, scannedRepoCount, err := runtime.inspect.EnvironmentStatus(ctx, resolvedPath, ticketID, environments)
+	results, err := runtime.inspect.EnvironmentStatusInRepositories(ctx, repositories, ticketID, environments)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
 
-	if err := output.RenderEnvironmentStatus(a.stdout, ticketID, resolvedPath, environments, scannedRepoCount, results); err != nil {
+	if err := output.RenderEnvironmentStatus(a.stdout, ticketID, scopeLabel, environments, len(repositories), results); err != nil {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
@@ -409,6 +431,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	releaseID := fs.String("release", "", "Release ID to plan from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to plan")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -439,7 +462,8 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
@@ -447,6 +471,11 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
+		if strings.TrimSpace(*repoTarget) != "" {
+			fmt.Fprintln(a.stderr, "plan failed: --repo is not used with --release")
+			a.printPlanUsage()
+			return usageExitCode
+		}
 		if *ticketID != "" || *ticketFile != "" {
 			fmt.Fprintln(a.stderr, "plan failed: use either --release or ticket-based flags, not both")
 			a.printPlanUsage()
@@ -499,13 +528,19 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return usageExitCode
 	}
 
-	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return 1
+	}
+
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return usageExitCode
@@ -513,7 +548,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 
 	promotionPlans := make([]plansvc.PromotionPlan, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
-		promotionPlan, err := runtime.planner.BuildPromotionPlan(ctx, resolvedPath, ticketID, *fromBranch, *toBranch, environments)
+		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 			return 1
@@ -542,7 +577,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 				Plan      plansvc.PromotionPlan `json:"plan"`
 			}{
 				Command:   "plan",
-				Workspace: resolvedPath,
+				Workspace: scopeLabel,
 				Plan:      promotionPlans[0],
 			}); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
@@ -556,7 +591,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 				Plans      []plansvc.PromotionPlan `json:"plans"`
 			}{
 				Command:    "plan",
-				Workspace:  resolvedPath,
+				Workspace:  scopeLabel,
 				TicketFile: resolvedTicketFile,
 				Plans:      promotionPlans,
 			}); err != nil {
@@ -580,6 +615,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	releaseID := fs.String("release", "", "Release ID to verify from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to verify")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -610,7 +646,8 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
@@ -618,6 +655,11 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
+		if strings.TrimSpace(*repoTarget) != "" {
+			fmt.Fprintln(a.stderr, "verify failed: --repo is not used with --release")
+			a.printVerifyUsage()
+			return usageExitCode
+		}
 		if *ticketID != "" || *ticketFile != "" {
 			fmt.Fprintln(a.stderr, "verify failed: use either --release or ticket-based flags, not both")
 			a.printVerifyUsage()
@@ -673,13 +715,19 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
 	}
 
-	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return 1
+	}
+
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
@@ -687,12 +735,12 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 
 	verifications := make([]plansvc.Verification, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
-		verification, err := runtime.planner.VerifyPromotion(ctx, resolvedPath, ticketID, *fromBranch, *toBranch, environments)
+		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 			return 1
 		}
-		verifications = append(verifications, verification)
+		verifications = append(verifications, plansvc.BuildVerification(promotionPlan))
 	}
 
 	switch outputFormat {
@@ -716,7 +764,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 				Verification plansvc.Verification `json:"verification"`
 			}{
 				Command:      "verify",
-				Workspace:    resolvedPath,
+				Workspace:    scopeLabel,
 				Verification: verifications[0],
 			}); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
@@ -730,7 +778,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 				Verifications []plansvc.Verification `json:"verifications"`
 			}{
 				Command:       "verify",
-				Workspace:     resolvedPath,
+				Workspace:     scopeLabel,
 				TicketFile:    resolvedTicketFile,
 				Verifications: verifications,
 			}); err != nil {
@@ -770,6 +818,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	releaseID := fs.String("release", "", "Release ID to package from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to package")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -800,7 +849,8 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return 1
@@ -808,6 +858,11 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
+		if strings.TrimSpace(*repoTarget) != "" {
+			fmt.Fprintln(a.stderr, "manifest generate failed: --repo is not used with --release")
+			a.printManifestGenerateUsage()
+			return usageExitCode
+		}
 		if *ticketID != "" || *ticketFile != "" {
 			fmt.Fprintln(a.stderr, "manifest generate failed: use either --release or ticket-based flags, not both")
 			a.printManifestGenerateUsage()
@@ -863,13 +918,19 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
+	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return usageExitCode
 	}
 
-	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		return 1
+	}
+
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return usageExitCode
@@ -877,12 +938,12 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 	packets := make([]manifestsvc.ReleasePacket, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
-		packet, err := runtime.manifest.Generate(ctx, resolvedPath, runtime.loaded, ticketID, *fromBranch, *toBranch, environments)
+		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 			return 1
 		}
-		packets = append(packets, packet)
+		packets = append(packets, manifestsvc.BuildReleasePacket(scopeLabel, runtime.loaded, promotionPlan))
 	}
 
 	switch selectedFormat {
@@ -918,7 +979,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 				Packets    []manifestsvc.ReleasePacket `json:"packets"`
 			}{
 				Command:    "manifest generate",
-				Workspace:  resolvedPath,
+				Workspace:  scopeLabel,
 				TicketFile: resolvedTicketFile,
 				Packets:    packets,
 			}); err != nil {
@@ -947,6 +1008,33 @@ func (a *App) runSnapshot(ctx context.Context, args []string) int {
 	}
 }
 
+func (a *App) runLogin(ctx context.Context, args []string) int {
+	if len(args) == 0 || hasHelpFlag(args) {
+		a.printLoginUsage()
+		return 0
+	}
+	if len(args) != 1 {
+		fmt.Fprintln(a.stderr, "login requires exactly one <provider> argument")
+		a.printLoginUsage()
+		return usageExitCode
+	}
+
+	provider, err := sourcecontrol.ParseProvider(args[0])
+	if err != nil {
+		fmt.Fprintf(a.stderr, "login failed: %v\n", err)
+		a.printLoginUsage()
+		return usageExitCode
+	}
+
+	if err := sourcecontrol.Login(ctx, provider, a.stdin, a.stdout, a.stderr); err != nil {
+		fmt.Fprintf(a.stderr, "login failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(a.stdout, "%s authentication is ready.\n", sourcecontrol.ProviderLabel(provider))
+	return 0
+}
+
 func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 	if hasHelpFlag(args) {
 		a.printSnapshotCreateUsage()
@@ -958,6 +1046,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
 	ticketID := fs.String("ticket", "", "Ticket ID to capture")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
@@ -988,16 +1077,11 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	remoteMode := strings.TrimSpace(*repoTarget) != ""
+	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return 1
-	}
-
-	environments, err := resolveEnvironments(*envsSpec, runtime.loaded)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
-		return usageExitCode
 	}
 
 	normalizedTicketID := normalizeTicketID(*ticketID)
@@ -1011,8 +1095,22 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 	if strings.TrimSpace(*fromBranch) == "" || strings.TrimSpace(*toBranch) == "" {
-		fmt.Fprintln(a.stderr, "snapshot create failed: both --from and --to branches are required")
-		a.printSnapshotCreateUsage()
+		if !remoteMode {
+			fmt.Fprintln(a.stderr, "snapshot create failed: both --from and --to branches are required")
+			a.printSnapshotCreateUsage()
+			return usageExitCode
+		}
+	}
+
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		return 1
+	}
+
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
 	}
 
@@ -1025,9 +1123,16 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		}
 	}
 
-	snapshot, err := runtime.snapshot.CaptureWithOptions(ctx, resolvedPath, runtime.loaded, normalizedTicketID, *fromBranch, *toBranch, environments, snapshotsvc.CaptureOptions{
-		ReleaseID: normalizedReleaseID,
-	})
+	var snapshot snapshotsvc.TicketSnapshot
+	if remoteMode {
+		snapshot, err = runtime.snapshot.CaptureInRepositoriesWithOptions(ctx, scopeLabel, runtime.loaded, repositories, normalizedTicketID, resolvedFromBranch, resolvedToBranch, environments, snapshotsvc.CaptureOptions{
+			ReleaseID: normalizedReleaseID,
+		})
+	} else {
+		snapshot, err = runtime.snapshot.CaptureWithOptions(ctx, resolvedPath, runtime.loaded, normalizedTicketID, resolvedFromBranch, resolvedToBranch, environments, snapshotsvc.CaptureOptions{
+			ReleaseID: normalizedReleaseID,
+		})
+	}
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return 1
@@ -1478,14 +1583,18 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  gig <command> [flags]")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Start here:")
+	fmt.Fprintln(a.stderr, "  gig login github")
+	fmt.Fprintln(a.stderr, "  gig login gitlab")
 	fmt.Fprintln(a.stderr, "  gig --help")
-	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --path .")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --from test --to main --path .")
+	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --repo github:owner/name")
+	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --repo gitlab:group/project")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --repo github:owner/name")
 	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 --from test --to main --path .")
 	fmt.Fprintln(a.stderr, "  gig doctor --path .")
 	fmt.Fprintln(a.stderr, "  gig update")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Commands:")
+	fmt.Fprintln(a.stderr, "  login       Authenticate to a live source-control provider")
 	fmt.Fprintln(a.stderr, "  scan        Find repositories under a path")
 	fmt.Fprintln(a.stderr, "  find        Find commits for one ticket")
 	fmt.Fprintln(a.stderr, "  inspect     Show the full ticket picture across repositories")
@@ -1504,12 +1613,17 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  gig <command> --help")
 }
 
+func (a *App) printLoginUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig login <provider>")
+	fmt.Fprintln(a.stderr, "Providers: github, gitlab, bitbucket, azure-devops, svn")
+}
+
 func (a *App) printScanUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig scan --path .")
 }
 
 func (a *App) printFindUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> --path . [--config gig.yaml]")
+	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml]")
 }
 
 func (a *App) printDiffUsage() {
@@ -1517,46 +1631,46 @@ func (a *App) printDiffUsage() {
 }
 
 func (a *App) printInspectUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> --path . [--config gig.yaml]")
+	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml]")
 }
 
 func (a *App) printEnvUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printEnvStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printPlanUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig plan --release <release-id> --path . [--config gig.yaml] [--format human|json]")
-	fmt.Fprintln(a.stderr, "   or: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "   or: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printVerifyUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig verify --release <release-id> --path . [--config gig.yaml] [--format human|json]")
-	fmt.Fprintln(a.stderr, "   or: gig verify (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "   or: gig verify (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printManifestUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
 	fmt.Fprintln(a.stderr, "  gig manifest generate --release <release-id> --path . [--config gig.yaml] [--format markdown|json]")
-	fmt.Fprintln(a.stderr, "  gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "  gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
 }
 
 func (a *App) printManifestGenerateUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig manifest generate --release <release-id> --path . [--config gig.yaml] [--format markdown|json]")
-	fmt.Fprintln(a.stderr, "   or: gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) --from <branch> --to <branch> --path . [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "   or: gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
 }
 
 func (a *App) printSnapshotUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
 }
 
 func (a *App) printSnapshotCreateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> --from <branch> --to <branch> --path . [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
 }
 
 func (a *App) printDoctorUsage() {
@@ -1776,9 +1890,121 @@ func resolveEnvironments(spec string, loaded config.Loaded) ([]inspectsvc.Enviro
 	return environments, nil
 }
 
+func (a *App) resolveCommandRepositories(ctx context.Context, workspacePath, repoSpec string, runtime commandRuntime) ([]scm.Repository, string, error) {
+	if strings.TrimSpace(repoSpec) == "" {
+		repositories, err := runtime.scanner.Discover(ctx, workspacePath)
+		return repositories, workspacePath, err
+	}
+
+	repositories, err := sourcecontrol.ParseRepositoryTargets(repoSpec)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := sourcecontrol.ValidateRemoteAuditSupport(repositories, runtime.adapters); err != nil {
+		return nil, "", err
+	}
+	if err := a.ensureSourceControlAccess(ctx, repositories); err != nil {
+		return nil, "", err
+	}
+
+	return repositories, sourcecontrol.FormatScopeLabel(repositories, workspacePath), nil
+}
+
+func (a *App) ensureSourceControlAccess(ctx context.Context, repositories []scm.Repository) error {
+	return sourcecontrol.EnsureAccess(ctx, repositories, a.stdin, a.stdout, a.stderr)
+}
+
+func resolveOperationContext(ctx context.Context, runtime commandRuntime, repositories []scm.Repository, envSpec, fromBranch, toBranch string) ([]inspectsvc.Environment, string, string, error) {
+	environments, err := resolveOperationEnvironments(ctx, runtime, repositories, envSpec)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	fromBranch = strings.TrimSpace(fromBranch)
+	toBranch = strings.TrimSpace(toBranch)
+	if fromBranch != "" && toBranch != "" {
+		return environments, fromBranch, toBranch, nil
+	}
+
+	if !containsRemoteRepositories(repositories) {
+		return nil, "", "", fmt.Errorf("both --from and --to branches are required")
+	}
+
+	inferredFrom, inferredTo, err := sourcecontrol.InferPromotionBranches(environments, fromBranch, toBranch)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	return environments, inferredFrom, inferredTo, nil
+}
+
+func resolveOperationEnvironments(ctx context.Context, runtime commandRuntime, repositories []scm.Repository, spec string) ([]inspectsvc.Environment, error) {
+	if strings.TrimSpace(spec) != "" {
+		return parseEnvironmentSpec(spec)
+	}
+
+	if runtime.loaded.ExplicitEnvironments || !containsRemoteRepositories(repositories) {
+		return resolveEnvironments("", runtime.loaded)
+	}
+
+	protectedBranches, err := protectedBranchesForRepositories(ctx, runtime, repositories)
+	if err != nil {
+		return nil, err
+	}
+	if len(protectedBranches) == 0 {
+		return resolveEnvironments("", runtime.loaded)
+	}
+
+	environments := sourcecontrol.InferEnvironments(protectedBranches)
+	if len(environments) == 0 {
+		return nil, fmt.Errorf("unable to infer protected branch topology for the selected remote repository")
+	}
+
+	return environments, nil
+}
+
+func protectedBranchesForRepositories(ctx context.Context, runtime commandRuntime, repositories []scm.Repository) ([]string, error) {
+	branches := make([]string, 0)
+	seen := map[string]struct{}{}
+
+	for _, repository := range repositories {
+		adapter, ok := runtime.adapters.For(repository.Type)
+		if !ok {
+			continue
+		}
+		provider, ok := adapter.(scm.ProtectedBranchProvider)
+		if !ok {
+			continue
+		}
+		protectedBranches, err := provider.ProtectedBranches(ctx, repository.Root)
+		if err != nil {
+			return nil, err
+		}
+		for _, branch := range protectedBranches {
+			if _, ok := seen[branch]; ok {
+				continue
+			}
+			seen[branch] = struct{}{}
+			branches = append(branches, branch)
+		}
+	}
+
+	return branches, nil
+}
+
+func containsRemoteRepositories(repositories []scm.Repository) bool {
+	for _, repository := range repositories {
+		if repository.Type.IsRemote() {
+			return true
+		}
+	}
+	return false
+}
+
 type commandRuntime struct {
 	loaded    config.Loaded
 	parser    ticketsvc.Parser
+	adapters  *scm.Registry
 	scanner   *repo.Scanner
 	conflicts *conflictsvc.Service
 	finder    *ticketsvc.Service
@@ -1791,7 +2017,15 @@ type commandRuntime struct {
 }
 
 func newCommandRuntime(path, configPath string) (commandRuntime, error) {
-	loaded, err := config.LoadForPath(path, configPath)
+	return newCommandRuntimeWithOptions(path, configPath, runtimeOptions{})
+}
+
+type runtimeOptions struct {
+	DisableAutoConfig bool
+}
+
+func newCommandRuntimeWithOptions(path, configPath string, options runtimeOptions) (commandRuntime, error) {
+	loaded, err := loadRuntimeConfig(path, configPath, options)
 	if err != nil {
 		return commandRuntime{}, err
 	}
@@ -1809,6 +2043,7 @@ func newCommandRuntime(path, configPath string) (commandRuntime, error) {
 	return commandRuntime{
 		loaded:    loaded,
 		parser:    parser,
+		adapters:  registry,
 		scanner:   scanner,
 		conflicts: conflictsvc.NewService(scanner, registry, parser),
 		finder:    ticketsvc.NewService(scanner, registry, parser),
@@ -1819,6 +2054,16 @@ func newCommandRuntime(path, configPath string) (commandRuntime, error) {
 		doctor:    doctorsvc.NewService(scanner, registry),
 		manifest:  manifestsvc.NewService(planner),
 	}, nil
+}
+
+func loadRuntimeConfig(path, configPath string, options runtimeOptions) (config.Loaded, error) {
+	if options.DisableAutoConfig && strings.TrimSpace(configPath) == "" {
+		return config.Loaded{
+			Config: config.Default(),
+		}, nil
+	}
+
+	return config.LoadForPath(path, configPath)
 }
 
 func writeJSONFile(path string, value any) error {
@@ -1837,6 +2082,8 @@ func writeJSONFile(path string, value any) error {
 func newRegistry(parser ticketsvc.Parser) *scm.Registry {
 	return scm.NewRegistry(
 		gitscm.NewAdapter(parser),
+		githubscm.NewAdapter(parser),
+		gitlabscm.NewAdapter(parser),
 		svnscm.NewAdapter(parser),
 	)
 }
