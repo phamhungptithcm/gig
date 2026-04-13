@@ -2,43 +2,52 @@
 
 ## What `gig` Is
 
-`gig` is a command-line tool for teams that release work by ticket across more than one repo.
+`gig` is being repositioned as a remote-first release audit CLI for teams that move work by ticket across many repositories.
 
-It is useful when one ticket can pick up more commits over time before it is finally approved.
+The core question stays the same:
+
+`Did we miss any change for this ticket?`
+
+That question becomes hard when one ticket keeps picking up more commits across backend, frontend, database, scripts, and low-code assets before it is finally approved.
 
 ## The Simple Promise
 
-Before someone moves a ticket from one branch to the next, `gig` helps them answer:
+Before someone moves a ticket or release forward, `gig` should help them answer:
 
 - what changed for this ticket?
-- where is this ticket now?
-- is the next move safe?
-- what should be reviewed by hand first?
+- what is still missing?
+- what looks risky?
+- what should be reviewed by hand before approval?
 
-## Who It Helps
+## Product Direction
 
-`gig` is useful for:
+The intended direction is:
 
-- developers who keep adding follow-up fixes to the same ticket
-- QA or UAT coordinators who want to know what changed since the last review round
-- release engineers who need a clear release packet and promotion plan
-- outsourcing or delivery leads who need confidence across many repos
+- login once to a remote provider and inspect live repository state
+- auto-detect branch topology, ticket evidence, and likely release paths
+- let users create workareas for each project so setup is remembered
+- keep config optional and only use it to improve quality or override detection
+- make the console UX clean enough that users can stay inside `gig` while working across many repos
 
-## What The Project Can Do Today
+## Who It Should Help Most
 
-Today, `gig` can:
+`gig` should be strongest for:
 
-- scan a workspace for repos
-- find ticket commits
-- inspect a ticket across repos
-- compare branch state for a ticket
-- show environment status like `dev -> test -> prod`
-- verify a promotion as `safe`, `warning`, or `blocked`
-- output a read-only promotion plan in human-readable or JSON form
-- capture a repeatable ticket snapshot for audit and re-check
-- generate a Markdown or JSON release packet
-- load team config from a file
-- check config and repo coverage with `gig doctor`
+- developers following one ticket across many repos
+- QA or UAT coordinators checking what changed since the last review cycle
+- release engineers who need a fast ticket audit before promotion
+- delivery leads who need confidence without manually reading every repo again
+
+## What The Current Build Already Does Well
+
+Today, the project already has useful release logic:
+
+- ticket inspection across repos
+- branch-to-branch verification
+- risk hints for DB, config, and Mendix-style changes
+- Markdown and JSON release packets
+- GitHub-backed remote inspection for selected flows
+- local workspace scanning and optional config overrides
 
 ## Installation
 
@@ -77,13 +86,14 @@ gig update
 
 Today, `gig` does not:
 
-- move commits for you
-- resolve conflicts
-- read Jira, PR, or deployment tools yet
-- build multi-ticket release bundles yet
+- give a zero-config first-run experience across all providers
+- remember projects as workareas yet
+- provide the full keyboard-first console UX the product needs
+- gather rich PR, deployment, and issue evidence yet
+- move commits or deploy anything for you
 
-That is by design.
-The project is still focused on helping teams make better release decisions before any write action happens.
+Those are product-direction gaps, not a change in purpose.
+The release-audit problem is still the center.
 
 ## Why This Matters
 
@@ -98,11 +108,12 @@ The real problem is:
 
 `gig` is meant to reduce those mistakes.
 
-## Product Direction
+## What Success Should Look Like
 
-The project is moving toward:
+After install, users should be able to:
 
-- better ticket visibility across repos and environments
-- clearer release plans and release packets
-- machine-readable output for CI and tooling
-- richer evidence later from Jira, PRs, and deployments
+1. run `gig`
+2. log in once if needed
+3. pick or create a workarea for one project
+4. search a ticket online across remote branches
+5. understand risk and missing changes without wiring config first

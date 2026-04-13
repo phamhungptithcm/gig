@@ -1,24 +1,58 @@
 # gig
 
-`gig` helps teams answer one release question before they move code to the next branch or environment:
+`gig` is being reshaped into a remote-first release audit CLI for teams that move work by ticket across many repositories.
 
 `Did we miss any change for this ticket?`
 
-This project is for teams where one ticket can touch many repos, fail review a few times, get follow-up fixes, and then become hard to release safely.
+One ticket can touch backend, frontend, database, scripts, low-code assets, and late follow-up fixes across several repos. `gig` should collect that evidence directly from the user's source-control account, reduce setup, and give a clear next release decision fast.
+
+## Product Direction
+
+`gig` should feel simple after install:
+
+- install it and run it immediately
+- sign in once to GitHub, GitLab, Bitbucket, or SVN when needed
+- search ticket evidence online across remote branches by default
+- auto-detect protected branches, likely release flow, and repo relationships
+- remember each product or client setup as a workarea so the user can come back later and continue
+- keep config as an optional upgrade, not a first-run requirement
+- present a console experience that is calm, keyboard-friendly, readable, and easy to drill into
+
+## The Real Pain Points
+
+`gig` should solve these problems first:
+
+- "I do not know which repos this ticket touched."
+- "This ticket failed QA twice and picked up follow-up fixes. Did we catch all of them?"
+- "I should not have to wire config before the tool becomes useful."
+- "I work across many projects and repos. I want the tool to remember each setup."
+- "I need terminal output that is readable for humans and structured enough for audit."
+
+## North-Star Experience
+
+The intended front door is:
+
+1. install `gig`
+2. run `gig`
+3. sign in to a provider if needed
+4. choose or create a project workarea
+5. inspect a ticket or release
+6. get a clear audit result with evidence, risk, and next actions
+
+That is the direction.
+The current build already has useful release logic, but it still leans more on local workspace scanning and manual config than the target product should.
 
 ## What You Can Do With It Today
 
-With `gig`, you can:
+The current build already does these parts well:
 
-- find every repo touched by one ticket
-- inspect the full ticket story across repos
-- see whether `test` is behind `dev`, or `main` is behind `test`
-- get a quick `safe`, `warning`, or `blocked` decision before promotion
-- generate a Markdown release packet for QA, client review, and release managers
-- generate JSON output for CI, scripts, and tooling
-- load a simple team config file so real branch names and repo ownership match your workflow
-- run `gig doctor` to check whether the config and repo mapping are good enough to trust
-- inspect an active Git conflict state and walk supported text conflicts from the terminal
+- inspect the full ticket story across repositories
+- verify whether a promotion looks `safe`, `warning`, or `blocked`
+- generate Markdown and JSON release packets
+- inspect GitHub repositories directly with login-backed remote access
+- scan a local workspace when remote access is not enough
+- load team config and branch overrides when a mature team needs more control
+- inspect and walk supported Git text conflicts from the terminal
 
 Most commands are still read-only.
 `gig` helps you inspect, verify, and prepare.
@@ -35,50 +69,87 @@ It now also helps with active Git conflict resolution, but it still does not che
 
 ## The Commands People Usually Start With
 
+If you want the best current workflow today, start with a remote repository first:
+
 ```bash
-gig --help
-gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --from test --to main --path .
-gig manifest generate --ticket ABC-123 --from test --to main --path .
+gig login github
+gig inspect ABC-123 --repo github:owner/name
+gig verify --ticket ABC-123 --repo github:owner/name
+gig manifest generate --ticket ABC-123 --repo github:owner/name
+```
+
+If your team needs local fallback or explicit overrides, add:
+
+```bash
+gig scan --path .
 gig doctor --path .
 gig resolve status --path .
 ```
 
 If you want a team-specific setup, create a `gig.yaml` file and then run the same commands without repeating `--envs` every time.
+If you are working directly against GitHub, `gig` can authenticate through `gh` and read repository state live without cloning first.
 
 ## A Friendly First Workflow
 
-### 1. See what repos are under the workspace
+### 1. Connect to GitHub once
 
 ```bash
-gig scan --path .
+gig login github
 ```
 
-### 2. Inspect one ticket across repos
+### 2. Inspect one ticket directly on GitHub
 
 ```bash
-gig inspect ABC-123 --path .
+gig inspect ABC-123 --repo github:owner/name
 ```
 
 ### 3. Check whether the next move looks safe
 
 ```bash
+gig verify --ticket ABC-123 --repo github:owner/name
+```
+
+`gig` will try to infer the protected-branch release path automatically for remote GitHub repositories.
+
+### 4. Generate a release packet people can actually read
+
+```bash
+gig manifest generate --ticket ABC-123 --repo github:owner/name
+```
+
+### 5. If needed, fall back to a local workspace
+
+### 5.1 See what repos are under the workspace
+
+```bash
+gig scan --path .
+```
+
+### 5.2 Inspect one ticket across repos
+
+```bash
+gig inspect ABC-123 --path .
+```
+
+### 5.3 Check whether the next move looks safe
+
+```bash
 gig verify --ticket ABC-123 --from test --to main --path .
 ```
 
-### 4. Generate a release packet people can actually read
+### 5.4 Generate a release packet people can actually read
 
 ```bash
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 ```
 
-### 5. Check whether your config and repo mapping are healthy
+### 5.5 Check whether your config and repo mapping are healthy
 
 ```bash
 gig doctor --path .
 ```
 
-### 6. If Git stops on conflicts, inspect or resolve them
+### 5.6 If Git stops on conflicts, inspect or resolve them
 
 ```bash
 gig resolve status --path .
@@ -126,6 +197,7 @@ There is also a ready sample here:
 
 - GitHub Pages: [phamhungptithcm.github.io/gig](https://phamhungptithcm.github.io/gig/)
 - Quick start: [docs/19-quickstart.md](docs/19-quickstart.md)
+- Product strategy: [docs/17-product-strategy.md](docs/17-product-strategy.md)
 - CLI guide: [docs/03-cli-spec.md](docs/03-cli-spec.md)
 - Config spec: [docs/09-config-spec.md](docs/09-config-spec.md)
 - Roadmap: [docs/13-roadmap.md](docs/13-roadmap.md)

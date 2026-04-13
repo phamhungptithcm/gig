@@ -2,70 +2,97 @@
 
 ## Direction In One Sentence
 
-`gig` is moving from a ticket commit helper into a ticket-aware release workflow tool for multi-repo teams.
+`gig` is moving from a local, config-heavy ticket helper into a remote-first release audit CLI with zero-config onboarding and project workareas.
 
 ## What Is Already Here
 
-### Base CLI
+The current codebase already has useful release-analysis foundations:
 
-Shipped:
-
-- `scan`
-- `find`
-- `diff`
-- `version`
-
-### Release Visibility
-
-Shipped:
-
-- `inspect`
-- `env status`
+- ticket inspection across repositories
+- branch comparison and promotion verification
 - risk signals for DB, config, and Mendix-style changes
+- Markdown and JSON release packets
+- GitHub-backed remote inspection in the current live flow
+- local workspace scanning and config overrides
+- read-only safety by default
 
-### Read-Only Release Decisions
+## Product Priorities
 
-Shipped:
+The next roadmap should follow this order.
 
-- `verify`
-- `plan`
-- JSON output for release planning and review
+### Phase 1. Zero-Config First Run
 
-### Team Workflow Support
+Goal:
+install `gig`, run `gig`, and get to first useful result without a setup document.
 
-Shipped:
+Priority work:
 
-- config loading from `gig.yaml` style files
-- environment and branch mapping from config
-- repository catalog with service, owner, kind, and notes
-- `manifest generate` for Markdown or JSON release packets
-- `doctor` for config coverage and repo mapping checks
+- guided provider login
+- GitHub-first remote repository connection
+- protected-branch and release-flow auto-detection
+- default ticket search without repeated `--from`, `--to`, or `--config`
+- a simpler first-run command surface
 
-## What Comes Next
+### Phase 2. Remote Audit Core
 
-### Near-Term
+Goal:
+make remote ticket audit stronger than local repo scanning for the common case.
 
-- richer JSON contracts for downstream tooling
-- stronger release packet structure and bundle-friendly output
-- release-level planning backed by ticket snapshots
-- better multi-repo examples and docs
+Priority work:
 
-### After That
+- online branch search for ticket evidence
+- cross-repo remote inspection from provider APIs
+- PR or merge-request evidence
+- dependency and follow-up fix detection across connected repos
+- safer audit output with clearer `safe`, `warning`, and `blocked` reasoning
 
-- Jira work-item enrichment
-- PR and deployment evidence
-- multi-ticket release bundles
+### Phase 3. Workareas And Console UX
 
-### Later
+Goal:
+support people who work across many projects and need `gig` to remember context.
 
-- controlled promote execution
-- safer backport or cherry-pick workflows
-- rollback notes
-- stronger reporting
-- broader enterprise adapter coverage including SVN
+Priority work:
 
-## Release Philosophy
+- named workareas per client, product, or release stream
+- saved repo scope, provider session, branch topology, and output preferences
+- project picker and recent-workarea flow
+- keyboard-first console layout with progressive detail
+- readable audit views instead of raw walls of commits
 
-The project follows one rule:
+### Phase 4. Team Memory And Release Evidence
 
-safe release work comes before clever automation.
+Goal:
+help teams use `gig` as the audit layer before promotion.
+
+Priority work:
+
+- richer release packets and reusable audit bundles
+- optional project metadata and team notes
+- deployment, build, and issue-tracker evidence
+- stronger JSON contracts for downstream tooling
+- release-level views that aggregate many ticket audits cleanly
+
+### Phase 5. Controlled Actions And Broader Coverage
+
+Goal:
+expand provider coverage and add carefully guarded write actions only after trust is earned.
+
+Priority work:
+
+- GitLab and Bitbucket remote support
+- remote SVN and enterprise edge cases where they still matter
+- controlled promote helpers with explicit confirmation
+- rollback guidance and richer operational reporting
+
+## What Should Not Lead The Roadmap
+
+These are still useful, but they should not define the front door:
+
+- local workspace scanning as the default story
+- config-first onboarding
+- command growth that exposes engine internals instead of user intent
+- enterprise adapter breadth before first-run usability is strong
+
+## Product Rule
+
+Safe release work comes before clever automation.

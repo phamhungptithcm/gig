@@ -4,6 +4,12 @@ This page is for the first 5 minutes.
 
 If you want to know what `gig` does and try it fast, start here.
 
+The product direction is moving toward:
+
+`install -> login -> choose workarea -> inspect`
+
+The commands below stay within what the current build can already do today.
+
 ## What `gig` Helps You Answer
 
 Before release, teams often ask:
@@ -17,7 +23,8 @@ Before release, teams often ask:
 
 Today that means:
 
-- Git and SVN for the current read-only flow
+- GitHub-backed remote inspection for supported live flows
+- local Git and SVN workspaces for the broader read-only flow
 
 ## First Command To Run
 
@@ -27,47 +34,37 @@ gig --help
 
 That shows the full command list and the main usage patterns.
 
-## The 5 Commands Most Teams Need First
+## The Fastest Current Flow
 
 ```bash
-gig scan --path .
-gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --from test --to main --path .
-gig snapshot create --ticket ABC-123 --from test --to main --path . --output .gig/snapshots/abc-123.json
-gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
-gig plan --release rel-2026-04-09 --path .
-gig verify --release rel-2026-04-09 --path .
-gig manifest generate --release rel-2026-04-09 --path .
-gig manifest generate --ticket ABC-123 --from test --to main --path .
-gig doctor --path .
+gig login github
+gig inspect ABC-123 --repo github:owner/name
+gig verify --ticket ABC-123 --repo github:owner/name
+gig manifest generate --ticket ABC-123 --repo github:owner/name
 ```
 
 ## A Good First Workflow
 
-### 1. Scan your workspace
+### 1. Connect to GitHub once
 
 ```bash
-gig scan --path .
+gig login github
 ```
 
-Use this to see what repos `gig` can detect.
+Use this when you want live inspection without cloning first.
 
-### 2. Inspect one ticket
+### 2. Inspect one ticket directly on GitHub
 
 ```bash
-gig inspect ABC-123 --path .
+gig inspect ABC-123 --repo github:owner/name
 ```
 
-Use this to see which repos changed, what commits were found, and whether risky files were touched.
+Use this to see what changed, which branches contain the ticket, and whether risky files were touched.
 
 ### 3. Check whether the next move looks safe
 
 ```bash
-gig verify --ticket ABC-123 --from test --to main --path .
-gig snapshot create --ticket ABC-123 --from test --to main --path . --output .gig/snapshots/abc-123.json
-gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
-gig plan --release rel-2026-04-09 --path .
-gig verify --release rel-2026-04-09 --path .
+gig verify --ticket ABC-123 --repo github:owner/name
 ```
 
 Use this when you want a quick release decision:
@@ -79,7 +76,7 @@ Use this when you want a quick release decision:
 ### 4. Generate a release packet people can actually read
 
 ```bash
-gig manifest generate --ticket ABC-123 --from test --to main --path .
+gig manifest generate --ticket ABC-123 --repo github:owner/name
 ```
 
 This produces a Markdown packet with:
@@ -90,18 +87,21 @@ This produces a Markdown packet with:
 - release manager checklist
 - per-repo details, risks, notes, and commits to include
 
-### 5. Check whether your config is good enough to trust
+### 5. If needed, fall back to local workspace mode
 
 ```bash
+gig scan --path .
+gig inspect ABC-123 --path .
+gig verify --ticket ABC-123 --from test --to main --path .
+gig manifest generate --ticket ABC-123 --from test --to main --path .
 gig doctor --path .
 ```
 
-This checks things like:
+Use local mode when:
 
-- is a config file present?
-- do repo catalog entries match real repos?
-- do configured environment branches exist?
-- are service, owner, and kind filled in?
+- remote provider access is not enough yet
+- you need broad workspace scanning
+- your team depends on explicit branch overrides or repo catalog metadata
 
 ## If Your Team Uses Real Branch Names
 
@@ -133,10 +133,6 @@ Then run:
 
 ```bash
 gig verify --ticket ABC-123 --from test --to main --path .
-gig snapshot create --ticket ABC-123 --from test --to main --path . --release rel-2026-04-09
-gig plan --release rel-2026-04-09 --path .
-gig verify --release rel-2026-04-09 --path .
-gig manifest generate --release rel-2026-04-09 --path .
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 gig doctor --path .
 ```
@@ -151,7 +147,7 @@ Right now, `gig` does not move code for you.
 
 It does not cherry-pick, merge, or deploy.
 
-It also does not read Jira or deployment evidence yet.
+It also does not yet deliver the full zero-config, workarea-first UX the product is aiming for.
 
 That is intentional.
 The current product focus is to help teams make safer release decisions first.
