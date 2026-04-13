@@ -1,24 +1,128 @@
 # gig
 
-`gig` helps teams answer one release question before they move code to the next branch or environment:
+`gig` is a remote-first release audit CLI for teams that move work by ticket across many repositories.
 
 `Did we miss any change for this ticket?`
 
-This project is for teams where one ticket can touch many repos, fail review a few times, get follow-up fixes, and then become hard to release safely.
+One ticket can touch backend, frontend, database, scripts, low-code assets, and late follow-up fixes across several repos. `gig` collects that evidence directly from source control, reduces setup, and turns it into a release decision fast.
+
+In one line:
+
+`gig` is a deterministic ticket reconciliation and release decision tool with an optional AI briefing layer.
+
+What that means:
+
+- inspect one ticket across repos without cloning first
+- verify whether the next promotion is `safe`, `warning`, or `blocked`
+- generate release-ready Markdown, JSON, and audience-specific AI handoff briefs
+
+## Why This Exists
+
+Teams already have Git history.
+What they usually do not have is a fast answer to:
+
+- which repos this ticket really touched
+- whether a follow-up fix made it to the target branch
+- whether a DB, config, or dependency change still needs manual review
+- whether the release manager, QA, and client can read the same facts in a format that fits them
+
+That is the gap `gig` is trying to close.
+
+## Positioning
+
+| Option | Good at | Breaks down when | `gig` angle |
+| --- | --- | --- | --- |
+| `git log`, `git branch`, provider UI | raw repo inspection | one ticket spans many repos, branches, and late fixes | aggregates ticket evidence into one audit view |
+| custom release scripts | team-specific automation | setup is brittle and hard to reuse across projects | zero-config-first, human-readable, JSON-friendly CLI |
+| generic AI chat | summarizing text | source of truth is ambiguous or incomplete | deterministic release evidence first, AI second |
+| issue tracker status | workflow tracking | issue state does not prove branch or commit state | verifies actual repo and promotion state |
+
+## First Look
+
+`gig` now opens with a guided terminal front door instead of dropping straight into a wall of help text.
+
+![gig front door](docs/assets/front-door.svg)
+
+The optional DeerFlow sidecar now has a readiness check plus a bootstrap command so AI briefings feel like part of the product, not a separate manual setup project.
+
+![gig DeerFlow bootstrap](docs/assets/deerflow-setup.svg)
+
+If you want a deterministic terminal walkthrough for docs, social posts, or a portfolio demo, use:
+
+```bash
+./scripts/demo/frontdoor.sh
+./scripts/demo/record-frontdoor.sh
+```
+
+[![gig terminal demo](docs/assets/gig-demo-thumbnail.svg)](docs/25-demo-guide.md)
+
+The generated cast is checked in at `docs/assets/gig-demo.cast`.
+
+## See The Flow
+
+`gig inspect` shows the raw release evidence in one place: ticket scope, touched repos, risky files, dependency tickets, and provider-backed PR or deployment signals.
+
+![gig inspect demo](docs/assets/ticket-inspect-demo.svg)
+
+`gig verify` compresses that evidence into a release decision with explicit reasoning, so the user sees immediately why the move is `safe`, `warning`, or `blocked`.
+
+![gig verify demo](docs/assets/ticket-verify-demo.svg)
+
+`gig assist audit` keeps the deterministic bundle underneath, then asks DeerFlow to turn it into an audience-specific handoff brief instead of making people read raw audit output.
+
+![gig assist audit demo](docs/assets/ticket-assist-demo.svg)
+
+## Product Direction
+
+`gig` should feel simple after install:
+
+- install it and run it immediately
+- sign in once to GitHub, GitLab, Bitbucket, or Azure DevOps when needed
+- search ticket evidence online across remote branches by default
+- auto-detect protected branches, likely release flow, and repo relationships
+- remember each product or client setup as a workarea so the user can come back later and continue
+- keep config as an optional upgrade, not a first-run requirement
+- optionally turn structured audit evidence into an AI briefing without changing the deterministic core
+- present a console experience that is calm, keyboard-friendly, readable, and easy to drill into
+
+## The Real Pain Points
+
+`gig` should solve these problems first:
+
+- "I do not know which repos this ticket touched."
+- "This ticket failed QA twice and picked up follow-up fixes. Did we catch all of them?"
+- "I should not have to wire config before the tool becomes useful."
+- "I work across many projects and repos. I want the tool to remember each setup."
+- "I need terminal output that is readable for humans and structured enough for audit."
+
+## North-Star Experience
+
+The intended front door is:
+
+1. install `gig`
+2. run `gig`
+3. sign in to a provider if needed
+4. choose or create a project workarea
+5. inspect a ticket or release
+6. get a clear audit result with evidence, risk, and next actions
+
+That is the direction.
+The current build already has useful release logic, but it still leans more on local workspace scanning and manual config than the target product should.
 
 ## What You Can Do With It Today
 
-With `gig`, you can:
+The current build already does these parts well:
 
-- find every repo touched by one ticket
-- inspect the full ticket story across repos
-- see whether `test` is behind `dev`, or `main` is behind `test`
-- get a quick `safe`, `warning`, or `blocked` decision before promotion
-- generate a Markdown release packet for QA, client review, and release managers
-- generate JSON output for CI, scripts, and tooling
-- load a simple team config file so real branch names and repo ownership match your workflow
-- run `gig doctor` to check whether the config and repo mapping are good enough to trust
-- inspect an active Git conflict state and walk supported text conflicts from the terminal
+- inspect the full ticket story across repositories
+- verify whether a promotion looks `safe`, `warning`, or `blocked`
+- generate Markdown and JSON release packets
+- generate experimental AI ticket, release, and conflict briefings from the same evidence bundles when DeerFlow is available
+- inspect GitHub, GitLab, Bitbucket, and Azure DevOps repositories directly with login-backed remote access
+- inspect remote SVN repositories directly with stored or env-backed credentials
+- save project defaults as workareas and switch back to them later
+- scan a local workspace when remote access is not enough
+- load team config and branch overrides when a mature team needs more control
+- inspect and walk supported Git text conflicts from the terminal
 
 Most commands are still read-only.
 `gig` helps you inspect, verify, and prepare.
@@ -35,53 +139,171 @@ It now also helps with active Git conflict resolution, but it still does not che
 
 ## The Commands People Usually Start With
 
+If you want the best current workflow today, start with a remote repository first:
+
 ```bash
-gig --help
-gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --from test --to main --path .
-gig manifest generate --ticket ABC-123 --from test --to main --path .
+gig
+gig login github
+gig workarea add --provider github --use
+gig inspect ABC-123
+gig verify --ticket ABC-123
+gig assist doctor
+gig assist setup
+gig manifest generate --ticket ABC-123
+gig assist audit --ticket ABC-123 --audience release-manager
+```
+
+Supported remote repository targets today:
+
+- `github:owner/name`
+- `gitlab:group/project`
+- `bitbucket:workspace/repo`
+- `azure-devops:org/project/repo`
+- `svn:https://svn.example.com/repos/app/branches/staging/ProductName`
+
+If your team needs local fallback or explicit overrides, add:
+
+```bash
+gig scan --path .
 gig doctor --path .
 gig resolve status --path .
+gig assist resolve --path . --ticket ABC-123 --audience release-manager
 ```
 
 If you want a team-specific setup, create a `gig.yaml` file and then run the same commands without repeating `--envs` every time.
+If you are working directly against GitHub, GitLab, Bitbucket, or Azure DevOps, `gig` can authenticate through the provider login flow and read repository state live without cloning first.
+On macOS, Bitbucket API tokens are stored in Keychain by default. In CI or other non-interactive environments, use `GIG_BITBUCKET_EMAIL` and `GIG_BITBUCKET_API_TOKEN`.
+For remote SVN, use `gig login svn` once or set `GIG_SVN_USERNAME` and `GIG_SVN_PASSWORD` for non-interactive runs.
 
 ## A Friendly First Workflow
 
-### 1. See what repos are under the workspace
+### 1. Connect to a provider once
+
+```bash
+gig
+gig login github
+gig login gitlab
+gig login bitbucket
+gig login azure-devops
+gig login svn
+```
+
+### 2. Save a workarea once
+
+```bash
+gig workarea add --provider github --use
+gig workarea add payments --repo github:owner/name --from staging --to main --use
+gig workarea add billing --repo gitlab:group/project --from develop --to release/test --envs dev=develop,test=release/test,prod=main
+gig workarea use billing
+gig workarea list
+```
+
+Use this when you want `gig` to remember one project so later commands do not need a repeated repo target or branch mapping.
+If you omit `--repo` and `--path`, `gig` can now discover a repository from your logged-in GitHub, GitLab, Bitbucket, or Azure DevOps account and let you choose it interactively.
+The picker accepts either a number or filter text, and recent workareas or repositories are promoted to the top so repeated project switching stays short.
+
+### 3. Inspect one ticket directly on a remote repository or the current workarea
+
+```bash
+gig inspect ABC-123
+gig inspect ABC-123 --repo github:owner/name
+gig inspect ABC-123 --repo gitlab:group/project
+gig inspect ABC-123 --repo bitbucket:workspace/repo
+gig inspect ABC-123 --repo azure-devops:org/project/repo
+gig inspect ABC-123 --repo svn:https://svn.example.com/repos/app/branches/staging/ProductName
+```
+
+### 4. Check whether the next move looks safe
+
+```bash
+gig verify --ticket ABC-123
+gig verify --ticket ABC-123 --repo github:owner/name
+```
+
+`gig` will try to infer the protected-branch release path automatically for supported remote repositories.
+On GitHub, GitLab, Bitbucket, and Azure DevOps, inspect, verify, plan, and manifest outputs now also surface pull request and deployment evidence when the provider can confirm it.
+
+### 5. Generate a release packet people can actually read
+
+```bash
+gig manifest generate --ticket ABC-123
+gig manifest generate --ticket ABC-123 --repo github:owner/name
+```
+
+### 5.1. Optionally ask DeerFlow for an audience-specific ticket briefing
+
+If you have not bootstrapped the local DeerFlow sidecar yet, start with:
+
+```bash
+gig assist doctor
+gig assist setup
+```
+
+```bash
+gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
+gig assist audit --ticket ABC-123 --repo github:owner/name --audience client
+gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
+```
+
+These experimental commands keep `gig` as the deterministic evidence engine and ask DeerFlow to turn that bundle into a concise brief for the audience that will consume it.
+
+### 5.2. Optionally ask DeerFlow for a release-level briefing
+
+```bash
+gig assist release --release rel-2026-04-09 --path . --audience release-manager
+gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name --audience release-manager
+```
+
+Use the first form when you already saved ticket snapshots into the release.
+Use the second form when you want `gig` to assemble the release bundle live from remote or local ticket evidence without depending on `.gig/releases/...`.
+
+### 5.3. Optionally ask DeerFlow for a conflict-resolution brief
+
+```bash
+gig assist resolve --path . --ticket ABC-123 --audience qa
+gig assist resolve --path . --ticket ABC-123 --audience release-manager
+```
+
+Use this when Git has already stopped on a conflict and you want `gig` to explain the active block, scope warnings, and likely next action before you choose a resolver key.
+This does not replace `gig resolve start`.
+
+### 6. If needed, fall back to a local workspace
+
+### 5.1 See what repos are under the workspace
 
 ```bash
 gig scan --path .
 ```
 
-### 2. Inspect one ticket across repos
+### 5.2 Inspect one ticket across repos
 
 ```bash
 gig inspect ABC-123 --path .
 ```
 
-### 3. Check whether the next move looks safe
+### 5.3 Check whether the next move looks safe
 
 ```bash
 gig verify --ticket ABC-123 --from test --to main --path .
 ```
 
-### 4. Generate a release packet people can actually read
+### 5.4 Generate a release packet people can actually read
 
 ```bash
 gig manifest generate --ticket ABC-123 --from test --to main --path .
 ```
 
-### 5. Check whether your config and repo mapping are healthy
+### 5.5 Check whether your config and repo mapping are healthy
 
 ```bash
 gig doctor --path .
 ```
 
-### 6. If Git stops on conflicts, inspect or resolve them
+### 5.6 If Git stops on conflicts, inspect or resolve them
 
 ```bash
 gig resolve status --path .
+gig assist resolve --path . --ticket ABC-123 --audience release-manager
 gig resolve start --path .
 ```
 
@@ -126,45 +348,39 @@ There is also a ready sample here:
 
 - GitHub Pages: [phamhungptithcm.github.io/gig](https://phamhungptithcm.github.io/gig/)
 - Quick start: [docs/19-quickstart.md](docs/19-quickstart.md)
+- Product strategy: [docs/17-product-strategy.md](docs/17-product-strategy.md)
 - CLI guide: [docs/03-cli-spec.md](docs/03-cli-spec.md)
+- AI assist slice: [docs/23-ai-assist-slice.md](docs/23-ai-assist-slice.md)
+- Agent skills: [SKILLS.md](SKILLS.md)
 - Config spec: [docs/09-config-spec.md](docs/09-config-spec.md)
 - Roadmap: [docs/13-roadmap.md](docs/13-roadmap.md)
 
 ## Install
 
-Package managers publish `gig` as `gig-cli` to avoid name collisions, but the command you run after install stays `gig`.
-Homebrew and Scoop track the latest stable release. If you want to pin a specific version, use the direct installer or download the release asset manually.
+The public npm package is `@phamhungptithcm/gig`, but the command you run after install stays `gig`.
 
-### Quick Install On macOS And Linux With Homebrew
+### Quick Install With npm
 
 ```bash
-brew tap phamhungptithcm/gig https://github.com/phamhungptithcm/gig
-brew install phamhungptithcm/gig/gig-cli
+npm install -g @phamhungptithcm/gig
 gig version
 ```
 
-Update to the latest Homebrew release:
+Upgrade an npm install:
 
 ```bash
-brew update
-brew upgrade gig-cli
+npm install -g @phamhungptithcm/gig@latest
+gig update
+gig update v2026.04.09
 ```
 
-### Quick Install On Windows With Scoop
+If you want to pin a specific npm package version directly, use the npm semver form:
 
-```powershell
-scoop bucket add gig https://github.com/phamhungptithcm/gig
-scoop install gig/gig-cli
-gig version
+```bash
+npm install -g @phamhungptithcm/gig@2026.4.9
 ```
 
-Update to the latest Scoop release:
-
-```powershell
-scoop update gig-cli
-```
-
-### Quick Install On macOS And Linux Without Homebrew
+### Quick Install On macOS And Linux Without npm
 
 Install the latest release:
 
@@ -185,7 +401,7 @@ gig update
 gig update v2026.04.09
 ```
 
-### Quick Install On Windows PowerShell
+### Quick Install On Windows PowerShell Without npm
 
 Install the latest release:
 

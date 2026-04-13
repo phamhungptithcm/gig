@@ -50,6 +50,7 @@ type RepositoryPlan struct {
 	Branches              []string                       `json:"branches,omitempty"`
 	RiskSignals           []inspectsvc.RiskSignal        `json:"riskSignals,omitempty"`
 	DeclaredDependencies  []depsvc.DeclaredDependency    `json:"declaredDependencies,omitempty"`
+	ProviderEvidence      *scm.ProviderEvidence          `json:"providerEvidence,omitempty"`
 	DependencyResolutions []depsvc.Resolution            `json:"dependencyResolutions,omitempty"`
 	EnvironmentStatuses   []inspectsvc.EnvironmentResult `json:"environmentStatuses,omitempty"`
 	ManualSteps           []Action                       `json:"manualSteps,omitempty"`
@@ -74,6 +75,7 @@ type RepositoryVerification struct {
 	Verdict               Verdict                 `json:"verdict"`
 	Checks                []string                `json:"checks"`
 	RiskSignals           []inspectsvc.RiskSignal `json:"riskSignals,omitempty"`
+	ProviderEvidence      *scm.ProviderEvidence   `json:"providerEvidence,omitempty"`
 	DependencyResolutions []depsvc.Resolution     `json:"dependencyResolutions,omitempty"`
 	ManualSteps           []Action                `json:"manualSteps,omitempty"`
 }
@@ -254,6 +256,7 @@ func (s *Service) BuildPromotionPlanInRepositories(ctx context.Context, reposito
 			Branches:              repositoryStatus.Branches,
 			RiskSignals:           riskSignals,
 			DeclaredDependencies:  repositoryStatus.DeclaredDependencies,
+			ProviderEvidence:      scm.NormalizeProviderEvidence(repositoryStatus.ProviderEvidence),
 			DependencyResolutions: dependencyResolutions,
 			EnvironmentStatuses:   repositoryStatus.Statuses,
 			ManualSteps:           manualSteps,
@@ -317,6 +320,7 @@ func BuildVerification(promotionPlan PromotionPlan) Verification {
 			Verdict:               repositoryPlan.Verdict,
 			Checks:                checks,
 			RiskSignals:           repositoryPlan.RiskSignals,
+			ProviderEvidence:      scm.NormalizeProviderEvidence(repositoryPlan.ProviderEvidence),
 			DependencyResolutions: repositoryPlan.DependencyResolutions,
 			ManualSteps:           repositoryPlan.ManualSteps,
 		})

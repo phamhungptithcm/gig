@@ -2,70 +2,105 @@
 
 ## Direction In One Sentence
 
-`gig` is moving from a ticket commit helper into a ticket-aware release workflow tool for multi-repo teams.
+`gig` is moving from a local, config-heavy ticket helper into a remote-first release audit CLI with zero-config onboarding and project workareas.
 
 ## What Is Already Here
 
-### Base CLI
+The current codebase already has useful release-analysis foundations:
 
-Shipped:
-
-- `scan`
-- `find`
-- `diff`
-- `version`
-
-### Release Visibility
-
-Shipped:
-
-- `inspect`
-- `env status`
+- public npm distribution for one-command install and upgrade
+- ticket inspection across repositories
+- branch comparison and promotion verification
 - risk signals for DB, config, and Mendix-style changes
+- Markdown and JSON release packets
+- GitHub, GitLab, Bitbucket, and Azure DevOps-backed remote inspection in the current live flow
+- remote SVN-backed inspection in the current live flow
+- initial workarea save and switch commands
+- an initial guided front door when users run `gig` without a subcommand
+- an experimental DeerFlow-backed assist path that consumes `gig` ticket, release, and conflict bundles
+- a local `gig assist doctor` readiness check for the bundled DeerFlow sidecar
+- a local `gig assist setup` bootstrap command for the bundled DeerFlow sidecar
+- local workspace scanning and config overrides
+- read-only safety by default
 
-### Read-Only Release Decisions
+## Product Priorities
 
-Shipped:
+The next roadmap should follow this order.
 
-- `verify`
-- `plan`
-- JSON output for release planning and review
+### Phase 1. Zero-Config First Run
 
-### Team Workflow Support
+Goal:
+install `gig`, run `gig`, and get to first useful result without a setup document.
 
-Shipped:
+Priority work:
 
-- config loading from `gig.yaml` style files
-- environment and branch mapping from config
-- repository catalog with service, owner, kind, and notes
-- `manifest generate` for Markdown or JSON release packets
-- `doctor` for config coverage and repo mapping checks
+- guided provider login
+- GitHub, GitLab, Bitbucket, and Azure DevOps remote repository connection
+- protected-branch and release-flow auto-detection
+- default ticket search without repeated `--from`, `--to`, or `--config`
+- a simpler first-run command surface on top of the initial guided dashboard
 
-## What Comes Next
+### Phase 2. Remote Audit Core
 
-### Near-Term
+Goal:
+make remote ticket audit stronger than local repo scanning for the common case.
 
-- richer JSON contracts for downstream tooling
-- stronger release packet structure and bundle-friendly output
-- release-level planning backed by ticket snapshots
-- better multi-repo examples and docs
+Priority work:
 
-### After That
+- online branch search for ticket evidence
+- cross-repo remote inspection from provider APIs
+- PR or merge-request evidence
+- dependency and follow-up fix detection across connected repos
+- safer audit output with clearer `safe`, `warning`, and `blocked` reasoning
 
-- Jira work-item enrichment
-- PR and deployment evidence
-- multi-ticket release bundles
+### Phase 3. Workareas And Console UX
 
-### Later
+Goal:
+support people who work across many projects and need `gig` to remember context.
 
-- controlled promote execution
-- safer backport or cherry-pick workflows
-- rollback notes
-- stronger reporting
-- broader enterprise adapter coverage including SVN
+Priority work:
 
-## Release Philosophy
+- richer workareas per client, product, or release stream on top of the initial saved-workarea slice
+- broader saved defaults and cleaner project switching
+- keyboard-first search, recent-history ranking, and richer project browsing
+- keyboard-first console layout with progressive detail
+- readable audit views instead of raw walls of commits
 
-The project follows one rule:
+### Phase 4. Team Memory And Release Evidence
 
-safe release work comes before clever automation.
+Goal:
+help teams use `gig` as the audit layer before promotion.
+
+Priority work:
+
+- richer release packets and reusable audit bundles
+- optional AI briefings that explain the same deterministic ticket, release, or conflict bundle for QA, client, and release-manager audiences
+- optional project metadata and team notes
+- build and issue-tracker evidence
+- stronger JSON contracts for downstream tooling
+- release-level views that aggregate many ticket audits cleanly
+- project-specific skill packs that keep AI agents aligned with `gig` product guardrails
+
+### Phase 5. Controlled Actions And Broader Coverage
+
+Goal:
+expand provider coverage and add carefully guarded write actions only after trust is earned.
+
+Priority work:
+
+- enterprise edge cases that still matter after remote SVN support lands
+- controlled promote helpers with explicit confirmation
+- rollback guidance and richer operational reporting
+
+## What Should Not Lead The Roadmap
+
+These are still useful, but they should not define the front door:
+
+- local workspace scanning as the default story
+- config-first onboarding
+- command growth that exposes engine internals instead of user intent
+- enterprise adapter breadth before first-run usability is strong
+
+## Product Rule
+
+Safe release work comes before clever automation.

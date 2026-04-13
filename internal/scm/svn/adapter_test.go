@@ -168,6 +168,61 @@ func TestAdapterType(t *testing.T) {
 	}
 }
 
+func TestRemoteAdapterType(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	if got := NewRemoteAdapter(parser).Type(); got != scm.TypeRemoteSVN {
+		t.Fatalf("Type() = %q, want %q", got, scm.TypeRemoteSVN)
+	}
+}
+
+func TestRemoteAdapterProtectedBranchesUsesRepositoryListing(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := NewRemoteAdapter(parser)
+	adapter.credentials = func(context.Context) (credentials, error) {
+		return credentials{Username: "demo", Password: "secret"}, nil
+	}
+	adapter.run = func(_ context.Context, args ...string) (string, error) {
+		command := strings.Join(args, " ")
+		switch command {
+		case "--non-interactive --username demo --password secret info --xml https://svn.example.com/repos/app/branches/staging/HorizonCRM":
+			return `<info><entry><url>https://svn.example.com/repos/app/branches/staging/HorizonCRM</url><relative-url>^/branches/staging/HorizonCRM</relative-url><repository><root>https://svn.example.com/repos/app</root></repository></entry></info>`, nil
+		case "--non-interactive --username demo --password secret info --xml https://svn.example.com/repos/app/trunk":
+			return `<info><entry><url>https://svn.example.com/repos/app/trunk</url><relative-url>^/trunk</relative-url><repository><root>https://svn.example.com/repos/app</root></repository></entry></info>`, nil
+		case "--non-interactive --username demo --password secret list --xml https://svn.example.com/repos/app/branches":
+			return `<lists><list path="https://svn.example.com/repos/app/branches"><entry kind="dir"><name>develop</name></entry><entry kind="dir"><name>staging</name></entry><entry kind="dir"><name>main</name></entry></list></lists>`, nil
+		default:
+			return "", fmt.Errorf("unexpected svn call: %s", command)
+		}
+	}
+
+	branches, err := adapter.ProtectedBranches(context.Background(), "svn:https://svn.example.com/repos/app/branches/staging/HorizonCRM")
+	if err != nil {
+		t.Fatalf("ProtectedBranches() error = %v", err)
+	}
+
+	want := []string{"develop", "main", "staging", "trunk"}
+	if len(branches) != len(want) {
+		t.Fatalf("len(branches) = %d, want %d (%#v)", len(branches), len(want), branches)
+	}
+	for i := range want {
+		if branches[i] != want[i] {
+			t.Fatalf("branches[%d] = %q, want %q", i, branches[i], want[i])
+		}
+	}
+}
+
 func TestAdapterCompareBranchesUsesMergeinfoEligibility(t *testing.T) {
 	t.Parallel()
 

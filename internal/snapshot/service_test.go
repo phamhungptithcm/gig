@@ -131,6 +131,13 @@ func (f fakeInspector) Inspect(ctx context.Context, path, ticketID string) ([]in
 	return f.results, f.scannedRepositories, nil
 }
 
+func (f fakeInspector) InspectInRepositories(ctx context.Context, repositories []scm.Repository, ticketID string) ([]inspectsvc.RepositoryInspection, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.results, nil
+}
+
 type fakePlanner struct {
 	plan         plansvc.PromotionPlan
 	verification plansvc.Verification
@@ -149,4 +156,11 @@ func (f fakePlanner) VerifyPromotion(ctx context.Context, path, ticketID, fromBr
 		return plansvc.Verification{}, f.err
 	}
 	return f.verification, nil
+}
+
+func (f fakePlanner) BuildPromotionPlanInRepositories(ctx context.Context, repositories []scm.Repository, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment) (plansvc.PromotionPlan, error) {
+	if f.err != nil {
+		return plansvc.PromotionPlan{}, f.err
+	}
+	return f.plan, nil
 }

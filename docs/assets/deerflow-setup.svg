@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">gig deerflow setup</title>
+  <desc id="desc">Terminal style preview of gig assist setup.</desc>
+  <rect width="1200" height="720" rx="18" fill="#0b1020"/>
+  <rect x="24" y="24" width="1152" height="56" rx="12" fill="#111827"/>
+  <circle cx="56" cy="52" r="8" fill="#ef4444"/>
+  <circle cx="84" cy="52" r="8" fill="#f59e0b"/>
+  <circle cx="112" cy="52" r="8" fill="#22c55e"/>
+  <text x="154" y="58" fill="#94a3b8" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">gig assist setup</text>
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="23">
+    <text x="48" y="124" fill="#22c55e">$</text>
+    <text x="78" y="124" fill="#e2e8f0">gig assist setup --path .</text>
+    <text x="48" y="178" fill="#f8fafc">DeerFlow setup</text>
+    <text x="48" y="214" fill="#cbd5e1">Root: /workspace/gig/deer-flow</text>
+    <text x="48" y="250" fill="#cbd5e1">Config: /workspace/gig/deer-flow/config.yaml</text>
+    <text x="48" y="300" fill="#f8fafc">Created:</text>
+    <text x="72" y="336" fill="#cbd5e1">- /workspace/gig/deer-flow/config.yaml</text>
+    <text x="72" y="372" fill="#cbd5e1">- /workspace/gig/deer-flow/frontend/.env</text>
+    <text x="48" y="458" fill="#cbd5e1">Docker: yes</text>
+    <text x="48" y="494" fill="#cbd5e1">Next: cd '/workspace/gig/deer-flow' &amp;&amp; make docker-start</text>
+    <text x="48" y="544" fill="#f8fafc">Remaining:</text>
+    <text x="72" y="580" fill="#cbd5e1">- add at least one model under models in config.yaml</text>
+  </g>
+</svg>

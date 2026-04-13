@@ -4,36 +4,41 @@
 
 `gig` should be positioned as:
 
-`A ticket-aware release reconciliation and promotion planning tool for multi-repo teams.`
+`A remote-first release audit CLI for ticket-based delivery across many repositories.`
 
-That positioning is stronger than "find commits by ticket."
-It matches the real problem better and leaves room for integrations, release evidence, and safe automation.
+That is more useful than "find commits by ticket" and sharper than "generic release tool."
+It centers the real job:
+help a user inspect remote evidence, spot what is missing, and decide whether a ticket can move forward safely.
 
-## What `gig` Should Not Try To Replace
+## The Core Promise
 
-`gig` should not try to replace:
+After install, `gig` should be usable immediately.
+The user should not need to prepare a local workspace, write config, or memorize branch mappings before first value.
 
-- Jira or Asana for task management
-- GitHub, GitLab, or Bitbucket for PR reviews
-- CI/CD systems for builds and deployments
-- release managers for final approval on risky changes
+The shortest successful path should feel like this:
 
-Instead, it should connect those signals and make release decisions safer.
+1. run `gig`
+2. log in to a provider if needed
+3. choose or create a workarea
+4. inspect a ticket or release
+5. review a clear audit result with evidence and next steps
 
-## Core Product Jobs
+## What Problem It Actually Solves
 
-`gig` should help teams answer six practical questions:
+The real pain is not "I cannot grep commits."
+The real pain is:
 
-1. Where did this ticket change code, scripts, or low-code assets?
-2. What commits and pull requests belong to this ticket now?
-3. What is already present in each branch or environment line?
-4. What is still missing before this ticket can move safely?
-5. What dependencies, risks, and manual steps must be included?
-6. What evidence should be reviewed before approval and promotion?
+- one ticket touches many repos
+- the ticket fails QA or client review and gets follow-up fixes
+- branch topology differs across projects
+- one missing commit or DB change can break a release
+- users work across many clients or products and cannot reconfigure every time
+
+`gig` should collapse that complexity into one readable audit workflow.
 
 ## Primary Users
 
-### Developer
+### Developer Or Tech Lead
 
 Needs to confirm whether all follow-up commits for the ticket are accounted for.
 
@@ -51,7 +56,50 @@ Needs confidence that cross-repo tickets can be promoted without hidden omission
 
 ## Product Principles
 
-### 1. Read Evidence, Do Not Guess
+### 1. Install Must Lead To First Value Fast
+
+The product should assume that first-run friction kills adoption.
+Install, login, connect, and inspect must be the main path.
+
+### 2. Remote Evidence First, Local Evidence Second
+
+Whenever possible, `gig` should prefer:
+
+- remote provider APIs
+- protected-branch discovery
+- online branch and PR evidence
+
+Local Git or SVN should stay available, but as a fallback or advanced mode.
+
+### 3. Config Is An Override, Not A Gate
+
+Config should improve quality, not unlock basic usefulness.
+The default path should work without team-maintained setup.
+
+### 4. Workareas Are A Core Product Primitive
+
+Users often work across many products, clients, or release streams.
+`gig` should let them save a project as a workarea with:
+
+- provider connection
+- repo scope
+- inferred branch topology
+- optional naming and notes
+- preferred output depth
+
+The next time they open `gig`, they should choose the workarea and continue.
+
+### 5. Console UX Must Be Good Enough To Live In
+
+The terminal experience should be:
+
+- keyboard-first
+- readable under multi-repo complexity
+- summary first, detail on demand
+- visually consistent across inspect, check, and release views
+- explicit about risk, missing evidence, and manual review items
+
+### 6. Read Evidence, Do Not Guess
 
 Whenever possible, `gig` should use evidence from:
 
@@ -61,11 +109,11 @@ Whenever possible, `gig` should use evidence from:
 - deployment records
 - issue tracker links
 
-### 2. Separate Branch State From Environment State
+### 7. Separate Branch State From Environment State
 
 A commit being present in a branch is not the same as a ticket being deployed and verified in an environment.
 
-### 3. Safe By Default
+### 8. Safe By Default
 
 The product should prefer:
 
@@ -76,12 +124,12 @@ The product should prefer:
 
 over clever execution.
 
-### 4. Human Output And Machine Output Must Both Matter
+### 9. Human Output And Machine Output Must Both Matter
 
 Terminal output is useful for developers.
 JSON and release manifests are required for automation, CI/CD, and audit trails.
 
-### 5. Adopt The Team's Current Workflow First
+### 10. Improve Existing Delivery Workflows First
 
 Many teams already use:
 
@@ -91,65 +139,104 @@ Many teams already use:
 
 `gig` should improve those workflows before trying to force a process rewrite.
 
+## The Product Jobs
+
+`gig` should help teams answer these practical questions:
+
+1. Which repos and remote branches does this ticket actually touch?
+2. What commits, PRs, and follow-up fixes belong to it now?
+3. What is already present in the target release path?
+4. What is still missing before it can move safely?
+5. What risks or manual checks still need human review?
+6. What evidence should be saved for audit, QA, UAT, and release approval?
+
+## What `gig` Should Not Try To Replace
+
+`gig` should not try to replace:
+
+- Jira or Asana for task management
+- GitHub, GitLab, or Bitbucket for code review
+- CI/CD systems for builds and deployments
+- release managers for final approval on risky changes
+
+It should connect those signals and reduce manual reconciliation work.
+
+## UX Direction
+
+The console UX should revolve around a few durable user intents:
+
+- open or switch workarea
+- inspect ticket
+- check release readiness
+- capture release evidence
+- export human or machine output
+
+The UI should avoid making new users choose among many engine-shaped commands before they understand the result they need.
+
 ## Success Metrics
 
 The product should help teams improve:
 
 - missed-commit incidents during promotion
+- time to first useful audit after install
 - time spent preparing a release
 - time spent reconciling ticket changes across repositories
 - release failures caused by missing dependent changes
+- repeated setup work across projects
 - auditability of what went to each environment
 
 The broader delivery metrics can still align with DORA-style outcomes such as deployment frequency, lead time, and change failure rate, but `gig` should focus on the release-reconciliation slice of that problem.
 
 ## Product Maturity Model
 
-### Stage 1: Visibility
+### Stage 1: Activation
 
-- scan repositories
-- find ticket commits
-- compare source and target branches
+- install and run immediately
+- guided login
+- remote repo connection
+- zero-config first success
 
-### Stage 2: Planning
+### Stage 2: Audit
 
-- inspect a ticket across repositories
+- inspect a ticket across repositories and branches
 - detect missing items and likely dependencies
 - classify risks and manual steps
 
-### Stage 3: Evidence
+### Stage 3: Workarea UX
+
+- remember projects as workareas
+- provide a strong console workflow for repeated use
+- reduce repeated flag entry and setup friction
+
+### Stage 4: Evidence
 
 - emit JSON and release manifests
 - attach pull request, build, and deployment evidence
 - show environment-aware status
 
-### Stage 4: Controlled Execution
+### Stage 5: Controlled Execution And Coverage
 
-- produce a promotion plan
+- produce promotion plans from stronger evidence
 - require confirmation and approvals
-- execute only safe and supported steps
-
-### Stage 5: Enterprise Coverage
-
-- SVN support
-- Jira enrichment
-- Mendix and other high-risk change heuristics
-- stronger reporting for mixed environments
+- add broader provider coverage and enterprise edge cases
 
 ## Where The Project Is Now
 
-Today, `gig` is between Stage 2 and Stage 3.
+Today, `gig` has strong pieces of Stage 2, limited pieces of remote access, and not enough Stage 1 or Stage 3.
 
 Already available:
 
 - ticket inspection across repos
+- GitHub-backed remote inspection for some flows
 - environment-aware status
 - risk and manual-step hints
 - read-only verification and promotion planning
 - JSON output for `plan` and `verify`
 
-Not here yet:
+Still missing from the intended direction:
 
-- richer release packet generation
-- Jira, PR, and deployment evidence
-- controlled write execution
+- zero-config first success as the main story
+- durable workareas
+- stronger console UX for repeated daily use
+- broader provider support
+- richer PR, deployment, and issue evidence

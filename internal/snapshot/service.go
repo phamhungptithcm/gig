@@ -9,17 +9,20 @@ import (
 	"gig/internal/config"
 	inspectsvc "gig/internal/inspect"
 	plansvc "gig/internal/plan"
+	"gig/internal/scm"
 )
 
 const SchemaVersion = "1"
 
 type inspector interface {
 	Inspect(ctx context.Context, path, ticketID string) ([]inspectsvc.RepositoryInspection, int, error)
+	InspectInRepositories(ctx context.Context, repositories []scm.Repository, ticketID string) ([]inspectsvc.RepositoryInspection, error)
 }
 
 type planner interface {
 	BuildPromotionPlan(ctx context.Context, path, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment) (plansvc.PromotionPlan, error)
 	VerifyPromotion(ctx context.Context, path, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment) (plansvc.Verification, error)
+	BuildPromotionPlanInRepositories(ctx context.Context, repositories []scm.Repository, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment) (plansvc.PromotionPlan, error)
 }
 
 type InspectionSnapshot struct {
@@ -67,6 +70,10 @@ func (s *Service) Capture(ctx context.Context, workspacePath string, loaded conf
 	return s.CaptureWithOptions(ctx, workspacePath, loaded, ticketID, fromBranch, toBranch, environments, CaptureOptions{})
 }
 
+func (s *Service) CaptureInRepositories(ctx context.Context, workspaceLabel string, loaded config.Loaded, repositories []scm.Repository, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment) (TicketSnapshot, error) {
+	return s.CaptureInRepositoriesWithOptions(ctx, workspaceLabel, loaded, repositories, ticketID, fromBranch, toBranch, environments, CaptureOptions{})
+}
+
 func (s *Service) CaptureWithOptions(ctx context.Context, workspacePath string, loaded config.Loaded, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment, options CaptureOptions) (TicketSnapshot, error) {
 	inspections, scannedRepositories, err := s.inspector.Inspect(ctx, workspacePath, ticketID)
 	if err != nil {
@@ -106,6 +113,51 @@ func (s *Service) CaptureWithOptions(ctx context.Context, workspacePath string, 
 		Environments:  cloneEnvironments(environments),
 		Inspection: InspectionSnapshot{
 			ScannedRepositories: scannedRepositories,
+			TouchedRepositories: len(inspections),
+			TotalCommits:        totalCommits,
+			Repositories:        cloneInspections(inspections),
+		},
+		Plan:         promotionPlan,
+		Verification: verification,
+	}, nil
+}
+
+func (s *Service) CaptureInRepositoriesWithOptions(ctx context.Context, workspaceLabel string, loaded config.Loaded, repositories []scm.Repository, ticketID, fromBranch, toBranch string, environments []inspectsvc.Environment, options CaptureOptions) (TicketSnapshot, error) {
+	inspections, err := s.inspector.InspectInRepositories(ctx, repositories, ticketID)
+	if err != nil {
+		return TicketSnapshot{}, err
+	}
+
+	promotionPlan, err := s.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, fromBranch, toBranch, environments)
+	if err != nil {
+		return TicketSnapshot{}, err
+	}
+
+	verification := plansvc.BuildVerification(promotionPlan)
+
+	totalCommits := 0
+	for _, inspection := range inspections {
+		totalCommits += len(inspection.Commits)
+	}
+
+	capturedAt := time.Now().UTC()
+	if s.now != nil {
+		capturedAt = s.now().UTC()
+	}
+
+	return TicketSnapshot{
+		SchemaVersion: SchemaVersion,
+		ReleaseID:     strings.TrimSpace(options.ReleaseID),
+		CapturedAt:    capturedAt,
+		ToolVersion:   buildinfo.Summary(),
+		Workspace:     workspaceLabel,
+		ConfigPath:    loaded.Path,
+		TicketID:      ticketID,
+		FromBranch:    fromBranch,
+		ToBranch:      toBranch,
+		Environments:  cloneEnvironments(environments),
+		Inspection: InspectionSnapshot{
+			ScannedRepositories: len(repositories),
 			TouchedRepositories: len(inspections),
 			TotalCommits:        totalCommits,
 			Repositories:        cloneInspections(inspections),
