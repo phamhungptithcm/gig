@@ -2,10 +2,14 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
+
+	"gig/internal/scm"
 )
 
 type Session struct {
@@ -60,11 +64,18 @@ func (s *Session) login(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, "gh", "auth", "login", "--hostname", "github.com", "--web")
-	cmd.Stdin = s.stdin
+	cmd.Stdin = commandStdin(s.stdin)
 	cmd.Stdout = s.stdout
 	cmd.Stderr = s.stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("gh auth login failed: %w", err)
+	}
+	return nil
+}
+
+func commandStdin(input io.Reader) io.Reader {
+	if file, ok := input.(*os.File); ok {
+		return file
 	}
 	return nil
 }
@@ -88,4 +99,55 @@ func (s *Session) runGH(ctx context.Context, args ...string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+func (s *Session) ListRepositories(ctx context.Context, owner string) ([]scm.Repository, error) {
+	type repositoryOwner struct {
+		Login string `json:"login"`
+	}
+	type repositoryPayload struct {
+		Name     string          `json:"name"`
+		FullName string          `json:"full_name"`
+		Archived bool            `json:"archived"`
+		Disabled bool            `json:"disabled"`
+		Owner    repositoryOwner `json:"owner"`
+	}
+
+	owner = strings.TrimSpace(owner)
+	repositories := make([]scm.Repository, 0, 32)
+	for page := 1; page <= 5; page++ {
+		endpoint := fmt.Sprintf("user/repos?sort=updated&per_page=100&page=%d", page)
+		output, err := s.runGH(ctx, "api", endpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		var payload []repositoryPayload
+		if err := json.Unmarshal([]byte(output), &payload); err != nil {
+			return nil, fmt.Errorf("parse github repository discovery response: %w", err)
+		}
+		if len(payload) == 0 {
+			break
+		}
+
+		for _, repository := range payload {
+			if repository.Archived || repository.Disabled {
+				continue
+			}
+			fullName := strings.TrimSpace(repository.FullName)
+			if fullName == "" {
+				continue
+			}
+			if owner != "" && !strings.EqualFold(strings.TrimSpace(repository.Owner.Login), owner) {
+				continue
+			}
+			repositories = append(repositories, scm.Repository{
+				Name: strings.TrimSpace(repository.Name),
+				Root: "github:" + fullName,
+				Type: scm.TypeGitHub,
+			})
+		}
+	}
+
+	return repositories, nil
 }

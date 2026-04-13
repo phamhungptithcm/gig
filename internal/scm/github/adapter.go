@@ -50,6 +50,34 @@ type commitPayload struct {
 	} `json:"files"`
 }
 
+type pullRequestPayload struct {
+	Number   int    `json:"number"`
+	Title    string `json:"title"`
+	State    string `json:"state"`
+	HTMLURL  string `json:"html_url"`
+	MergedAt string `json:"merged_at"`
+	Head     struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+}
+
+type deploymentPayload struct {
+	ID          int    `json:"id"`
+	SHA         string `json:"sha"`
+	Ref         string `json:"ref"`
+	Environment string `json:"environment"`
+	StatusesURL string `json:"statuses_url"`
+}
+
+type deploymentStatusPayload struct {
+	State       string `json:"state"`
+	Environment string `json:"environment"`
+	LogURL      string `json:"log_url"`
+}
+
 func NewAdapter(parser ticket.Parser) *Adapter {
 	return &Adapter{
 		parser:          parser,
@@ -325,6 +353,69 @@ func (a *Adapter) CommitMessages(ctx context.Context, repoRoot string, hashes []
 	return messagesByCommit, nil
 }
 
+func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query scm.EvidenceQuery) (scm.ProviderEvidence, error) {
+	owner, name, err := parseOwnerRepo(repoRoot)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	deploymentsByID := map[string]scm.DeploymentEvidence{}
+	for _, commit := range query.Commits {
+		hash := strings.TrimSpace(commit.Hash)
+		if hash == "" {
+			continue
+		}
+
+		pullRequests, err := a.pullRequestsForCommit(ctx, owner, name, hash)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, item := range pullRequests {
+			id := fmt.Sprintf("#%d", item.Number)
+			state := strings.TrimSpace(item.State)
+			if strings.TrimSpace(item.MergedAt) != "" {
+				state = "merged"
+			}
+			pullRequestsByID[id] = scm.PullRequestEvidence{
+				ID:           id,
+				Title:        strings.TrimSpace(item.Title),
+				State:        state,
+				SourceBranch: strings.TrimSpace(item.Head.Ref),
+				TargetBranch: strings.TrimSpace(item.Base.Ref),
+				URL:          strings.TrimSpace(item.HTMLURL),
+				CommitHash:   hash,
+			}
+		}
+
+		deployments, err := a.deploymentsForCommit(ctx, owner, name, hash)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, item := range deployments {
+			status, err := a.deploymentStatus(ctx, owner, name, item.ID)
+			if err != nil {
+				return scm.ProviderEvidence{}, err
+			}
+
+			id := fmt.Sprintf("%d", item.ID)
+			deploymentsByID[id] = scm.DeploymentEvidence{
+				ID:          id,
+				Environment: firstNonEmpty(status.Environment, item.Environment),
+				State:       strings.TrimSpace(status.State),
+				Ref:         strings.TrimSpace(item.Ref),
+				URL:         strings.TrimSpace(status.LogURL),
+				CommitHash:  firstNonEmpty(strings.TrimSpace(item.SHA), hash),
+			}
+		}
+	}
+
+	return scm.ProviderEvidence{
+		PullRequests: mapPullRequestEvidence(pullRequestsByID),
+		Deployments:  mapDeploymentEvidence(deploymentsByID),
+	}, nil
+}
+
 func (a *Adapter) searchBranchCommits(ctx context.Context, repoRoot, branch, ticketID string) ([]scm.Commit, error) {
 	owner, name, err := parseOwnerRepo(repoRoot)
 	if err != nil {
@@ -386,6 +477,65 @@ func (a *Adapter) commit(ctx context.Context, repoRoot, hash string) (commitPayl
 		return commitPayload{}, err
 	}
 	return commit, nil
+}
+
+func (a *Adapter) pullRequestsForCommit(ctx context.Context, owner, name, hash string) ([]pullRequestPayload, error) {
+	pullRequests := make([]pullRequestPayload, 0)
+	for page := 1; page <= 5; page++ {
+		var payload []pullRequestPayload
+		endpoint := fmt.Sprintf("repos/%s/%s/commits/%s/pulls?per_page=100&page=%d", owner, name, url.PathEscape(hash), page)
+		if err := a.api(ctx, endpoint, &payload); err != nil {
+			if isNotFound(err) {
+				break
+			}
+			return nil, err
+		}
+		if len(payload) == 0 {
+			break
+		}
+		pullRequests = append(pullRequests, payload...)
+		if len(payload) < 100 {
+			break
+		}
+	}
+	return pullRequests, nil
+}
+
+func (a *Adapter) deploymentsForCommit(ctx context.Context, owner, name, hash string) ([]deploymentPayload, error) {
+	deployments := make([]deploymentPayload, 0)
+	for page := 1; page <= 5; page++ {
+		var payload []deploymentPayload
+		endpoint := fmt.Sprintf("repos/%s/%s/deployments?sha=%s&per_page=100&page=%d", owner, name, url.QueryEscape(hash), page)
+		if err := a.api(ctx, endpoint, &payload); err != nil {
+			if isNotFound(err) {
+				break
+			}
+			return nil, err
+		}
+		if len(payload) == 0 {
+			break
+		}
+		deployments = append(deployments, payload...)
+		if len(payload) < 100 {
+			break
+		}
+	}
+	return deployments, nil
+}
+
+func (a *Adapter) deploymentStatus(ctx context.Context, owner, name string, deploymentID int) (deploymentStatusPayload, error) {
+	var payload []deploymentStatusPayload
+	endpoint := fmt.Sprintf("repos/%s/%s/deployments/%d/statuses?per_page=100&page=1", owner, name, deploymentID)
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return deploymentStatusPayload{}, nil
+		}
+		return deploymentStatusPayload{}, err
+	}
+	if len(payload) == 0 {
+		return deploymentStatusPayload{}, nil
+	}
+	return payload[0], nil
 }
 
 func (a *Adapter) api(ctx context.Context, endpoint string, destination any) error {
@@ -480,6 +630,38 @@ func dedupeStrings(values []string) []string {
 		deduped = append(deduped, value)
 	}
 	return deduped
+}
+
+func mapPullRequestEvidence(values map[string]scm.PullRequestEvidence) []scm.PullRequestEvidence {
+	evidence := make([]scm.PullRequestEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].ID < evidence[j].ID
+	})
+	return evidence
+}
+
+func mapDeploymentEvidence(values map[string]scm.DeploymentEvidence) []scm.DeploymentEvidence {
+	evidence := make([]scm.DeploymentEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].ID < evidence[j].ID
+	})
+	return evidence
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func isNotFound(err error) bool {

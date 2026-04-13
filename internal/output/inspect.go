@@ -78,6 +78,14 @@ func RenderInspect(w io.Writer, ticketID, basePath string, scannedRepoCount int,
 				}
 			}
 		}
+		if result.ProviderEvidence != nil && (len(result.ProviderEvidence.PullRequests) > 0 || len(result.ProviderEvidence.Deployments) > 0) {
+			if _, err := fmt.Fprintln(w, "  provider evidence:"); err != nil {
+				return err
+			}
+			if err := renderProviderEvidence(w, *result.ProviderEvidence, "    "); err != nil {
+				return err
+			}
+		}
 
 		if _, err := fmt.Fprintln(w, "  commits:"); err != nil {
 			return err

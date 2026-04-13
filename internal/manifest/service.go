@@ -25,6 +25,7 @@ type RepositoryPacket struct {
 	Verdict               plansvc.Verdict                `json:"verdict"`
 	EnvironmentStatuses   []inspectsvc.EnvironmentResult `json:"environmentStatuses,omitempty"`
 	RiskSignals           []inspectsvc.RiskSignal        `json:"riskSignals,omitempty"`
+	ProviderEvidence      *scm.ProviderEvidence          `json:"providerEvidence,omitempty"`
 	DependencyResolutions []depsvc.Resolution            `json:"dependencyResolutions,omitempty"`
 	ManualSteps           []plansvc.Action               `json:"manualSteps,omitempty"`
 	Actions               []plansvc.Action               `json:"actions,omitempty"`
@@ -79,6 +80,7 @@ func BuildReleasePacket(workspacePath string, loaded config.Loaded, promotionPla
 			Verdict:               repositoryPlan.Verdict,
 			EnvironmentStatuses:   repositoryPlan.EnvironmentStatuses,
 			RiskSignals:           repositoryPlan.RiskSignals,
+			ProviderEvidence:      scm.NormalizeProviderEvidence(repositoryPlan.ProviderEvidence),
 			DependencyResolutions: repositoryPlan.DependencyResolutions,
 			ManualSteps:           repositoryPlan.ManualSteps,
 			Actions:               repositoryPlan.Actions,

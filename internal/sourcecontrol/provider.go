@@ -7,8 +7,11 @@ import (
 	"strings"
 
 	"gig/internal/scm"
+	azuredevopsscm "gig/internal/scm/azuredevops"
+	bitbucketscm "gig/internal/scm/bitbucket"
 	githubscm "gig/internal/scm/github"
 	gitlabscm "gig/internal/scm/gitlab"
+	svnscm "gig/internal/scm/svn"
 )
 
 type adapterLookup interface {
@@ -26,7 +29,7 @@ func ParseProvider(raw string) (scm.Type, error) {
 	case "azure-devops", "azuredevops", "ado", "azdo":
 		return scm.TypeAzureDevOps, nil
 	case "svn", "subversion":
-		return scm.TypeSVN, nil
+		return scm.TypeRemoteSVN, nil
 	default:
 		return "", fmt.Errorf("provider %q is not recognized", raw)
 	}
@@ -44,6 +47,8 @@ func ProviderLabel(provider scm.Type) string {
 		return "Azure DevOps"
 	case scm.TypeSVN:
 		return "SVN"
+	case scm.TypeRemoteSVN:
+		return "SVN"
 	case scm.TypeGit:
 		return "Git"
 	default:
@@ -53,7 +58,7 @@ func ProviderLabel(provider scm.Type) string {
 
 func SupportsRemoteAudit(provider scm.Type) bool {
 	switch provider {
-	case scm.TypeGitHub, scm.TypeGitLab:
+	case scm.TypeGitHub, scm.TypeGitLab, scm.TypeBitbucket, scm.TypeAzureDevOps, scm.TypeRemoteSVN:
 		return true
 	default:
 		return false
@@ -77,17 +82,24 @@ func ValidateRemoteAuditSupport(repositories []scm.Repository, adapters adapterL
 }
 
 func EnsureAccess(ctx context.Context, repositories []scm.Repository, stdin io.Reader, stdout, stderr io.Writer) error {
-	required := map[scm.Type]struct{}{}
+	required := map[scm.Type][]string{}
 	for _, repository := range repositories {
 		if !repository.Type.IsRemote() {
 			continue
 		}
-		required[repository.Type] = struct{}{}
+		required[repository.Type] = append(required[repository.Type], repository.Root)
 	}
 
-	for provider := range required {
-		if err := Login(ctx, provider, stdin, stdout, stderr); err != nil {
-			return err
+	for provider, roots := range required {
+		switch provider {
+		case scm.TypeRemoteSVN:
+			if err := svnscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx, roots...); err != nil {
+				return err
+			}
+		default:
+			if err := Login(ctx, provider, stdin, stdout, stderr); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -100,8 +112,12 @@ func Login(ctx context.Context, provider scm.Type, stdin io.Reader, stdout, stde
 		return githubscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
 	case scm.TypeGitLab:
 		return gitlabscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
-	case scm.TypeBitbucket, scm.TypeAzureDevOps, scm.TypeSVN:
-		return fmt.Errorf("%s login is not implemented yet", ProviderLabel(provider))
+	case scm.TypeBitbucket:
+		return bitbucketscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
+	case scm.TypeAzureDevOps:
+		return azuredevopsscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
+	case scm.TypeSVN, scm.TypeRemoteSVN:
+		return svnscm.NewSession(stdin, stdout, stderr).Login(ctx)
 	default:
 		return fmt.Errorf("provider %q is not supported", provider)
 	}

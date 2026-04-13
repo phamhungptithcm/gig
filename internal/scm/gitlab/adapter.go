@@ -50,6 +50,28 @@ type commitDiffPayload struct {
 	OldPath string `json:"old_path"`
 }
 
+type mergeRequestPayload struct {
+	IID          int    `json:"iid"`
+	Title        string `json:"title"`
+	State        string `json:"state"`
+	WebURL       string `json:"web_url"`
+	SourceBranch string `json:"source_branch"`
+	TargetBranch string `json:"target_branch"`
+	MergedAt     string `json:"merged_at"`
+}
+
+type deploymentPayload struct {
+	ID          int    `json:"id"`
+	IID         int    `json:"iid"`
+	Ref         string `json:"ref"`
+	SHA         string `json:"sha"`
+	Status      string `json:"status"`
+	Environment struct {
+		Name        string `json:"name"`
+		ExternalURL string `json:"external_url"`
+	} `json:"environment"`
+}
+
 func NewAdapter(parser ticket.Parser) *Adapter {
 	return &Adapter{
 		parser:          parser,
@@ -340,6 +362,61 @@ func (a *Adapter) CommitMessages(ctx context.Context, repoRoot string, hashes []
 	return messagesByCommit, nil
 }
 
+func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query scm.EvidenceQuery) (scm.ProviderEvidence, error) {
+	projectPath, err := parseProjectPath(repoRoot)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	for _, commit := range query.Commits {
+		hash := strings.TrimSpace(commit.Hash)
+		if hash == "" {
+			continue
+		}
+
+		mergeRequests, err := a.mergeRequestsForCommit(ctx, projectPath, hash)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, item := range mergeRequests {
+			id := fmt.Sprintf("!%d", item.IID)
+			state := strings.TrimSpace(item.State)
+			if strings.TrimSpace(item.MergedAt) != "" {
+				state = "merged"
+			}
+			pullRequestsByID[id] = scm.PullRequestEvidence{
+				ID:           id,
+				Title:        strings.TrimSpace(item.Title),
+				State:        state,
+				SourceBranch: strings.TrimSpace(item.SourceBranch),
+				TargetBranch: strings.TrimSpace(item.TargetBranch),
+				URL:          strings.TrimSpace(item.WebURL),
+				CommitHash:   hash,
+			}
+		}
+	}
+
+	commitHashes := map[string]struct{}{}
+	for _, commit := range query.Commits {
+		hash := strings.TrimSpace(commit.Hash)
+		if hash == "" {
+			continue
+		}
+		commitHashes[hash] = struct{}{}
+	}
+
+	deployments, err := a.deploymentsForCommits(ctx, projectPath, commitHashes)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	return scm.ProviderEvidence{
+		PullRequests: mapPullRequestEvidence(pullRequestsByID),
+		Deployments:  deployments,
+	}, nil
+}
+
 func (a *Adapter) searchBranchCommits(ctx context.Context, repoRoot, branch, ticketID string) ([]scm.Commit, error) {
 	projectPath, err := parseProjectPath(repoRoot)
 	if err != nil {
@@ -401,6 +478,57 @@ func (a *Adapter) commit(ctx context.Context, repoRoot, hash string) (commitPayl
 		return commitPayload{}, err
 	}
 	return commit, nil
+}
+
+func (a *Adapter) mergeRequestsForCommit(ctx context.Context, projectPath, hash string) ([]mergeRequestPayload, error) {
+	var payload []mergeRequestPayload
+	endpoint := fmt.Sprintf("projects/%s/repository/commits/%s/merge_requests", url.PathEscape(projectPath), url.PathEscape(hash))
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (a *Adapter) deploymentsForCommits(ctx context.Context, projectPath string, hashes map[string]struct{}) ([]scm.DeploymentEvidence, error) {
+	evidenceByID := map[string]scm.DeploymentEvidence{}
+	for page := 1; page <= 5; page++ {
+		var payload []deploymentPayload
+		endpoint := fmt.Sprintf("projects/%s/deployments?per_page=100&page=%d", url.PathEscape(projectPath), page)
+		if err := a.api(ctx, endpoint, &payload); err != nil {
+			if isNotFound(err) {
+				break
+			}
+			return nil, err
+		}
+		if len(payload) == 0 {
+			break
+		}
+
+		for _, item := range payload {
+			hash := strings.TrimSpace(item.SHA)
+			if _, ok := hashes[hash]; !ok {
+				continue
+			}
+			id := fmt.Sprintf("%d", item.ID)
+			evidenceByID[id] = scm.DeploymentEvidence{
+				ID:          id,
+				Environment: strings.TrimSpace(item.Environment.Name),
+				State:       strings.TrimSpace(item.Status),
+				Ref:         strings.TrimSpace(item.Ref),
+				URL:         strings.TrimSpace(item.Environment.ExternalURL),
+				CommitHash:  hash,
+			}
+		}
+
+		if len(payload) < 100 {
+			break
+		}
+	}
+
+	return mapDeploymentEvidence(evidenceByID), nil
 }
 
 func (a *Adapter) api(ctx context.Context, endpoint string, destination any) error {
@@ -505,6 +633,28 @@ func dedupeStrings(values []string) []string {
 		deduped = append(deduped, value)
 	}
 	return deduped
+}
+
+func mapPullRequestEvidence(values map[string]scm.PullRequestEvidence) []scm.PullRequestEvidence {
+	evidence := make([]scm.PullRequestEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].ID < evidence[j].ID
+	})
+	return evidence
+}
+
+func mapDeploymentEvidence(values map[string]scm.DeploymentEvidence) []scm.DeploymentEvidence {
+	evidence := make([]scm.DeploymentEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].ID < evidence[j].ID
+	})
+	return evidence
 }
 
 func isNotFound(err error) bool {

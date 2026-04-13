@@ -26,6 +26,7 @@ The intended direction is:
 - login once to a remote provider and inspect live repository state
 - auto-detect branch topology, ticket evidence, and likely release paths
 - let users create workareas for each project so setup is remembered
+- give `gig` with no subcommand a guided terminal front door instead of only raw help text
 - keep config optional and only use it to improve quality or override detection
 - make the console UX clean enough that users can stay inside `gig` while working across many repos
 
@@ -46,37 +47,48 @@ Today, the project already has useful release logic:
 - branch-to-branch verification
 - risk hints for DB, config, and Mendix-style changes
 - Markdown and JSON release packets
-- GitHub-backed remote inspection for selected flows
+- GitHub, GitLab, Bitbucket, and Azure DevOps-backed remote inspection for selected flows
+- remote SVN inspection with login-backed credentials
+- initial workarea save and switch flow for project defaults
+- a guided root dashboard when users run `gig` with no subcommand
+- a local `gig assist doctor` readiness check for the bundled DeerFlow sidecar
+- experimental DeerFlow-backed ticket, release, and conflict briefings built from `gig` evidence bundles
+- a local `gig assist setup` bootstrap for the bundled DeerFlow sidecar
 - local workspace scanning and optional config overrides
 
 ## Installation
 
-Package managers publish `gig` as `gig-cli` to avoid name collisions, but the command you run after install stays `gig`.
+The public npm package is `@phamhungptithcm/gig`, but the command you run after install stays `gig`.
 
-For macOS and Linux with Homebrew:
+Install with npm:
 
 ```bash
-brew tap phamhungptithcm/gig https://github.com/phamhungptithcm/gig
-brew install phamhungptithcm/gig/gig-cli
+npm install -g @phamhungptithcm/gig
 gig version
 ```
 
-For Windows with Scoop:
+Upgrade an npm install:
 
-```powershell
-scoop bucket add gig https://github.com/phamhungptithcm/gig
-scoop install gig/gig-cli
-gig version
+```bash
+gig update
+gig update v2026.04.09
 ```
 
-For macOS and Linux without Homebrew:
+If you prefer raw npm commands:
+
+```bash
+npm install -g @phamhungptithcm/gig@latest
+npm install -g @phamhungptithcm/gig@2026.4.9
+```
+
+For macOS and Linux without npm:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
 gig version
 ```
 
-Update the installed binary:
+Update a direct install:
 
 ```bash
 gig update
@@ -87,10 +99,13 @@ gig update
 Today, `gig` does not:
 
 - give a zero-config first-run experience across all providers
-- remember projects as workareas yet
-- provide the full keyboard-first console UX the product needs
-- gather rich PR, deployment, and issue evidence yet
+- provide the full keyboard-first console browser and drill-down UX the product needs yet
+- gather issue-tracker evidence yet
 - move commits or deploy anything for you
+
+The current AI briefing slice is optional and additive.
+It now supports audience-specific ticket briefs, release-level briefs from saved snapshots or live ticket sets, and local conflict-resolution briefs for active Git conflicts.
+Core release answers still come from deterministic `gig` services, not from an LLM guessing repository state.
 
 Those are product-direction gaps, not a change in purpose.
 The release-audit problem is still the center.

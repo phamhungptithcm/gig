@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	assistsvc "gig/internal/assistant"
 	"gig/internal/buildinfo"
 	"gig/internal/config"
 	conflictsvc "gig/internal/conflict"
@@ -26,6 +27,8 @@ import (
 	releaseplansvc "gig/internal/releaseplan"
 	"gig/internal/repo"
 	"gig/internal/scm"
+	azuredevopsscm "gig/internal/scm/azuredevops"
+	bitbucketscm "gig/internal/scm/bitbucket"
 	gitscm "gig/internal/scm/git"
 	githubscm "gig/internal/scm/github"
 	gitlabscm "gig/internal/scm/gitlab"
@@ -65,8 +68,7 @@ func NewAppWithIO(stdin io.Reader, stdout, stderr io.Writer) (*App, error) {
 
 func (a *App) Run(ctx context.Context, args []string) int {
 	if len(args) == 0 {
-		a.printRootUsage()
-		return usageExitCode
+		return a.runFrontDoor(ctx)
 	}
 
 	switch args[0] {
@@ -88,6 +90,10 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.runManifest(ctx, args[1:])
 	case "snapshot":
 		return a.runSnapshot(ctx, args[1:])
+	case "assist":
+		return a.runAssist(ctx, args[1:])
+	case "workarea", "project":
+		return a.runWorkarea(ctx, args[1:])
 	case "login":
 		return a.runLogin(ctx, args[1:])
 	case "doctor":
@@ -149,7 +155,7 @@ func (a *App) runScan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runFind(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-workarea", "--workarea")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		a.printFindUsage()
@@ -168,6 +174,7 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	if err := fs.Parse(args); err != nil {
 		a.printFindUsage()
 		return usageExitCode
@@ -178,21 +185,22 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
-		return 1
-	}
-
 	ticketID := normalizeTicketID(fs.Arg(0))
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	if err != nil {
+		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
+		return 1
+	}
+	a.announceWorkareaSelection(scope, commandDefaults{})
+
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
@@ -271,7 +279,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 }
 
 func (a *App) runInspect(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-workarea", "--workarea")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		a.printInspectUsage()
@@ -290,6 +298,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	if err := fs.Parse(args); err != nil {
 		a.printInspectUsage()
 		return usageExitCode
@@ -300,21 +309,22 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
-		return 1
-	}
-
 	ticketID := normalizeTicketID(fs.Arg(0))
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	if err != nil {
+		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
+		return 1
+	}
+	a.announceWorkareaSelection(scope, commandDefaults{})
+
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
@@ -351,7 +361,7 @@ func (a *App) runEnv(ctx context.Context, args []string) int {
 }
 
 func (a *App) runEnvStatus(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs", "-repo", "--repo")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs", "-repo", "--repo", "-workarea", "--workarea")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		a.printEnvStatusUsage()
@@ -371,6 +381,7 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	configPath := fs.String("config", "", "Path to a gig config file")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	if err := fs.Parse(args); err != nil {
 		a.printEnvStatusUsage()
 		return usageExitCode
@@ -381,25 +392,27 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	if err != nil {
+		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
+		return 1
+	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, "", "", flagProvided(fs, "envs"), false, false)
+	a.announceWorkareaSelection(scope, defaults)
+
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
 
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
-
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
-		return 1
-	}
-	environments, err := resolveOperationEnvironments(ctx, runtime, repositories, *envsSpec)
+	environments, err := resolveOperationEnvironments(ctx, runtime, repositories, defaults.EnvironmentSpec)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return usageExitCode
@@ -432,6 +445,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to plan from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to plan")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -456,14 +470,16 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
 	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	a.announceWorkareaSelection(scope, defaults)
 
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
@@ -471,7 +487,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
-		if strings.TrimSpace(*repoTarget) != "" {
+		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
 			fmt.Fprintln(a.stderr, "plan failed: --repo is not used with --release")
 			a.printPlanUsage()
 			return usageExitCode
@@ -493,12 +509,12 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 			return usageExitCode
 		}
 
-		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(resolvedPath, normalizedReleaseID)
+		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(scope.WorkspacePath, normalizedReleaseID)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 			return 1
 		}
-		releasePlan, err := releaseplansvc.Build(normalizedReleaseID, resolvedPath, snapshotDir, snapshots)
+		releasePlan, err := releaseplansvc.Build(normalizedReleaseID, scope.WorkspacePath, snapshotDir, snapshots)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 			return 1
@@ -517,7 +533,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 				ReleasePlan releaseplansvc.ReleasePlan `json:"releasePlan"`
 			}{
 				Command:     "plan",
-				Workspace:   resolvedPath,
+				Workspace:   scope.WorkspacePath,
 				ReleasePlan: releasePlan,
 			}); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
@@ -534,13 +550,13 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return usageExitCode
@@ -616,6 +632,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to verify from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to verify")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -640,14 +657,16 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
 	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	a.announceWorkareaSelection(scope, defaults)
 
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
@@ -655,7 +674,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
-		if strings.TrimSpace(*repoTarget) != "" {
+		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
 			fmt.Fprintln(a.stderr, "verify failed: --repo is not used with --release")
 			a.printVerifyUsage()
 			return usageExitCode
@@ -676,7 +695,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 			return usageExitCode
 		}
-		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(resolvedPath, normalizedReleaseID)
+		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(scope.WorkspacePath, normalizedReleaseID)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 			return 1
@@ -702,7 +721,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 				Verifications []plansvc.Verification `json:"verifications"`
 			}{
 				Command:       "verify",
-				Workspace:     resolvedPath,
+				Workspace:     scope.WorkspacePath,
 				ReleaseID:     normalizedReleaseID,
 				SnapshotDir:   snapshotDir,
 				Verifications: verifications,
@@ -721,13 +740,13 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
@@ -819,6 +838,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	releaseID := fs.String("release", "", "Release ID to package from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to package")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -843,14 +863,16 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return 1
 	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	a.announceWorkareaSelection(scope, defaults)
 
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return 1
@@ -858,7 +880,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
-		if strings.TrimSpace(*repoTarget) != "" {
+		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
 			fmt.Fprintln(a.stderr, "manifest generate failed: --repo is not used with --release")
 			a.printManifestGenerateUsage()
 			return usageExitCode
@@ -879,7 +901,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 			return usageExitCode
 		}
-		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(resolvedPath, normalizedReleaseID)
+		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(scope.WorkspacePath, normalizedReleaseID)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 			return 1
@@ -887,7 +909,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 		packets := make([]manifestsvc.ReleasePacket, 0, len(snapshots))
 		for _, snapshot := range snapshots {
-			packets = append(packets, manifestsvc.BuildReleasePacket(resolvedPath, runtime.loaded, snapshot.Plan))
+			packets = append(packets, manifestsvc.BuildReleasePacket(scope.WorkspacePath, runtime.loaded, snapshot.Plan))
 		}
 
 		switch selectedFormat {
@@ -905,7 +927,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 				Packets     []manifestsvc.ReleasePacket `json:"packets"`
 			}{
 				Command:     "manifest generate",
-				Workspace:   resolvedPath,
+				Workspace:   scope.WorkspacePath,
 				ReleaseID:   normalizedReleaseID,
 				SnapshotDir: snapshotDir,
 				Packets:     packets,
@@ -924,13 +946,13 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
 		return usageExitCode
@@ -1008,6 +1030,336 @@ func (a *App) runSnapshot(ctx context.Context, args []string) int {
 	}
 }
 
+func (a *App) runAssist(ctx context.Context, args []string) int {
+	if len(args) == 0 || hasHelpFlag(args) {
+		a.printAssistUsage()
+		return 0
+	}
+
+	switch args[0] {
+	case "doctor":
+		return a.runAssistDoctor(ctx, args[1:])
+	case "audit":
+		return a.runAssistAudit(ctx, args[1:])
+	case "release":
+		return a.runAssistRelease(ctx, args[1:])
+	case "resolve":
+		return a.runAssistResolve(ctx, args[1:])
+	case "setup":
+		return a.runAssistSetup(ctx, args[1:])
+	default:
+		fmt.Fprintf(a.stderr, "unknown assist subcommand %q\n\n", args[0])
+		a.printAssistUsage()
+		return usageExitCode
+	}
+}
+
+func (a *App) runAssistAudit(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printAssistAuditUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("assist audit", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	ticketID := fs.String("ticket", "", "Ticket ID to brief")
+	fromBranch := fs.String("from", "", "Source branch")
+	toBranch := fs.String("to", "", "Target branch")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	deerflowURL := fs.String("url", "", "Base URL for DeerFlow, for example http://localhost:2026")
+	mode := fs.String("mode", string(assistsvc.ModePro), "Execution mode: flash, standard, pro, or ultra")
+	audience := fs.String("audience", string(assistsvc.AudienceReleaseManager), "Audience: qa, client, or release-manager")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printAssistAuditUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "assist audit does not accept positional arguments")
+		a.printAssistAuditUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return usageExitCode
+	}
+
+	runMode, err := assistsvc.ParseRunMode(*mode)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return usageExitCode
+	}
+	selectedAudience, err := assistsvc.ParseAudience(*audience)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return usageExitCode
+	}
+
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return 1
+	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	a.announceWorkareaSelection(scope, defaults)
+
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return 1
+	}
+
+	normalizedTicketID := normalizeTicketID(*ticketID)
+	if normalizedTicketID == "" {
+		fmt.Fprintln(a.stderr, "assist audit failed: --ticket is required")
+		a.printAssistAuditUsage()
+		return usageExitCode
+	}
+	if err := runtime.parser.Validate(normalizedTicketID); err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return usageExitCode
+	}
+
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return 1
+	}
+
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return usageExitCode
+	}
+
+	commandTarget := fmt.Sprintf("--path %s", shellSingleQuote(scope.WorkspacePath))
+	if strings.TrimSpace(scope.RepoSpec) != "" {
+		commandTarget = fmt.Sprintf("--repo %s", strings.TrimSpace(scope.RepoSpec))
+	}
+
+	result, err := runtime.assistant.Audit(ctx, assistsvc.AuditRequest{
+		WorkspacePath: scope.WorkspacePath,
+		ScopeLabel:    scopeLabel,
+		CommandTarget: commandTarget,
+		ConfigPath:    strings.TrimSpace(scope.ConfigPath),
+		TicketID:      normalizedTicketID,
+		FromBranch:    resolvedFromBranch,
+		ToBranch:      resolvedToBranch,
+		Environments:  environments,
+		Repositories:  repositories,
+		LoadedConfig:  runtime.loaded,
+	}, assistsvc.ExecuteOptions{
+		BaseURL:  *deerflowURL,
+		Mode:     runMode,
+		Audience: selectedAudience,
+	})
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderAssistantAudit(a.stdout, result); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string                `json:"command"`
+			Scope   string                `json:"scope"`
+			Result  assistsvc.AuditResult `json:"result"`
+		}{
+			Command: "assist audit",
+			Scope:   scopeLabel,
+			Result:  result,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func (a *App) runAssistRelease(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printAssistReleaseUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("assist release", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a repository or workspace")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	releaseID := fs.String("release", "", "Release ID to brief from saved snapshots")
+	ticketID := fs.String("ticket", "", "Ticket ID to include in a live release bundle")
+	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line for a live release bundle")
+	fromBranch := fs.String("from", "", "Source branch")
+	toBranch := fs.String("to", "", "Target branch")
+	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
+	deerflowURL := fs.String("url", "", "Base URL for DeerFlow, for example http://localhost:2026")
+	mode := fs.String("mode", string(assistsvc.ModePro), "Execution mode: flash, standard, pro, or ultra")
+	audience := fs.String("audience", string(assistsvc.AudienceReleaseManager), "Audience: qa, client, or release-manager")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printAssistReleaseUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "assist release does not accept positional arguments")
+		a.printAssistReleaseUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return usageExitCode
+	}
+
+	runMode, err := assistsvc.ParseRunMode(*mode)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return usageExitCode
+	}
+	selectedAudience, err := assistsvc.ParseAudience(*audience)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return usageExitCode
+	}
+
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return 1
+	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	a.announceWorkareaSelection(scope, defaults)
+
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return 1
+	}
+
+	normalizedReleaseID := strings.TrimSpace(*releaseID)
+	if normalizedReleaseID == "" {
+		fmt.Fprintln(a.stderr, "assist release failed: --release is required")
+		a.printAssistReleaseUsage()
+		return usageExitCode
+	}
+	normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(normalizedReleaseID)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return usageExitCode
+	}
+
+	var (
+		ticketIDs          []string
+		scopeLabel         = scope.WorkspacePath
+		commandTarget      = fmt.Sprintf("--path %s", shellSingleQuote(scope.WorkspacePath))
+		environments       []inspectsvc.Environment
+		resolvedFromBranch string
+		resolvedToBranch   string
+		repositories       []scm.Repository
+	)
+
+	if strings.TrimSpace(*ticketID) != "" || strings.TrimSpace(*ticketFile) != "" {
+		ticketIDs, _, err = resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+			return usageExitCode
+		}
+
+		repositories, scopeLabel, err = a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+			return 1
+		}
+
+		environments, resolvedFromBranch, resolvedToBranch, err = resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+		if err != nil {
+			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+			return usageExitCode
+		}
+
+		if strings.TrimSpace(scope.RepoSpec) != "" {
+			commandTarget = fmt.Sprintf("--repo %s", strings.TrimSpace(scope.RepoSpec))
+		}
+	} else {
+		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
+			fmt.Fprintln(a.stderr, "assist release failed: --repo requires --ticket or --ticket-file")
+			a.printAssistReleaseUsage()
+			return usageExitCode
+		}
+		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
+			fmt.Fprintln(a.stderr, "assist release failed: --from, --to, and --envs are only used with --ticket or --ticket-file")
+			a.printAssistReleaseUsage()
+			return usageExitCode
+		}
+	}
+
+	result, err := runtime.assistant.Release(ctx, assistsvc.ReleaseRequest{
+		WorkspacePath: scope.WorkspacePath,
+		ScopeLabel:    scopeLabel,
+		CommandTarget: commandTarget,
+		ConfigPath:    strings.TrimSpace(scope.ConfigPath),
+		ReleaseID:     normalizedReleaseID,
+		TicketIDs:     ticketIDs,
+		FromBranch:    resolvedFromBranch,
+		ToBranch:      resolvedToBranch,
+		Environments:  environments,
+		Repositories:  repositories,
+		LoadedConfig:  runtime.loaded,
+	}, assistsvc.ExecuteOptions{
+		BaseURL:  *deerflowURL,
+		Mode:     runMode,
+		Audience: selectedAudience,
+	})
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderAssistantRelease(a.stdout, result); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string                  `json:"command"`
+			Scope   string                  `json:"scope"`
+			Result  assistsvc.ReleaseResult `json:"result"`
+		}{
+			Command: "assist release",
+			Scope:   result.Bundle.ScopeLabel,
+			Result:  result,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
 func (a *App) runLogin(ctx context.Context, args []string) int {
 	if len(args) == 0 || hasHelpFlag(args) {
 		a.printLoginUsage()
@@ -1047,6 +1399,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", "Path to a gig config file")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
+	workareaName := fs.String("workarea", "", "Saved workarea to use")
 	ticketID := fs.String("ticket", "", "Ticket ID to capture")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
@@ -1071,14 +1424,16 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	resolvedPath, err := normalizeCLIPath(*path)
+	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return 1
 	}
+	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	a.announceWorkareaSelection(scope, defaults)
 
-	remoteMode := strings.TrimSpace(*repoTarget) != ""
-	runtime, err := newCommandRuntimeWithOptions(resolvedPath, *configPath, runtimeOptions{DisableAutoConfig: remoteMode})
+	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
+	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return 1
@@ -1094,7 +1449,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
 	}
-	if strings.TrimSpace(*fromBranch) == "" || strings.TrimSpace(*toBranch) == "" {
+	if strings.TrimSpace(defaults.FromBranch) == "" || strings.TrimSpace(defaults.ToBranch) == "" {
 		if !remoteMode {
 			fmt.Fprintln(a.stderr, "snapshot create failed: both --from and --to branches are required")
 			a.printSnapshotCreateUsage()
@@ -1102,13 +1457,13 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		}
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, resolvedPath, *repoTarget, runtime)
+	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, *envsSpec, *fromBranch, *toBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
@@ -1129,7 +1484,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 			ReleaseID: normalizedReleaseID,
 		})
 	} else {
-		snapshot, err = runtime.snapshot.CaptureWithOptions(ctx, resolvedPath, runtime.loaded, normalizedTicketID, resolvedFromBranch, resolvedToBranch, environments, snapshotsvc.CaptureOptions{
+		snapshot, err = runtime.snapshot.CaptureWithOptions(ctx, scope.WorkspacePath, runtime.loaded, normalizedTicketID, resolvedFromBranch, resolvedToBranch, environments, snapshotsvc.CaptureOptions{
 			ReleaseID: normalizedReleaseID,
 		})
 	}
@@ -1147,7 +1502,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 			return 1
 		}
 	case normalizedReleaseID != "":
-		resolvedOutputPath = snapshotsvc.DefaultReleaseSnapshotPath(resolvedPath, normalizedReleaseID, normalizedTicketID)
+		resolvedOutputPath = snapshotsvc.DefaultReleaseSnapshotPath(scope.WorkspacePath, normalizedReleaseID, normalizedTicketID)
 	}
 	if resolvedOutputPath != "" {
 		if err := writeJSONFile(resolvedOutputPath, snapshot); err != nil {
@@ -1240,6 +1595,113 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 		}{
 			Command: "doctor",
 			Report:  report,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func (a *App) runAssistResolve(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printAssistResolveUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("assist resolve", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	path := fs.String("path", ".", "Path to a Git repository or a child path inside it")
+	configPath := fs.String("config", "", "Path to a gig config file")
+	ticketID := fs.String("ticket", "", "Optional ticket ID used for scope warnings")
+	deerflowURL := fs.String("url", "", "Base URL for DeerFlow, for example http://localhost:2026")
+	mode := fs.String("mode", string(assistsvc.ModePro), "Execution mode: flash, standard, pro, or ultra")
+	audience := fs.String("audience", string(assistsvc.AudienceReleaseManager), "Audience: qa, client, or release-manager")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+
+	if err := fs.Parse(args); err != nil {
+		a.printAssistResolveUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "assist resolve does not accept positional arguments")
+		a.printAssistResolveUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(*format)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+		return usageExitCode
+	}
+
+	runMode, err := assistsvc.ParseRunMode(*mode)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+		return usageExitCode
+	}
+	selectedAudience, err := assistsvc.ParseAudience(*audience)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+		return usageExitCode
+	}
+
+	resolvedPath, err := normalizeCLIPath(*path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+		return 1
+	}
+
+	runtime, err := newCommandRuntime(resolvedPath, *configPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+		return 1
+	}
+
+	if strings.TrimSpace(*ticketID) != "" {
+		if err := runtime.parser.Validate(*ticketID); err != nil {
+			fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+			return usageExitCode
+		}
+	}
+
+	result, err := runtime.assistant.Resolve(ctx, assistsvc.ResolveRequest{
+		WorkspacePath: resolvedPath,
+		ScopeLabel:    resolvedPath,
+		CommandTarget: fmt.Sprintf("--path %s", shellSingleQuote(resolvedPath)),
+		ConfigPath:    strings.TrimSpace(*configPath),
+		TicketID:      strings.TrimSpace(*ticketID),
+	}, assistsvc.ExecuteOptions{
+		BaseURL:  *deerflowURL,
+		Mode:     runMode,
+		Audience: selectedAudience,
+	})
+	if err != nil {
+		if errors.Is(err, conflictsvc.ErrNoConflict) {
+			fmt.Fprintln(a.stderr, "assist resolve failed: no active Git conflict state was found")
+			return 1
+		}
+		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
+		return 1
+	}
+
+	switch outputFormat {
+	case outputFormatHuman:
+		if err := output.RenderAssistantResolve(a.stdout, result); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+	case outputFormatJSON:
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string                  `json:"command"`
+			Scope   string                  `json:"scope"`
+			Result  assistsvc.ResolveResult `json:"result"`
+		}{
+			Command: "assist resolve",
+			Scope:   result.Bundle.ScopeLabel,
+			Result:  result,
 		}); err != nil {
 			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 			return 1
@@ -1443,7 +1905,7 @@ func (a *App) runUpdate(ctx context.Context, args []string) int {
 	}
 
 	installDir := strings.TrimSpace(*installDirFlag)
-	installMode := updatesvc.DetectInstallMode(resolvedExecutablePath)
+	installMode := updatesvc.DetectInstallMode(resolvedExecutablePath, os.LookupEnv)
 	if installDir != "" {
 		installMode = updatesvc.ModeDirect
 	} else {
@@ -1451,31 +1913,40 @@ func (a *App) runUpdate(ctx context.Context, args []string) int {
 	}
 
 	switch installMode {
+	case updatesvc.ModeNPM:
+		fmt.Fprintf(a.stdout, "Detected an npm-managed install at %s\n", resolvedExecutablePath)
+		return a.runNPMUpdate(ctx, updatesvc.ResolveNPMPackageName(os.LookupEnv), version)
 	case updatesvc.ModeHomebrew:
-		if version != "latest" {
-			fmt.Fprintf(a.stderr, "update failed: Homebrew installs track the latest stable release only. Use the install script or GitHub release asset for %s.\n", version)
-			return 1
-		}
-
-		fmt.Fprintf(a.stdout, "Detected a Homebrew-managed install at %s\n", resolvedExecutablePath)
-		if code := a.runExternalCommand(ctx, "brew", []string{"update"}); code != 0 {
-			return code
-		}
-		return a.runExternalCommand(ctx, "brew", []string{"upgrade", "gig-cli"})
+		fmt.Fprintf(a.stderr, "update failed: Homebrew installs are no longer published for gig. Reinstall with `npm install -g %s` or use the direct installer.\n", updatesvc.DefaultNPMPackageName)
+		return 1
 	case updatesvc.ModeScoop:
-		if version != "latest" {
-			fmt.Fprintf(a.stderr, "update failed: Scoop installs track the latest stable release only. Use the PowerShell installer or GitHub release asset for %s.\n", version)
-			return 1
-		}
-
-		fmt.Fprintf(a.stdout, "Detected a Scoop-managed install at %s\n", resolvedExecutablePath)
-		return a.runExternalCommand(ctx, "scoop", []string{"update", "gig-cli"})
+		fmt.Fprintf(a.stderr, "update failed: Scoop installs are no longer published for gig. Reinstall with `npm install -g %s` or use the direct installer.\n", updatesvc.DefaultNPMPackageName)
+		return 1
 	default:
 		if runtime.GOOS == "windows" {
 			return a.runWindowsInstallerUpdate(ctx, repoName, version, installDir)
 		}
 		return a.runPOSIXInstallerUpdate(ctx, repoName, version, installDir)
 	}
+}
+
+func (a *App) runNPMUpdate(ctx context.Context, packageName, releaseVersion string) int {
+	npmVersion, err := updatesvc.NormalizeNPMVersion(releaseVersion)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	spec := packageName + "@latest"
+	if npmVersion != "latest" {
+		spec = packageName + "@" + npmVersion
+	}
+
+	if runtime.GOOS == "windows" {
+		return a.runWindowsNPMUpdate(ctx, spec)
+	}
+
+	return a.runExternalCommand(ctx, "npm", []string{"install", "-g", spec})
 }
 
 func (a *App) runExternalCommand(ctx context.Context, name string, args []string) int {
@@ -1569,6 +2040,57 @@ Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 	return 0
 }
 
+func (a *App) runWindowsNPMUpdate(ctx context.Context, packageSpec string) int {
+	scriptFile, err := os.CreateTemp("", "gig-update-npm-*.ps1")
+	if err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	scriptBody := fmt.Sprintf(`$ErrorActionPreference = "Stop"
+for ($attempt = 0; $attempt -lt 240; $attempt++) {
+	if (-not (Get-Process -Id %d -ErrorAction SilentlyContinue)) {
+		break
+	}
+	Start-Sleep -Milliseconds 500
+}
+npm.cmd install -g '%s'
+Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+`,
+		os.Getpid(),
+		powerShellSingleQuote(packageSpec),
+	)
+
+	if _, err := scriptFile.WriteString(scriptBody); err != nil {
+		scriptFile.Close()
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+	if err := scriptFile.Close(); err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	command := fmt.Sprintf(
+		"Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','%s')",
+		powerShellSingleQuote(scriptFile.Name()),
+	)
+
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = a.stdout
+	cmd.Stderr = a.stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(a.stdout, "gig update started in the background.")
+	fmt.Fprintln(a.stdout, "Open a new terminal in a few seconds, then run: gig version")
+	return 0
+}
+
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
@@ -1585,15 +2107,24 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "Start here:")
 	fmt.Fprintln(a.stderr, "  gig login github")
 	fmt.Fprintln(a.stderr, "  gig login gitlab")
+	fmt.Fprintln(a.stderr, "  gig login bitbucket")
+	fmt.Fprintln(a.stderr, "  gig workarea add --provider github --use")
+	fmt.Fprintln(a.stderr, "  gig workarea use")
 	fmt.Fprintln(a.stderr, "  gig --help")
+	fmt.Fprintln(a.stderr, "  gig inspect ABC-123")
 	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --repo github:owner/name")
-	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --repo gitlab:group/project")
-	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 --repo github:owner/name")
+	fmt.Fprintln(a.stderr, "  gig inspect ABC-123 --workarea payments")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123")
+	fmt.Fprintln(a.stderr, "  gig assist doctor")
+	fmt.Fprintln(a.stderr, "  gig assist setup")
+	fmt.Fprintln(a.stderr, "  gig assist audit --ticket ABC-123 --repo github:owner/name")
+	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 --path .")
 	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 --from test --to main --path .")
 	fmt.Fprintln(a.stderr, "  gig doctor --path .")
 	fmt.Fprintln(a.stderr, "  gig update")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Commands:")
+	fmt.Fprintln(a.stderr, "  workarea    Save and switch project defaults for repeat use")
 	fmt.Fprintln(a.stderr, "  login       Authenticate to a live source-control provider")
 	fmt.Fprintln(a.stderr, "  scan        Find repositories under a path")
 	fmt.Fprintln(a.stderr, "  find        Find commits for one ticket")
@@ -1604,10 +2135,12 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.stderr, "  plan        Build a read-only promotion plan")
 	fmt.Fprintln(a.stderr, "  manifest    Generate a release packet for QA, client, and release review")
 	fmt.Fprintln(a.stderr, "  snapshot    Save a repeatable ticket baseline for audit and re-check")
+	fmt.Fprintln(a.stderr, "  assist      Generate an AI briefing from gig evidence (experimental)")
 	fmt.Fprintln(a.stderr, "  doctor      Check config coverage, env mappings, and repo catalog health")
 	fmt.Fprintln(a.stderr, "  resolve     Inspect or resolve active Git merge conflicts")
 	fmt.Fprintln(a.stderr, "  update      Install the latest release or a specific version")
 	fmt.Fprintln(a.stderr, "  version     Show the installed version")
+	a.printCurrentWorkareaHint()
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "More help:")
 	fmt.Fprintln(a.stderr, "  gig <command> --help")
@@ -1623,7 +2156,7 @@ func (a *App) printScanUsage() {
 }
 
 func (a *App) printFindUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml]")
+	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml]")
 }
 
 func (a *App) printDiffUsage() {
@@ -1631,46 +2164,110 @@ func (a *App) printDiffUsage() {
 }
 
 func (a *App) printInspectUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml]")
+	fmt.Fprintln(a.stderr, "Usage: gig inspect <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml]")
 }
 
 func (a *App) printEnvUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printEnvStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
+	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--config gig.yaml] [--envs dev=dev,test=test,prod=main]")
 }
 
 func (a *App) printPlanUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig plan --release <release-id> --path . [--config gig.yaml] [--format human|json]")
-	fmt.Fprintln(a.stderr, "   or: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "   or: gig plan (--ticket <ticket-id> | --ticket-file tickets.txt) [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
 }
 
 func (a *App) printVerifyUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig verify --release <release-id> --path . [--config gig.yaml] [--format human|json]")
-	fmt.Fprintln(a.stderr, "   or: gig verify (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
+	fmt.Fprintln(a.stderr, "  gig verify --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]")
+	fmt.Fprintln(a.stderr, "  gig verify --release rel-2026-04-09 --path .")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Tips:")
+	fmt.Fprintln(a.stderr, "  use the current workarea when no --repo or --path is set")
+	fmt.Fprintln(a.stderr, "  add --from/--to only when gig cannot infer the promotion path")
+	fmt.Fprintln(a.stderr, "  add --format json for automation")
 }
 
 func (a *App) printManifestUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig manifest generate --release <release-id> --path . [--config gig.yaml] [--format markdown|json]")
-	fmt.Fprintln(a.stderr, "  gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
+	fmt.Fprintln(a.stderr, "  gig manifest generate --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]")
+	fmt.Fprintln(a.stderr, "  gig manifest generate --release rel-2026-04-09 --path .")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Tips:")
+	fmt.Fprintln(a.stderr, "  use the current workarea when no --repo or --path is set")
+	fmt.Fprintln(a.stderr, "  add --format json for tooling or keep markdown for handoff")
 }
 
 func (a *App) printManifestGenerateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig manifest generate --release <release-id> --path . [--config gig.yaml] [--format markdown|json]")
-	fmt.Fprintln(a.stderr, "   or: gig manifest generate (--ticket <ticket-id> | --ticket-file tickets.txt) [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--envs dev=dev,test=test,prod=main] [--format markdown|json]")
+	a.printManifestUsage()
 }
 
 func (a *App) printSnapshotUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
 }
 
 func (a *App) printSnapshotCreateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> [--from <branch>] [--to <branch>] (--path . | --repo <provider-target>) [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--config gig.yaml] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
+}
+
+func (a *App) printAssistUsage() {
+	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig assist doctor [--path .] [--url http://localhost:2026] [--format human|json]")
+	fmt.Fprintln(a.stderr, "  gig assist setup [--path .] [--format human|json]")
+	fmt.Fprintln(a.stderr, "  gig assist audit --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
+	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 [--path . | --ticket-file tickets.txt --repo github:owner/name]")
+	fmt.Fprintln(a.stderr, "  gig assist resolve --path . [--ticket ABC-123]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Common flags:")
+	fmt.Fprintln(a.stderr, "  --audience qa|client|release-manager   --mode flash|standard|pro|ultra")
+	fmt.Fprintln(a.stderr, "  --url http://localhost:2026            --format human|json")
+}
+
+func (a *App) printAssistDoctorUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig assist doctor [--path .] [--url http://localhost:2026] [--format human|json]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Checks whether the bundled DeerFlow sidecar is configured, startable, and reachable.")
+}
+
+func (a *App) printAssistSetupUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig assist setup [--path .] [--format human|json]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Bootstraps the bundled deer-flow sidecar config and prints the next start command.")
+	fmt.Fprintln(a.stderr, "Run gig assist doctor first if you want a readiness check without writing files.")
+}
+
+func (a *App) printAssistAuditUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig assist audit --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Tips:")
+	fmt.Fprintln(a.stderr, "  use the current workarea when no --repo or --path is set")
+	fmt.Fprintln(a.stderr, "  add --audience qa|client|release-manager")
+	fmt.Fprintln(a.stderr, "  add --url http://localhost:2026 when DeerFlow is not on the default local port")
+}
+
+func (a *App) printAssistReleaseUsage() {
+	fmt.Fprintln(a.stderr, "Usage:")
+	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 --path .")
+	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Tips:")
+	fmt.Fprintln(a.stderr, "  use --path when the release already has saved snapshots")
+	fmt.Fprintln(a.stderr, "  use --ticket or --ticket-file with --repo for a live remote bundle")
+}
+
+func (a *App) printAssistResolveUsage() {
+	fmt.Fprintln(a.stderr, "Usage: gig assist resolve --path . [--ticket ABC-123]")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Tips:")
+	fmt.Fprintln(a.stderr, "  use this only after Git has already stopped on a conflict")
+	fmt.Fprintln(a.stderr, "  use gig resolve start when you are ready to apply a choice")
 }
 
 func (a *App) printDoctorUsage() {
@@ -2014,6 +2611,7 @@ type commandRuntime struct {
 	snapshot  *snapshotsvc.Service
 	doctor    *doctorsvc.Service
 	manifest  *manifestsvc.Service
+	assistant *assistsvc.Service
 }
 
 func newCommandRuntime(path, configPath string) (commandRuntime, error) {
@@ -2039,20 +2637,23 @@ func newCommandRuntimeWithOptions(path, configPath string, options runtimeOption
 	scanner := repo.NewScanner(registry)
 	inspector := inspectsvc.NewService(scanner, registry, parser)
 	planner := plansvc.NewService(scanner, registry, parser)
+	manifest := manifestsvc.NewService(planner)
+	conflicts := conflictsvc.NewService(scanner, registry, parser)
 
 	return commandRuntime{
 		loaded:    loaded,
 		parser:    parser,
 		adapters:  registry,
 		scanner:   scanner,
-		conflicts: conflictsvc.NewService(scanner, registry, parser),
+		conflicts: conflicts,
 		finder:    ticketsvc.NewService(scanner, registry, parser),
 		diff:      diffsvc.NewService(scanner, registry, parser),
 		inspect:   inspector,
 		planner:   planner,
 		snapshot:  snapshotsvc.NewService(inspector, planner),
 		doctor:    doctorsvc.NewService(scanner, registry),
-		manifest:  manifestsvc.NewService(planner),
+		manifest:  manifest,
+		assistant: assistsvc.NewService(inspector, planner, manifest, conflicts),
 	}, nil
 }
 
@@ -2082,9 +2683,12 @@ func writeJSONFile(path string, value any) error {
 func newRegistry(parser ticketsvc.Parser) *scm.Registry {
 	return scm.NewRegistry(
 		gitscm.NewAdapter(parser),
+		azuredevopsscm.NewAdapter(parser),
+		bitbucketscm.NewAdapter(parser),
 		githubscm.NewAdapter(parser),
 		gitlabscm.NewAdapter(parser),
 		svnscm.NewAdapter(parser),
+		svnscm.NewRemoteAdapter(parser),
 	)
 }
 

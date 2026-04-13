@@ -14,6 +14,19 @@ The issue is the entry path:
 
 This document proposes a reset in usage design and internal structure while keeping the strongest parts of the current direction.
 
+Status update:
+
+- GitHub login-backed remote audit is live
+- GitLab login-backed remote audit is live
+- Bitbucket login-backed remote audit is live
+- Azure DevOps login-backed remote audit is live
+- remote SVN is live
+- initial workarea save and switch flow is live
+- interactive workarea and repository pickers with recent-history ranking are live
+- running `gig` with no subcommand now opens a guided front door
+- `gig assist doctor` now checks whether the bundled DeerFlow sidecar is configured, startable, and reachable
+- `gig assist setup` now bootstraps the bundled DeerFlow sidecar config
+
 ## Executive Summary
 
 Keep:
@@ -25,6 +38,7 @@ Keep:
 
 Change:
 
+- move from Homebrew and Scoop distribution to a public npm-first install path with direct-installer fallback
 - move from local-first to remote-first
 - move from config-required to zero-config default
 - move from manual branch mapping to protected-branch discovery plus override
@@ -133,21 +147,20 @@ The product should expose fewer top-level decisions:
 
 The current commands can still exist, but they should become implementation-level or advanced-mode commands.
 
-### 5. Authentication and provider access are missing from the product model
+### 5. Authentication and provider access need deeper product UX
 
-The current architecture has SCM adapters, but it does not have a provider/session layer.
+The old problem was that SCM adapters existed without a true provider/session layer.
+That is no longer fully true.
+`gig` now has login-backed remote access across GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN.
 
-That means there is no first-class concept for:
+The remaining gap is product polish around:
 
-- GitHub login
-- GitLab login
-- Bitbucket login
-- SVN credential readiness
-- repository or organization selection
-- protected branch lookup
-- PR or deployment evidence retrieval
+- workarea-driven project picking
+- repository or organization discovery
+- richer provider capability display
+- issue-tracker evidence retrieval
 
-Without that layer, the product cannot become genuinely source-control-native.
+Without those additions, the product is not yet fully source-control-native at the UX layer.
 
 ### 6. Powerful release abstractions arrived before the activation path was simplified
 
@@ -175,6 +188,10 @@ That means:
 - protected branches become the default source of environment understanding
 - config becomes optional metadata, not a gate to basic usefulness
 
+If AI assist is added, it should sit on top of deterministic release evidence.
+The model can summarize, explain, and point to next actions, but it should not replace the core ticket, branch, and risk reasoning.
+The current assist slice now supports audience-specific ticket briefs, release-level briefs from saved snapshots or live ticket sets, and conflict-resolution briefs for active Git conflicts, which is the right shape as long as the bundle remains the ground truth.
+
 ## New User Experience
 
 ### 1. Connect once
@@ -185,7 +202,7 @@ Examples:
 gig login github
 gig login gitlab
 gig login bitbucket
-gig login svn --url https://svn.example.com/project
+gig login svn
 ```
 
 Behavior:
@@ -381,7 +398,7 @@ Examples:
 
 - GitHub: prefer `gh auth status` and `gh auth login`, or direct OAuth later
 - GitLab: prefer `glab auth status` and `glab auth login`, or direct token flow later
-- Bitbucket: support app password or OAuth flow
+- Bitbucket: support API token login, with macOS Keychain storage where available
 - SVN: validate `svn info` or `svn ls`, then prompt for credentials only when required
 
 This is much closer to the product behavior users expect.

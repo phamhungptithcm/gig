@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">gig terminal demo thumbnail</title>
+  <desc id="desc">Terminal preview showing gig front door and DeerFlow onboarding with a play overlay.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="760" rx="24" fill="url(#bg)"/>
+  <rect x="32" y="28" width="1136" height="60" rx="14" fill="#0b1220"/>
+  <circle cx="68" cy="58" r="8" fill="#ef4444"/>
+  <circle cx="96" cy="58" r="8" fill="#f59e0b"/>
+  <circle cx="124" cy="58" r="8" fill="#22c55e"/>
+  <text x="168" y="66" fill="#94a3b8" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">gig demo.cast</text>
+
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="22">
+    <text x="52" y="134" fill="#22c55e">$</text>
+    <text x="82" y="134" fill="#f8fafc">gig</text>
+    <text x="52" y="176" fill="#e2e8f0">gig</text>
+    <text x="52" y="210" fill="#94a3b8">Remote-first release audit CLI</text>
+    <text x="52" y="262" fill="#e2e8f0">No workarea selected yet.</text>
+    <text x="52" y="314" fill="#f8fafc">Start here</text>
+    <text x="82" y="348" fill="#cbd5e1">gig login github</text>
+    <text x="82" y="382" fill="#cbd5e1">gig workarea add --provider github --use</text>
+    <text x="82" y="416" fill="#cbd5e1">gig inspect ABC-123 --repo github:owner/name</text>
+    <text x="82" y="450" fill="#cbd5e1">gig verify --ticket ABC-123 --repo github:owner/name</text>
+    <text x="52" y="510" fill="#f8fafc">Optional AI sidecar</text>
+    <text x="82" y="544" fill="#cbd5e1">gig assist doctor</text>
+    <text x="82" y="578" fill="#cbd5e1">gig assist setup</text>
+    <text x="52" y="638" fill="#22c55e">$</text>
+    <text x="82" y="638" fill="#f8fafc">gig assist doctor --path ./demo</text>
+    <text x="52" y="672" fill="#e2e8f0">DeerFlow doctor</text>
+    <text x="52" y="706" fill="#cbd5e1">Readiness: setup-required</text>
+  </g>
+
+  <circle cx="955" cy="410" r="88" fill="#0ea5e9" opacity="0.85"/>
+  <polygon points="930,366 930,454 1002,410" fill="#f8fafc"/>
+  <rect x="44" y="726" width="1112" height="8" rx="4" fill="#1e293b"/>
+  <rect x="44" y="726" width="742" height="8" rx="4" fill="#38bdf8"/>
+</svg>

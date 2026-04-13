@@ -2,10 +2,14 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
+
+	"gig/internal/scm"
 )
 
 type Session struct {
@@ -60,11 +64,18 @@ func (s *Session) login(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, "glab", "auth", "login", "--hostname", "gitlab.com", "--web")
-	cmd.Stdin = s.stdin
+	cmd.Stdin = commandStdin(s.stdin)
 	cmd.Stdout = s.stdout
 	cmd.Stderr = s.stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("glab auth login failed: %w", err)
+	}
+	return nil
+}
+
+func commandStdin(input io.Reader) io.Reader {
+	if file, ok := input.(*os.File); ok {
+		return file
 	}
 	return nil
 }
@@ -88,4 +99,50 @@ func (s *Session) runGLab(ctx context.Context, args ...string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+func (s *Session) ListRepositories(ctx context.Context, namespace string) ([]scm.Repository, error) {
+	type projectPayload struct {
+		Name              string `json:"name"`
+		PathWithNamespace string `json:"path_with_namespace"`
+		Archived          bool   `json:"archived"`
+	}
+
+	namespace = strings.Trim(strings.TrimSpace(namespace), "/")
+	repositories := make([]scm.Repository, 0, 32)
+	for page := 1; page <= 5; page++ {
+		endpoint := fmt.Sprintf("projects?membership=true&simple=true&order_by=last_activity_at&sort=desc&per_page=100&page=%d", page)
+		output, err := s.runGLab(ctx, "api", endpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		var payload []projectPayload
+		if err := json.Unmarshal([]byte(output), &payload); err != nil {
+			return nil, fmt.Errorf("parse gitlab repository discovery response: %w", err)
+		}
+		if len(payload) == 0 {
+			break
+		}
+
+		for _, project := range payload {
+			if project.Archived {
+				continue
+			}
+			pathWithNamespace := strings.Trim(project.PathWithNamespace, "/")
+			if pathWithNamespace == "" {
+				continue
+			}
+			if namespace != "" && !strings.HasPrefix(strings.ToLower(pathWithNamespace), strings.ToLower(namespace)+"/") && !strings.EqualFold(pathWithNamespace, namespace) {
+				continue
+			}
+			repositories = append(repositories, scm.Repository{
+				Name: strings.TrimSpace(project.Name),
+				Root: "gitlab:" + pathWithNamespace,
+				Type: scm.TypeGitLab,
+			})
+		}
+	}
+
+	return repositories, nil
 }

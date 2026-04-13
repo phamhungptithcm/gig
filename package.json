@@ -1,0 +1,48 @@
+{
+  "name": "@phamhungptithcm/gig",
+  "version": "0.0.0-development",
+  "description": "Remote-first release audit CLI for ticket-based delivery across repositories",
+  "bin": {
+    "gig": "./npm/bin/gig.cjs"
+  },
+  "files": [
+    "npm/bin",
+    "npm/install.cjs",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node ./npm/install.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phamhungptithcm/gig.git"
+  },
+  "homepage": "https://github.com/phamhungptithcm/gig#readme",
+  "bugs": {
+    "url": "https://github.com/phamhungptithcm/gig/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": [
+    "gig",
+    "cli",
+    "release",
+    "audit",
+    "github",
+    "golang"
+  ]
+}

@@ -50,10 +50,16 @@ func ParseRepositoryTarget(raw string) (scm.Repository, error) {
 		return parseGitLabRepository(strings.TrimSpace(raw[len("gitlab:"):]))
 	case strings.HasPrefix(lower, "bitbucket:"):
 		return parseBitbucketRepository(strings.TrimSpace(raw[len("bitbucket:"):]))
+	case strings.HasPrefix(lower, "azure-devops:"):
+		return parseAzureDevOpsRepository(strings.TrimSpace(raw[len("azure-devops:"):]))
 	case strings.HasPrefix(lower, "azuredevops:"):
 		return parseAzureDevOpsRepository(strings.TrimSpace(raw[len("azuredevops:"):]))
 	case strings.HasPrefix(lower, "ado:"):
 		return parseAzureDevOpsRepository(strings.TrimSpace(raw[len("ado:"):]))
+	case strings.HasPrefix(lower, "svn://"), strings.HasPrefix(lower, "svn+ssh://"):
+		return parseSVNRepository(raw)
+	case strings.HasPrefix(lower, "svn:"):
+		return parseSVNRepository(strings.TrimSpace(raw[len("svn:"):]))
 	case strings.HasPrefix(lower, "https://github.com/"), strings.HasPrefix(lower, "http://github.com/"):
 		u, err := url.Parse(raw)
 		if err != nil {
@@ -199,6 +205,34 @@ func parseAzureDevOpsRepositoryURL(raw string) (scm.Repository, error) {
 	}
 
 	return scm.Repository{}, fmt.Errorf("azure devops repository target must match dev.azure.com/<org>/<project>/_git/<repo>")
+}
+
+func parseSVNRepository(identifier string) (scm.Repository, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return scm.Repository{}, fmt.Errorf("svn repository target must include a repository URL")
+	}
+
+	u, err := url.Parse(identifier)
+	if err != nil {
+		return scm.Repository{}, fmt.Errorf("parse repository target %q: %w", identifier, err)
+	}
+	if strings.TrimSpace(u.Scheme) == "" || strings.TrimSpace(u.Host) == "" {
+		return scm.Repository{}, fmt.Errorf("svn repository target must include an absolute repository URL")
+	}
+
+	cleanPath := strings.Trim(strings.TrimSpace(u.Path), "/")
+	name := path.Base(cleanPath)
+	if name == "." || name == "/" || name == "" {
+		name = strings.TrimSpace(u.Host)
+	}
+
+	normalized := strings.TrimRight(u.String(), "/")
+	return scm.Repository{
+		Name: name,
+		Root: "svn:" + normalized,
+		Type: scm.TypeRemoteSVN,
+	}, nil
 }
 
 func normalizeRemoteIdentifier(identifier string) string {
