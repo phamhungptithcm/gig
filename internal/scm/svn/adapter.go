@@ -16,9 +16,13 @@ import (
 	"gig/internal/ticket"
 )
 
+type commandRunner func(ctx context.Context, args ...string) (string, error)
+
 type Adapter struct {
-	parser ticket.Parser
-	run    func(ctx context.Context, args ...string) (string, error)
+	parser      ticket.Parser
+	repoType    scm.Type
+	run         commandRunner
+	credentials func(context.Context) (credentials, error)
 }
 
 type infoDocument struct {
@@ -48,14 +52,28 @@ type logPath struct {
 }
 
 func NewAdapter(parser ticket.Parser) *Adapter {
-	return &Adapter{parser: parser}
+	return &Adapter{parser: parser, repoType: scm.TypeSVN}
+}
+
+func NewRemoteAdapter(parser ticket.Parser) *Adapter {
+	return &Adapter{
+		parser:   parser,
+		repoType: scm.TypeRemoteSVN,
+	}
 }
 
 func (a *Adapter) Type() scm.Type {
-	return scm.TypeSVN
+	if a.repoType == "" {
+		return scm.TypeSVN
+	}
+	return a.repoType
 }
 
 func (a *Adapter) DetectRoot(path string) (string, bool, error) {
+	if a.Type() == scm.TypeRemoteSVN {
+		return "", false, nil
+	}
+
 	start, err := normalizePath(path)
 	if err != nil {
 		return "", false, err
@@ -79,6 +97,10 @@ func (a *Adapter) DetectRoot(path string) (string, bool, error) {
 }
 
 func (a *Adapter) IsRepository(path string) (bool, error) {
+	if a.Type() == scm.TypeRemoteSVN {
+		return false, nil
+	}
+
 	_, err := os.Stat(filepath.Join(path, ".svn"))
 	if err == nil {
 		return true, nil
@@ -91,7 +113,12 @@ func (a *Adapter) IsRepository(path string) (bool, error) {
 }
 
 func (a *Adapter) CurrentBranch(ctx context.Context, repoRoot string) (string, error) {
-	info, err := a.readInfo(ctx, repoRoot)
+	target, err := a.commandTarget(repoRoot)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := a.readInfo(ctx, target)
 	if err != nil {
 		return "", err
 	}
@@ -104,21 +131,26 @@ func (a *Adapter) SearchCommits(ctx context.Context, repoRoot string, query scm.
 		return nil, err
 	}
 
-	info, err := a.readInfo(ctx, repoRoot)
+	target, err := a.commandTarget(repoRoot)
 	if err != nil {
 		return nil, err
 	}
 
-	target := repoRoot
+	info, err := a.readInfo(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+
+	searchTarget := target
 	defaultBranch := branchNameFromInfo(info)
 	if strings.TrimSpace(query.Branch) != "" {
-		target, defaultBranch, err = resolveBranchTarget(info, query.Branch)
+		searchTarget, defaultBranch, err = resolveBranchTarget(info, query.Branch)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return a.searchCommitsAtTarget(ctx, target, query.TicketID, defaultBranch)
+	return a.searchCommitsAtTarget(ctx, searchTarget, query.TicketID, defaultBranch)
 }
 
 func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query scm.CompareQuery) (scm.CompareResult, error) {
@@ -129,7 +161,12 @@ func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query sc
 		return scm.CompareResult{}, fmt.Errorf("both --from and --to branches are required")
 	}
 
-	info, err := a.readInfo(ctx, repoRoot)
+	target, err := a.commandTarget(repoRoot)
+	if err != nil {
+		return scm.CompareResult{}, err
+	}
+
+	info, err := a.readInfo(ctx, target)
 	if err != nil {
 		return scm.CompareResult{}, err
 	}
@@ -170,17 +207,22 @@ func (a *Adapter) PrepareCherryPick(context.Context, string, scm.CherryPickPlan)
 }
 
 func (a *Adapter) RefExists(ctx context.Context, repoRoot, ref string) (bool, error) {
-	info, err := a.readInfo(ctx, repoRoot)
+	target, err := a.commandTarget(repoRoot)
 	if err != nil {
 		return false, err
 	}
 
-	target, _, err := resolveBranchTarget(info, ref)
+	info, err := a.readInfo(ctx, target)
 	if err != nil {
 		return false, err
 	}
 
-	if _, err := a.runSVN(ctx, "info", "--xml", target); err != nil {
+	targetRef, _, err := resolveBranchTarget(info, ref)
+	if err != nil {
+		return false, err
+	}
+
+	if _, err := a.runSVN(ctx, "info", "--xml", targetRef); err != nil {
 		if strings.Contains(err.Error(), "not a working copy") || strings.Contains(err.Error(), "non-existent") || strings.Contains(err.Error(), "E160013") || strings.Contains(err.Error(), "E200009") {
 			return false, nil
 		}
@@ -190,7 +232,39 @@ func (a *Adapter) RefExists(ctx context.Context, repoRoot, ref string) (bool, er
 	return true, nil
 }
 
+func (a *Adapter) ProtectedBranches(ctx context.Context, repoRoot string) ([]string, error) {
+	target, err := a.commandTarget(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := a.readInfo(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+
+	branches := []string{branchNameFromInfo(info)}
+	if strings.TrimSpace(info.Repository.Root) != "" {
+		trunkTarget := joinURL(info.Repository.Root, "trunk")
+		if _, err := a.runSVN(ctx, "info", "--xml", trunkTarget); err == nil {
+			branches = append(branches, "trunk")
+		}
+
+		listing, err := a.listDirectory(ctx, joinURL(info.Repository.Root, "branches"))
+		if err == nil {
+			branches = append(branches, listing...)
+		}
+	}
+
+	return dedupeStrings(branches), nil
+}
+
 func (a *Adapter) CommitFiles(ctx context.Context, repoRoot string, hashes []string) (map[string][]string, error) {
+	target, err := a.commandTarget(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	filesByCommit := make(map[string][]string, len(hashes))
 	seen := make(map[string]struct{}, len(hashes))
 
@@ -206,7 +280,7 @@ func (a *Adapter) CommitFiles(ctx context.Context, repoRoot string, hashes []str
 			continue
 		}
 
-		output, err := a.runSVN(ctx, "log", "--xml", "--verbose", "-r", revision, repoRoot)
+		output, err := a.runSVN(ctx, "log", "--xml", "--verbose", "-r", revision, target)
 		if err != nil {
 			return nil, err
 		}
@@ -227,6 +301,11 @@ func (a *Adapter) CommitFiles(ctx context.Context, repoRoot string, hashes []str
 }
 
 func (a *Adapter) CommitMessages(ctx context.Context, repoRoot string, hashes []string) (map[string]string, error) {
+	target, err := a.commandTarget(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	messagesByCommit := make(map[string]string, len(hashes))
 	seen := make(map[string]struct{}, len(hashes))
 
@@ -240,7 +319,7 @@ func (a *Adapter) CommitMessages(ctx context.Context, repoRoot string, hashes []
 		}
 		seen[revision] = struct{}{}
 
-		output, err := a.runSVN(ctx, "log", "--xml", "-r", revision, repoRoot)
+		output, err := a.runSVN(ctx, "log", "--xml", "-r", revision, target)
 		if err != nil {
 			return nil, err
 		}
@@ -305,6 +384,41 @@ func parseRevisionSet(content string) map[string]struct{} {
 	}
 
 	return revisions
+}
+
+type listDocument struct {
+	Entries []listEntry `xml:"list>entry"`
+}
+
+type listEntry struct {
+	Kind string `xml:"kind,attr"`
+	Name string `xml:"name"`
+}
+
+func (a *Adapter) listDirectory(ctx context.Context, target string) ([]string, error) {
+	output, err := a.runSVN(ctx, "list", "--xml", target)
+	if err != nil {
+		return nil, err
+	}
+
+	var document listDocument
+	if err := xml.Unmarshal([]byte(output), &document); err != nil {
+		return nil, fmt.Errorf("parse svn list xml: %w", err)
+	}
+
+	values := make([]string, 0, len(document.Entries))
+	for _, entry := range document.Entries {
+		if strings.TrimSpace(entry.Kind) != "" && !strings.EqualFold(strings.TrimSpace(entry.Kind), "dir") {
+			continue
+		}
+		name := strings.Trim(strings.TrimSpace(entry.Name), "/")
+		if name == "" {
+			continue
+		}
+		values = append(values, name)
+	}
+	sort.Strings(values)
+	return dedupeStrings(values), nil
 }
 
 func resolveBranchTarget(info infoEntry, branch string) (string, string, error) {
@@ -581,6 +695,11 @@ func joinURL(root, relativePath string) string {
 }
 
 func (a *Adapter) runSVN(ctx context.Context, args ...string) (string, error) {
+	args, err := a.authenticatedArgs(ctx, args)
+	if err != nil {
+		return "", err
+	}
+
 	if a.run != nil {
 		return a.run(ctx, args...)
 	}
@@ -600,6 +719,71 @@ func (a *Adapter) runSVN(ctx context.Context, args ...string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+func (a *Adapter) authenticatedArgs(ctx context.Context, args []string) ([]string, error) {
+	if a.Type() != scm.TypeRemoteSVN {
+		return args, nil
+	}
+
+	creds, err := a.resolveCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	withAuth := make([]string, 0, len(args)+6)
+	withAuth = append(withAuth,
+		"--non-interactive",
+		"--username", creds.Username,
+		"--password", creds.Password,
+	)
+	withAuth = append(withAuth, args...)
+	return withAuth, nil
+}
+
+func (a *Adapter) commandTarget(repoRoot string) (string, error) {
+	if a.Type() != scm.TypeRemoteSVN {
+		return repoRoot, nil
+	}
+	return parseRemoteRepositoryRoot(repoRoot)
+}
+
+func (a *Adapter) resolveCredentials(ctx context.Context) (credentials, error) {
+	if a.credentials != nil {
+		return a.credentials(ctx)
+	}
+	return NewSession(nil, nil, nil).Credentials(ctx)
+}
+
+func parseRemoteRepositoryRoot(repoRoot string) (string, error) {
+	repoRoot = strings.TrimSpace(repoRoot)
+	if !strings.HasPrefix(strings.ToLower(repoRoot), "svn:") {
+		return "", fmt.Errorf("svn repository target must start with svn:")
+	}
+
+	target := strings.TrimSpace(repoRoot[len("svn:"):])
+	if target == "" {
+		return "", fmt.Errorf("svn repository target must include a repository URL")
+	}
+	return target, nil
+}
+
+func dedupeStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	deduped := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		deduped = append(deduped, value)
+	}
+	sort.Strings(deduped)
+	return deduped
 }
 
 func normalizePath(path string) (string, error) {

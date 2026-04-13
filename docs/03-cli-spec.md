@@ -6,7 +6,41 @@ If you are new, start with `gig --help` and then come back here.
 
 ## Start Here
 
+### Authenticate to a live source-control provider
+
+```bash
+gig login github
+gig login gitlab
+gig login bitbucket
+gig login azure-devops
+gig login svn
+```
+
+This uses the provider login flow under the hood today:
+
+- `gh auth` for GitHub
+- `glab auth` for GitLab
+- `gig`-managed API token storage for Bitbucket, saved to macOS Keychain when available
+- `az login` for Azure DevOps
+- `gig`-managed stored credentials or `GIG_SVN_USERNAME` / `GIG_SVN_PASSWORD` for remote SVN
+
+If you run a supported remote-backed command without an active session, `gig` will ask you to log in before continuing.
+For Bitbucket, `GIG_BITBUCKET_EMAIL` and `GIG_BITBUCKET_API_TOKEN` can override stored credentials in CI or non-interactive environments.
+
 ### Show all commands
+
+```bash
+gig
+```
+
+Running `gig` with no subcommand opens the guided front door with:
+
+- the current workarea, if one is selected
+- the next inspect, verify, manifest, and assist commands
+- the optional `gig assist doctor` readiness check for the bundled DeerFlow sidecar
+- the optional `gig assist setup` hint for the bundled DeerFlow sidecar
+
+For the full command list:
 
 ```bash
 gig --help
@@ -17,6 +51,7 @@ gig --help
 ```bash
 gig inspect --help
 gig verify --help
+gig assist --help
 gig manifest --help
 gig doctor --help
 gig resolve --help
@@ -33,12 +68,18 @@ gig help
 
 | Command | Use it when you want to... |
 | --- | --- |
+| `gig workarea` | save and switch project defaults so later commands stay short |
 | `gig scan` | find repos under a folder |
 | `gig find` | find commits for one ticket |
 | `gig inspect` | see the full ticket story across repos |
 | `gig env status` | check where a ticket is present or behind across env branches |
 | `gig diff` | compare one branch to another for a ticket |
 | `gig verify` | get a quick `safe`, `warning`, or `blocked` result |
+| `gig assist doctor` | check whether the bundled DeerFlow sidecar is configured, startable, and reachable |
+| `gig assist setup` | bootstrap the bundled DeerFlow sidecar config and get the next start command |
+| `gig assist audit` | turn one deterministic ticket audit bundle into an AI briefing |
+| `gig assist release` | turn a saved or live release bundle into one AI release briefing |
+| `gig assist resolve` | turn the active Git conflict state into one AI conflict briefing |
 | `gig plan` | build a read-only promotion plan for people or CI |
 | `gig snapshot create` | save a repeatable ticket baseline for audit and re-check |
 | `gig manifest generate` | generate a Markdown or JSON release packet |
@@ -74,6 +115,88 @@ Supported file names:
 If you want to point to a specific file, use `--config`.
 
 If you do not pass `--envs`, commands that need environments will use the config file first and built-in defaults second.
+When you use `--repo github:owner/name`, `--repo gitlab:group/project`, `--repo bitbucket:workspace/repo`, `--repo azure-devops:org/project/repo`, or a branch-scoped SVN URL such as `--repo svn:https://svn.example.com/repos/app/branches/staging/ProductName`, `gig` can infer the release path directly from provider topology or standard SVN layout and use that as the default release path.
+
+## Shared Workarea Behavior
+
+Ticket-aware commands can also inherit defaults from a saved workarea.
+
+Example:
+
+```bash
+gig workarea add --provider github --use
+gig workarea add payments --repo github:owner/name --from staging --to main --use
+gig inspect ABC-123
+gig verify --ticket ABC-123
+gig manifest generate --ticket ABC-123
+```
+
+What a workarea can remember:
+
+- remote repo scope from `--repo`
+- local fallback path from `--path`
+- optional config file from `--config`
+- default `--from` and `--to` branches
+- default `--envs` mapping
+
+Rules:
+
+- explicit flags still win over the workarea
+- `gig workarea use <name>` makes one workarea current
+- `gig inspect`, `gig verify`, `gig plan`, `gig snapshot create`, `gig manifest generate`, and `gig assist audit` can use the current workarea without repeating `--repo`
+- if a remote workarea has no local path, `gig` keeps a workarea home directory under the user config area for snapshots and other local state
+- `gig workarea add --provider <provider>` can discover repositories from a logged-in account so you do not have to type the target manually
+- interactive pickers accept either a number or filter text
+- recently used workareas and recently selected repositories are promoted to the top of the picker
+
+## Shared Remote Behavior
+
+Commands that accept `--repo` can operate directly on a live remote repository:
+
+```bash
+gig inspect ABC-123 --repo github:owner/name
+gig inspect ABC-123 --repo gitlab:group/project
+gig inspect ABC-123 --repo bitbucket:workspace/repo
+gig inspect ABC-123 --repo azure-devops:org/project/repo
+gig inspect ABC-123 --repo svn:https://svn.example.com/repos/app/branches/staging/ProductName
+gig verify --ticket ABC-123 --repo github:owner/name
+gig manifest generate --ticket ABC-123 --repo github:owner/name
+```
+
+Today the remote live flow supports:
+
+- GitHub repository targets in `github:owner/name` form
+- GitLab repository targets in `gitlab:group/project` form
+- Bitbucket repository targets in `bitbucket:workspace/repo` form
+- Azure DevOps repository targets in `azure-devops:org/project/repo` form
+- SVN repository targets in `svn:https://host/path/to/branch-scoped/repository` form
+- auto-login through `gh auth login`, `glab auth login`, `gig login bitbucket`, or `az login`
+- interactive or env-backed credential setup for remote SVN
+- protected-branch detection for release inference
+- direct ticket inspection and promotion checks without cloning first
+- provider evidence sections for pull requests and deployments on GitHub, GitLab, Bitbucket, and Azure DevOps
+
+## `gig workarea`
+
+Use this when you want `gig` to remember one project so you do not have to keep typing repo targets and branch defaults.
+
+```bash
+gig workarea add --provider github --use
+gig workarea add payments --repo github:owner/name --from staging --to main --use
+gig workarea list
+gig workarea use payments
+gig workarea show
+```
+
+This command supports:
+
+- `gig workarea add [<name>]`
+- `gig workarea list`
+- `gig workarea use [<name>]`
+- `gig workarea show [<name>]`
+
+If you run `gig workarea use` without a name, `gig` shows an interactive picker in the terminal. You can enter a number or type part of the project name to filter the list.
+If you run `gig workarea add --provider github`, `gig workarea add --provider gitlab`, `gig workarea add --provider bitbucket`, or `gig workarea add --provider azure-devops`, `gig` discovers repositories from that logged-in account, promotes recent selections to the top, and lets you choose one with either a number or filter text.
 
 ## `gig scan`
 
@@ -124,6 +247,7 @@ What it shows:
 - ticket commit count per repo
 - branches where those commits appear
 - risk signals such as DB, config, or Mendix-style changes
+- provider evidence such as pull requests and deployments when the remote provider can confirm them
 
 ## `gig env status`
 
@@ -210,6 +334,72 @@ What it does:
 - lets you open the file in your editor, undo the last local choice, and stage a resolved file
 - never runs `git merge --continue`, `git rebase --continue`, `git cherry-pick --continue`, or `git commit` for you
 
+## `gig assist resolve`
+
+Use this when Git has already stopped on a conflict and you want an AI-written brief for the active conflict block before choosing a resolver action.
+
+```bash
+gig assist resolve --path . --ticket ABC-123 --audience release-manager
+```
+
+What it does:
+
+- loads the deterministic `gig resolve` status and active conflict block for the current repository
+- sends that bundle to DeerFlow for a concise QA, client, or release-manager briefing
+- keeps `gig` as the source of truth for branch provenance, scope warnings, and risk signals
+
+Important notes:
+
+- this command is experimental
+- it does not edit files, stage files, or continue the Git operation for you
+- DeerFlow must be reachable locally or at the URL you pass with `--url`
+- use `gig resolve start` when you are ready to apply a resolution
+
+## `gig assist doctor`
+
+Use this when you want a readiness check before writing DeerFlow config files.
+
+```bash
+gig assist doctor
+gig assist doctor --path /path/to/gig-repo
+gig assist doctor --url http://localhost:2026
+```
+
+What it does:
+
+- finds the bundled `deer-flow/` directory in the current `gig` repo or the path you pass
+- checks whether a local DeerFlow config already exists
+- checks whether the current config has at least one active model plus the required credentials
+- checks whether the local gateway responds at the URL you pass with `--url`
+- reports the recommended next step before you try `assist audit`, `assist release`, or `assist resolve`
+
+Important notes:
+
+- this command is read-only
+- a healthy gateway is helpful, but the main readiness result is about whether the sidecar is locally startable and configured
+- use `gig assist setup` next when the report says `setup-required`
+
+## `gig assist setup`
+
+Use this when you want `gig` to bootstrap the bundled DeerFlow sidecar before trying AI briefings.
+
+```bash
+gig assist setup
+gig assist setup --path /path/to/gig-repo
+```
+
+What it does:
+
+- finds the bundled `deer-flow/` directory in the current `gig` repo or the path you pass
+- creates `config.yaml` and any available `.env` templates from the bundled DeerFlow examples when they are missing
+- reports whether Docker is available and prints the recommended next start command
+
+Important notes:
+
+- this command is local bootstrap only; it does not start long-running DeerFlow services for you
+- run `gig assist doctor` first if you want a readiness report without creating files
+- use this before `gig assist audit`, `gig assist release`, or `gig assist resolve` when the local sidecar is not configured yet
+
 ## `gig verify`
 
 Use this when you want a fast release decision.
@@ -243,6 +433,63 @@ What it shows:
 - per-repo checks
 - manual-review steps when risky files are detected
 - or a release-wide verification bundle when `--release` is used
+
+## `gig assist audit`
+
+Use this when you want an AI-written release briefing from the same evidence that powers `inspect`, `verify`, and `manifest`.
+
+```bash
+gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
+```
+
+Local mode:
+
+```bash
+gig assist audit --ticket ABC-123 --from test --to main --path . --audience client
+```
+
+What it does:
+
+- builds a deterministic audit bundle from `gig` inspection and promotion logic
+- sends that bundle to DeerFlow for a concise QA, client, or release-manager briefing
+- keeps `gig` as the source of truth for commits, branches, risk signals, and verdicts
+
+Important notes:
+
+- this command is experimental
+- supported audiences are `qa`, `client`, and `release-manager`
+- DeerFlow must be reachable locally or at the URL you pass with `--url`
+- AI output is additive explanation, not a replacement for the underlying `gig` verdict
+
+## `gig assist release`
+
+Use this when you want an AI-written release briefing for one named release.
+
+```bash
+gig assist release --release rel-2026-04-09 --path . --audience release-manager
+gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name --audience release-manager
+```
+
+Snapshot mode reads from:
+
+```text
+.gig/releases/<release-id>/snapshots/*.json
+```
+
+Live mode builds the same release bundle directly from `--ticket` or `--ticket-file` plus the selected local or remote repository scope.
+
+What it does:
+
+- loads all saved ticket snapshots for the release, or captures live ticket evidence into an in-memory release bundle
+- builds one deterministic release bundle with release verdict, per-ticket rollups, and packet data
+- sends that bundle to DeerFlow for a concise QA, client, or release-manager briefing
+
+Important notes:
+
+- this command is experimental
+- supported audiences are `qa`, `client`, and `release-manager`
+- DeerFlow must be reachable locally or at the URL you pass with `--url`
+- AI output is additive explanation, not a replacement for the underlying `gig` release plan or verification
 
 ## `gig plan`
 
@@ -404,10 +651,11 @@ gig update v2026.04.09
 
 What it does:
 
+- npm installs run `npm install -g @phamhungptithcm/gig@latest`
+- `gig update vYYYY.MM.DD` maps the release tag to the matching npm package version automatically
 - direct installs re-run the official installer in the current binary directory
-- Homebrew installs run `brew update` and `brew upgrade gig-cli`
-- Scoop installs run `scoop update gig-cli`
-- pinned versions are supported for direct installs, not for Homebrew or Scoop
+- pinned versions are supported for npm and direct installs
+- legacy Homebrew and Scoop installs are no longer published and should be reinstalled through npm or the direct installer
 
 ## `gig version`
 
@@ -461,6 +709,24 @@ gig snapshot create --ticket ABC-123 --from test --to main --path /path/to/works
 gig plan --release rel-2026-04-09 --path /path/to/workspace
 ```
 
+### Brief one saved release for a release manager
+
+```bash
+gig assist release --release rel-2026-04-09 --path /path/to/workspace --audience release-manager
+```
+
+### Brief one live remote release from a ticket file
+
+```bash
+gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name --audience release-manager
+```
+
+### Brief one active conflict before resolving it
+
+```bash
+gig assist resolve --path /path/to/workspace/a-service --ticket ABC-123 --audience release-manager
+```
+
 ### Re-run verification for one saved release
 
 ```bash
@@ -510,6 +776,9 @@ Output formats currently available on:
 
 - `gig verify`: `human`, `json`
 - `gig plan`: `human`, `json`
+- `gig assist audit`: `human`, `json`
+- `gig assist release`: `human`, `json`
+- `gig assist resolve`: `human`, `json`
 - `gig snapshot create`: `human`, `json`
 - `gig manifest generate`: `markdown`, `json`
 - `gig doctor`: `human`, `json`
@@ -525,4 +794,4 @@ Output formats currently available on:
 Planned next CLI additions include:
 
 - richer Jira or deployment evidence
-- multi-ticket release bundles
+- better CI or deployment evidence around release bundles

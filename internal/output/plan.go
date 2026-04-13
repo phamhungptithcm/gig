@@ -121,6 +121,14 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 				}
 			}
 		}
+		if repositoryPlan.ProviderEvidence != nil && (len(repositoryPlan.ProviderEvidence.PullRequests) > 0 || len(repositoryPlan.ProviderEvidence.Deployments) > 0) {
+			if _, err := fmt.Fprintln(w, "  provider evidence:"); err != nil {
+				return err
+			}
+			if err := renderProviderEvidence(w, *repositoryPlan.ProviderEvidence, "    "); err != nil {
+				return err
+			}
+		}
 		if len(repositoryPlan.ManualSteps) > 0 {
 			if _, err := fmt.Fprintln(w, "  manual steps:"); err != nil {
 				return err
@@ -246,6 +254,14 @@ func RenderVerification(w io.Writer, verification plansvc.Verification) error {
 				if _, err := fmt.Fprintf(w, "    - %s\n", step.Summary); err != nil {
 					return err
 				}
+			}
+		}
+		if repositoryVerification.ProviderEvidence != nil && (len(repositoryVerification.ProviderEvidence.PullRequests) > 0 || len(repositoryVerification.ProviderEvidence.Deployments) > 0) {
+			if _, err := fmt.Fprintln(w, "  provider evidence:"); err != nil {
+				return err
+			}
+			if err := renderProviderEvidence(w, *repositoryVerification.ProviderEvidence, "    "); err != nil {
+				return err
 			}
 		}
 

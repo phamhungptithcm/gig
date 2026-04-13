@@ -43,6 +43,7 @@ type RepositoryInspection struct {
 	Branches             []string
 	RiskSignals          []RiskSignal
 	DeclaredDependencies []depsvc.DeclaredDependency
+	ProviderEvidence     *scm.ProviderEvidence `json:"providerEvidence,omitempty"`
 }
 
 type Environment struct {
@@ -73,6 +74,7 @@ type RepositoryEnvironmentStatus struct {
 	Branches             []string
 	RiskSignals          []RiskSignal
 	DeclaredDependencies []depsvc.DeclaredDependency
+	ProviderEvidence     *scm.ProviderEvidence `json:"providerEvidence,omitempty"`
 	Statuses             []EnvironmentResult
 }
 
@@ -129,6 +131,10 @@ func (s *Service) InspectInRepositories(ctx context.Context, repositories []scm.
 		if err != nil {
 			return nil, err
 		}
+		providerEvidence, err := s.loadProviderEvidence(ctx, adapter, repository.Root, ticketID, commits)
+		if err != nil {
+			return nil, err
+		}
 
 		results = append(results, RepositoryInspection{
 			Repository:           repository,
@@ -136,6 +142,7 @@ func (s *Service) InspectInRepositories(ctx context.Context, repositories []scm.
 			Branches:             collectBranches(commits),
 			RiskSignals:          inferRiskSignals(filesByCommit),
 			DeclaredDependencies: declaredDependencies,
+			ProviderEvidence:     scm.NormalizeProviderEvidence(providerEvidence),
 		})
 	}
 
@@ -233,6 +240,7 @@ func (s *Service) EnvironmentStatusInRepositories(ctx context.Context, repositor
 			Branches:             inspection.Branches,
 			RiskSignals:          inspection.RiskSignals,
 			DeclaredDependencies: inspection.DeclaredDependencies,
+			ProviderEvidence:     scm.NormalizeProviderEvidence(inspection.ProviderEvidence),
 			Statuses:             statuses,
 		})
 	}
@@ -256,6 +264,26 @@ func (s *Service) loadCommitFiles(ctx context.Context, adapter scm.Adapter, repo
 	}
 
 	return fileProvider.CommitFiles(ctx, repoRoot, hashes)
+}
+
+func (s *Service) loadProviderEvidence(ctx context.Context, adapter scm.Adapter, repoRoot, ticketID string, commits []scm.Commit) (*scm.ProviderEvidence, error) {
+	evidenceProvider, ok := adapter.(scm.ProviderEvidenceProvider)
+	if !ok {
+		return nil, nil
+	}
+
+	evidence, err := evidenceProvider.ProviderEvidence(ctx, repoRoot, scm.EvidenceQuery{
+		TicketID: ticketID,
+		Commits:  commits,
+		Branches: collectBranches(commits),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if evidence.IsZero() {
+		return nil, nil
+	}
+	return &evidence, nil
 }
 
 func refExists(ctx context.Context, adapter scm.Adapter, repoRoot, ref string) (bool, error) {

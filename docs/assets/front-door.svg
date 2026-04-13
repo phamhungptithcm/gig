@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">gig front door</title>
+  <desc id="desc">Terminal style preview of gig with no arguments.</desc>
+  <rect width="1200" height="680" rx="18" fill="#0f172a"/>
+  <rect x="24" y="24" width="1152" height="56" rx="12" fill="#111827"/>
+  <circle cx="56" cy="52" r="8" fill="#ef4444"/>
+  <circle cx="84" cy="52" r="8" fill="#f59e0b"/>
+  <circle cx="112" cy="52" r="8" fill="#22c55e"/>
+  <text x="154" y="58" fill="#94a3b8" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">gig</text>
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="24">
+    <text x="48" y="124" fill="#22c55e">$</text>
+    <text x="78" y="124" fill="#e2e8f0">gig</text>
+    <text x="48" y="176" fill="#f8fafc">gig</text>
+    <text x="48" y="214" fill="#94a3b8">Remote-first release audit CLI</text>
+    <text x="48" y="272" fill="#f8fafc">No workarea selected yet.</text>
+    <text x="48" y="330" fill="#f8fafc">Start here</text>
+    <text x="72" y="368" fill="#cbd5e1">gig login github</text>
+    <text x="72" y="406" fill="#cbd5e1">gig workarea add --provider github --use</text>
+    <text x="72" y="444" fill="#cbd5e1">gig inspect ABC-123 --repo github:owner/name</text>
+    <text x="72" y="482" fill="#cbd5e1">gig verify --ticket ABC-123 --repo github:owner/name</text>
+    <text x="48" y="540" fill="#f8fafc">Optional AI sidecar</text>
+    <text x="72" y="578" fill="#cbd5e1">gig assist doctor</text>
+    <text x="72" y="616" fill="#cbd5e1">gig assist setup</text>
+  </g>
+</svg>
