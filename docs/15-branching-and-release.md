@@ -31,8 +31,8 @@ The release workflow is split into:
 
 - metadata resolution
 - release verification across Go, docs, and npm package staging
-- GitHub Release publication
-- npm publication after release assets exist
+- npm publication
+- GitHub Release publication after npm succeeds
 
 npm publication is now a release requirement.
 If neither trusted publishing nor a token fallback is configured, the release workflow fails during verification before it creates a GitHub Release.
@@ -59,8 +59,16 @@ Bootstrap note:
 
 - npm trusted publisher settings live on the package, so `@phamhungptithcm/gig` usually needs to exist first
 - for the first publish, set repository secret `NPM_PUBLISH_TOKEN` so the release workflow can bootstrap the package automatically from GitHub Actions
+- `NPM_PUBLISH_TOKEN` must come from an npm identity that can publish to `@phamhungptithcm`
+- if the token path is used, prefer an npm automation token or a granular token with bypass 2FA enabled
 - after the package exists, configure trusted publishing on npm, verify one GitHub Actions publish, then remove the token fallback if you no longer want it
 - if you leave `NPM_PUBLISH_TOKEN` configured, the workflow can still use it as an emergency fallback when trusted publishing is not enabled
+
+Recovery note:
+
+- if a GitHub Release already exists but npm publication failed, do not push a no-op commit just to retry
+- open the `Release` workflow in GitHub Actions and run it manually with `release_tag=vYYYY.MM.DD`
+- the workflow will re-run verification from the current `main` workflow, skip GitHub Release creation if it already exists, and only retry the missing npm publish work for that release tag
 
 ## Easiest Bootstrap Commands
 
