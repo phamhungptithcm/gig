@@ -12,11 +12,11 @@ func RenderDoctor(w io.Writer, report doctorsvc.Report) error {
 		return err
 	}
 	if report.ConfigPath != "" {
-		if _, err := fmt.Fprintf(w, "Config: %s\n", report.ConfigPath); err != nil {
+		if _, err := fmt.Fprintf(w, "Overrides: %s\n", report.ConfigPath); err != nil {
 			return err
 		}
 	} else {
-		if _, err := fmt.Fprintln(w, "Config: built-in defaults"); err != nil {
+		if _, err := fmt.Fprintln(w, "Overrides: none (using built-in inference and defaults)"); err != nil {
 			return err
 		}
 	}

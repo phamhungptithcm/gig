@@ -1,42 +1,47 @@
-Ticket ABC-123
-Promotion: test -> main
-Environments: dev=dev -> test=test -> prod=main
-Verdict: blocked
-Scanned repositories: 1
-Touched repositories: 1
+Plan ABC-123
+Promotion     test -> main
+Verdict       BLOCKED
+Environments  dev=dev -> test=test -> prod=main
+Repositories  1 touched / 1 scanned
+Commits       1 commit to include
+Manual steps  1 manual step
 
-Summary
+Release summary
   - Resolve blocked repositories before promoting this ticket.
   - 1 dependency ticket(s) are still missing from main.
-  - ready repositories: 0
-  - warning repositories: 0
-  - blocked repositories: 1
-  - commits to promote: 1
-  - manual steps: 1
+  - 0 ready repos
+  - 0 warning repos
+  - 1 blocked repos
+  - 1 commit to promote
+  - 1 manual step
 
-[a-service] <WORKSPACE>/a-service (git)
-  verdict: blocked
-  source commits on test: 1
-  target commits on main: 0
-  commits to include: 1
-  branches seen: dev, test
-  environment status:
+Recommended next step
+  - Review blocked repositories, dependency gaps, and manual steps below before promoting this ticket.
+
+Repository a-service
+  Scope           <WORKSPACE>/a-service (git)
+  Verdict         BLOCKED
+  Source commits  1 on test
+  Target commits  0 on main
+  To include      1 commit
+  Branches        dev, test
+  Environment status
     - dev (dev): present, commits here 2
     - test (test): behind by 1 commit(s), commits here 1
     - prod (main): behind by 1 commit(s), commits here 0
-  risk signals:
+  Risk signals
     - db-change (manual-review): Database-related changes should be reviewed before promotion
     - missing-dependency (blocked): Dependency ticket XYZ-456 is present in test but missing from main
-  dependency status:
+  Dependency status
     - XYZ-456: present in test but missing from main
-  manual steps:
+  Manual steps
     - Review DB migration ordering, rollback steps, and deployment timing before promotion.
-  plan actions:
+  Plan actions
     - Bring test up to date before promoting to main.
     - Include 1 missing ticket commit(s) from test into main.
     - Include dependency ticket XYZ-456 in main before promoting ABC-123.
-  notes:
+  Notes
     - Source branch test is behind an earlier environment by 1 commit(s).
     - Declared dependency XYZ-456 is present in test but missing from main.
-  commits to include:
+  Commits to include
     - <HASH>  ABC-123 | service-a | add validation fix

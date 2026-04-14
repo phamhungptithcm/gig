@@ -234,6 +234,90 @@ func (s *Store) Touch(name string) (Definition, error) {
 	return state.Workareas[index], nil
 }
 
+func (s *Store) SaveInferredDefaults(name, fromBranch, toBranch, environmentSpec string) (Definition, bool, error) {
+	state, err := s.load()
+	if err != nil {
+		return Definition{}, false, err
+	}
+
+	index := findIndex(state.Workareas, name)
+	if index < 0 {
+		return Definition{}, false, fmt.Errorf("workarea %q was not found", strings.TrimSpace(name))
+	}
+
+	definition := state.Workareas[index]
+	changed := false
+
+	if definition.FromBranch == "" && strings.TrimSpace(fromBranch) != "" {
+		definition.FromBranch = strings.TrimSpace(fromBranch)
+		changed = true
+	}
+	if definition.ToBranch == "" && strings.TrimSpace(toBranch) != "" {
+		definition.ToBranch = strings.TrimSpace(toBranch)
+		changed = true
+	}
+	if definition.EnvironmentSpec == "" && strings.TrimSpace(environmentSpec) != "" {
+		definition.EnvironmentSpec = strings.TrimSpace(environmentSpec)
+		changed = true
+	}
+	if !changed {
+		return definition, false, nil
+	}
+
+	definition.UpdatedAt = s.now().UTC()
+	state.Workareas[index] = definition
+	if err := s.save(state); err != nil {
+		return Definition{}, false, err
+	}
+	return definition, true, nil
+}
+
+func (s *Store) EnsureRemoteRepository(repository scm.Repository) (Definition, bool, error) {
+	if strings.TrimSpace(repository.Root) == "" || !repository.Type.IsRemote() {
+		return Definition{}, false, fmt.Errorf("a remote repository target is required")
+	}
+
+	state, err := s.load()
+	if err != nil {
+		return Definition{}, false, err
+	}
+
+	now := s.now().UTC()
+	for index, definition := range state.Workareas {
+		if strings.EqualFold(strings.TrimSpace(definition.RepoTarget), strings.TrimSpace(repository.Root)) {
+			state.Workareas[index].LastUsedAt = now
+			state.Workareas[index].UpdatedAt = now
+			state.Current = state.Workareas[index].Name
+			if err := s.save(state); err != nil {
+				return Definition{}, false, err
+			}
+			if err := os.MkdirAll(s.ScopePath(state.Workareas[index]), 0o755); err != nil {
+				return Definition{}, false, err
+			}
+			return state.Workareas[index], false, nil
+		}
+	}
+
+	name := uniqueRepositoryWorkareaName(state.Workareas, repository)
+	definition := Definition{
+		Name:       name,
+		RepoTarget: strings.TrimSpace(repository.Root),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastUsedAt: now,
+	}
+	state.Workareas = append(state.Workareas, definition)
+	sortDefinitions(state.Workareas)
+	state.Current = definition.Name
+	if err := s.save(state); err != nil {
+		return Definition{}, false, err
+	}
+	if err := os.MkdirAll(s.ScopePath(definition), 0o755); err != nil {
+		return Definition{}, false, err
+	}
+	return definition, true, nil
+}
+
 func (s *Store) ScopePath(def Definition) string {
 	if strings.TrimSpace(def.Path) != "" {
 		return def.Path
@@ -412,4 +496,26 @@ func slugify(name string) string {
 		return "default"
 	}
 	return slug
+}
+
+func uniqueRepositoryWorkareaName(definitions []Definition, repository scm.Repository) string {
+	base := strings.TrimSpace(repository.Name)
+	if base == "" {
+		base = strings.TrimSpace(repository.Root)
+	}
+	base = slugify(base)
+	if !hasDefinitionName(definitions, base) {
+		return base
+	}
+
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s-%d", base, suffix)
+		if !hasDefinitionName(definitions, candidate) {
+			return candidate
+		}
+	}
+}
+
+func hasDefinitionName(definitions []Definition, name string) bool {
+	return findIndex(definitions, name) >= 0
 }

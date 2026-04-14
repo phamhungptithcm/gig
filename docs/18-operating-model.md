@@ -107,7 +107,7 @@ Build a release-level plan by aggregating saved ticket snapshots.
 
 ### `gig doctor`
 
-Check config coverage, branch mapping, and repo catalog quality.
+Check inferred topology, optional overrides, and repo catalog quality.
 
 ## Recommended Next Command Additions
 

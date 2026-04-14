@@ -1,20 +1,19 @@
 # Demo Guide
 
-This page shows the fastest way to produce a repeatable terminal demo for `gig`.
+This page shows the fastest way to produce a clean, repeatable demo for `gig`.
 
-## Why These Scripts Exist
+## Why The Demo Matters
 
-The repo now includes a deterministic terminal walkthrough so you can:
+`gig` lands best when people can see the product promise quickly:
 
-- sanity-check the guided front door
-- demo workarea setup without hitting live provider APIs
-- show the DeerFlow onboarding flow with `assist doctor` and `assist setup`
-- record a shareable terminal cast for README updates, release posts, or portfolio use
-- reuse static terminal mockups for `inspect`, `verify`, and `assist audit` in landing pages or docs
+- guided CLI front door
+- remote-first workflow
+- clear ticket audit
+- release verdict instead of raw Git output
 
-## Quick Demo
+A strong demo helps docs, portfolio pages, hiring conversations, and GitHub stars for the same reason: it makes the value obvious fast.
 
-Run the scripted terminal walkthrough:
+## Run The Deterministic Walkthrough
 
 ```bash
 ./scripts/demo/frontdoor.sh
@@ -22,25 +21,21 @@ Run the scripted terminal walkthrough:
 
 What it shows:
 
-- `gig` with no args opening the guided front door
+- `gig` opening the guided front door
 - saving a remote-style workarea
-- `gig` showing the current project shortcuts
-- `gig assist doctor` reporting DeerFlow readiness
-- `gig assist setup` bootstrapping the bundled sidecar config
-- `gig assist doctor` showing the next readiness state after bootstrap
+- re-opening `gig` with current-project shortcuts
+- `gig assist doctor` readiness output
+- `gig assist setup` bootstrap output
 
-The script is deterministic and does not need live provider login.
-It uses a temporary workarea file and a temporary DeerFlow fixture so it does not dirty the repo.
+The script is deterministic and does not require live provider access.
 
-## Record An Asciinema Cast
-
-If you have [`asciinema`](https://asciinema.org/) installed:
+## Record The Terminal Cast
 
 ```bash
 ./scripts/demo/record-frontdoor.sh
 ```
 
-That records the same walkthrough to:
+Default output:
 
 ```text
 docs/assets/gig-demo.cast
@@ -48,28 +43,65 @@ docs/assets/gig-demo.cast
 
 If `asciinema` is not installed, the script falls back to the deterministic local cast builder and still writes the same `.cast` file.
 
-You can also pass a custom output path:
+You can also choose a custom output path:
 
 ```bash
 ./scripts/demo/record-frontdoor.sh /tmp/gig-demo.cast
 ```
 
-## Recommended Use
+## Optional: Render Shareable Assets
 
-Use the scripted demo when you want:
+If you want a README- or social-friendly showcase asset:
 
-- a reliable terminal capture for README or docs updates
-- a short social clip showing the product direction
-- a portfolio artifact that highlights the front door and DeerFlow integration
+```bash
+./scripts/demo/render-share-assets.sh
+```
 
-For deeper product demos, start from this script and layer on real provider login plus live `inspect`, `verify`, or `assist audit` flows after the scripted onboarding section.
+Default outputs:
 
-## Static Demo Assets
+```text
+docs/assets/gig-showcase.gif
+docs/assets/gig-showcase.mp4
+```
 
-The README also uses static SVG mockups for the main product story:
+This script renders the repo's SVG demo states into PNG frames with `qlmanage`, then builds a short MP4 and GIF with `ffmpeg`.
 
+## Recommended Demo Sequence
+
+For a 45 to 60 second product demo, keep the flow tight:
+
+1. show `gig` with no arguments
+2. show one remote-style workarea being saved
+3. show `gig inspect` or the guided shortcut path
+4. show `gig verify` producing `safe`, `warning`, or `blocked`
+5. close with `gig manifest generate` or `gig assist audit`
+
+That sequence sells the strongest product story without drowning the viewer in command surface area.
+
+## Publishing Checklist
+
+Use the demo in these places:
+
+- README hero link or thumbnail
+- GitHub release notes
+- LinkedIn or X post with one clear sentence about the release-audit problem
+- portfolio page or job application follow-up
+
+When writing the caption, lead with:
+
+- multi-repo ticket reconciliation
+- remote-first release audit
+- deterministic evidence with optional AI explanation
+
+## Supporting Assets
+
+The repo already includes stable visual assets for documentation and project showcases:
+
+- `docs/assets/gig-showcase.gif`
+- `docs/assets/gig-showcase.mp4`
+- `docs/assets/gig-demo-thumbnail.svg`
 - `docs/assets/ticket-inspect-demo.svg`
 - `docs/assets/ticket-verify-demo.svg`
 - `docs/assets/ticket-assist-demo.svg`
 
-Use those when you want screenshot-like assets that stay stable across README renders and docs builds.
+Use those when you need a consistent visual story without rerecording screenshots.

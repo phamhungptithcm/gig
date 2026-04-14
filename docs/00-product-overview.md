@@ -1,134 +1,82 @@
 # Product Overview
 
-## What `gig` Is
+## Product In One Line
 
-`gig` is being repositioned as a remote-first release audit CLI for teams that move work by ticket across many repositories.
+`gig` is a remote-first release audit CLI that reconciles ticket evidence across repositories, verifies promotion readiness, and generates release-ready output.
 
-The core question stays the same:
+## The Problem
+
+Release teams rarely struggle to find Git history.
+They struggle to answer one operational question fast enough:
 
 `Did we miss any change for this ticket?`
 
-That question becomes hard when one ticket keeps picking up more commits across backend, frontend, database, scripts, and low-code assets before it is finally approved.
+That question gets harder when:
 
-## The Simple Promise
+- one ticket touches several repositories
+- QA or client review adds follow-up fixes
+- one missed DB, config, or dependency change can block a release
+- different stakeholders need the same facts in different formats
 
-Before someone moves a ticket or release forward, `gig` should help them answer:
+## The Promise
 
-- what changed for this ticket?
-- what is still missing?
-- what looks risky?
-- what should be reviewed by hand before approval?
+Before a team moves a ticket or release forward, `gig` should answer:
 
-## Product Direction
+- what changed for this ticket
+- what is still missing from the target path
+- what looks risky or still needs manual review
+- what evidence should be shared with QA, release, or client-facing stakeholders
 
-The intended direction is:
+## Core Workflow
 
-- login once to a remote provider and inspect live repository state
-- auto-detect branch topology, ticket evidence, and likely release paths
-- let users create workareas for each project so setup is remembered
-- give `gig` with no subcommand a guided terminal front door instead of only raw help text
-- keep config optional and only use it to improve quality or override detection
-- make the console UX clean enough that users can stay inside `gig` while working across many repos
+- remote-first repository inspection for GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
+- `inspect` for the full ticket story
+- `verify` for a `safe`, `warning`, or `blocked` release verdict
+- `manifest generate` for Markdown and JSON release packets
 
-## Who It Should Help Most
+## Why It Wins
 
-`gig` should be strongest for:
+- deterministic release reasoning instead of manual repo-by-repo checking
+- zero-config-first activation instead of config-heavy onboarding
+- reusable workareas for repeated project context
+- optional AI explanation layered on top of auditable source-control evidence
 
-- developers following one ticket across many repos
-- QA or UAT coordinators checking what changed since the last review cycle
-- release engineers who need a fast ticket audit before promotion
-- delivery leads who need confidence without manually reading every repo again
+## What Ships Today
 
-## What The Current Build Already Does Well
+The current build is already strong at:
 
-Today, the project already has useful release logic:
+- ticket inspection across repositories
+- release verification and risk inference
+- remote provider-backed inspection in supported live paths
+- snapshot and manifest generation
+- reusable workareas
+- local Git and SVN fallback flows
+- a guided terminal front door when users run `gig`
 
-- ticket inspection across repos
-- branch-to-branch verification
-- risk hints for DB, config, and Mendix-style changes
-- Markdown and JSON release packets
-- GitHub, GitLab, Bitbucket, and Azure DevOps-backed remote inspection for selected flows
-- remote SVN inspection with login-backed credentials
-- initial workarea save and switch flow for project defaults
-- a guided root dashboard when users run `gig` with no subcommand
-- a local `gig assist doctor` readiness check for the bundled DeerFlow sidecar
-- experimental DeerFlow-backed ticket, release, and conflict briefings built from `gig` evidence bundles
-- a local `gig assist setup` bootstrap for the bundled DeerFlow sidecar
-- local workspace scanning and optional config overrides
+## Product Boundary
 
-## Installation
+`gig` does not try to replace:
 
-The public npm package is `@phamhungptithcm/gig`, but the command you run after install stays `gig`.
+- code review systems
+- CI/CD systems
+- issue trackers
+- human release approval on risky changes
 
-Install with npm:
+It sits between repository history and release decisions.
 
-```bash
-npm install -g @phamhungptithcm/gig
-gig version
-```
+## Best Fit Users
 
-Upgrade an npm install:
+- developers and tech leads tracing the full scope of one ticket
+- QA or UAT coordinators validating what changed since the previous review round
+- release engineers deciding whether the next promotion is safe
+- delivery leads who need a clean audit trail without manually reopening every repository
 
-```bash
-gig update
-gig update v2026.04.09
-```
+## Success State
 
-If you prefer raw npm commands:
+The intended product experience is simple:
 
-```bash
-npm install -g @phamhungptithcm/gig@latest
-npm install -g @phamhungptithcm/gig@2026.4.9
-```
-
-For macOS and Linux without npm:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
-gig version
-```
-
-Update a direct install:
-
-```bash
-gig update
-```
-
-## What It Does Not Do Yet
-
-Today, `gig` does not:
-
-- give a zero-config first-run experience across all providers
-- provide the full keyboard-first console browser and drill-down UX the product needs yet
-- gather issue-tracker evidence yet
-- move commits or deploy anything for you
-
-The current AI briefing slice is optional and additive.
-It now supports audience-specific ticket briefs, release-level briefs from saved snapshots or live ticket sets, and local conflict-resolution briefs for active Git conflicts.
-Core release answers still come from deterministic `gig` services, not from an LLM guessing repository state.
-
-Those are product-direction gaps, not a change in purpose.
-The release-audit problem is still the center.
-
-## Why This Matters
-
-The problem is not only "find commits by ticket."
-
-The real problem is:
-
-- a ticket may fail review many times
-- different repos may move at different speeds
-- release managers can easily miss one late follow-up commit
-- DB, config, or Mendix changes may need manual review
-
-`gig` is meant to reduce those mistakes.
-
-## What Success Should Look Like
-
-After install, users should be able to:
-
-1. run `gig`
-2. log in once if needed
-3. pick or create a workarea for one project
-4. search a ticket online across remote branches
-5. understand risk and missing changes without wiring config first
+1. install `gig`
+2. run `gig`
+3. log in once to the right provider if needed
+4. inspect a ticket or verify the next move
+5. export a release packet or AI brief only when it helps
