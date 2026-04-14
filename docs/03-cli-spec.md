@@ -652,6 +652,7 @@ gig update v2026.04.09
 What it does:
 
 - npm installs run `npm install -g @phamhungptithcm/gig@latest`
+- if npm still returns `404`, the first package publish has not completed yet
 - `gig update vYYYY.MM.DD` maps the release tag to the matching npm package version automatically
 - direct installs re-run the official installer in the current binary directory
 - pinned versions are supported for npm and direct installs

@@ -194,10 +194,12 @@ print_next_steps() {
   cat <<EOF
 
 Next steps:
-1. Set GitHub repository variable:
+1. For fully automated releases, set repository secret:
+   gh secret set NPM_PUBLISH_TOKEN --repo ${github_repo}
+2. After the package exists, set GitHub repository variable:
    gh variable set NPM_TRUSTED_PUBLISHING --repo ${github_repo} --body true
-2. Run the Release workflow on main.
-3. After CI has run on main and staging, sync required checks:
+3. Run the Release workflow on main.
+4. After CI has run on main and staging, sync required checks:
    ./scripts/sync-required-checks.sh ${github_repo}
 EOF
 }
@@ -213,8 +215,9 @@ verify_setup() {
   cat <<EOF
 Package ${package_name} is not published yet.
 
-Run the first bootstrap publish:
-  ./scripts/npm-release.sh bootstrap
+Use one of these bootstrap paths:
+  1. Run ./scripts/npm-release.sh bootstrap
+  2. Set repo secret NPM_PUBLISH_TOKEN and let the Release workflow publish the first version on main
 EOF
 }
 

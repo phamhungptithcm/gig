@@ -58,7 +58,9 @@ Today, the project already has useful release logic:
 
 ## Installation
 
-The public npm package is `@phamhungptithcm/gig`, but the command you run after install stays `gig`.
+The intended public npm package is `@phamhungptithcm/gig`, and the command you run after install stays `gig`.
+Main release automation is now expected to publish that package automatically.
+If npm still returns `404`, the package has not completed its first bootstrap publish yet; use the direct installer until the next successful `main` release.
 
 Install with npm:
 

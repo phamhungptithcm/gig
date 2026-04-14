@@ -17,6 +17,9 @@ npm install -g @phamhungptithcm/gig
 gig version
 ```
 
+If npm returns `404`, the package has not completed its first bootstrap publish yet.
+Use the direct installer from the README or trigger the next `main` release after npm publishing is configured.
+
 ## What `gig` Helps You Answer
 
 Before release, teams often ask:
