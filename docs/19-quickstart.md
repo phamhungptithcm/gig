@@ -30,7 +30,14 @@ If npm returns `404`, the first package publish has not completed yet.
 gig
 ```
 
-If you are in an interactive terminal, `gig` can guide you toward the next useful action instead of dropping straight into raw help output.
+If you are in an interactive terminal, `gig` opens a picker-first front door:
+
+- use `↑/↓` to move
+- press `Enter` or `Space` to select
+- start with GitHub if you are not sure what to pick
+- use the current folder when you already have a repo checked out locally
+
+The goal is that a new user can get to the first audit without learning repo target syntax first.
 
 ## 3. Log In Once
 
@@ -96,6 +103,7 @@ gig verify --ticket ABC-123
 ```
 
 Use a workarea when you want `gig` to remember project scope and defaults so repeated commands stay short.
+You do not need this on day one because `gig` can also remember successful remote usage automatically.
 
 ## 8. Optional: Add An AI Briefing Layer
 

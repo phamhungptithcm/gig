@@ -252,7 +252,7 @@ func TestAppRootHelpGroupsCommonFlows(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "Start here") || !strings.Contains(stderr, "Common flows") || !strings.Contains(stderr, "Commands") {
+	if !strings.Contains(stderr, "First-time users") || !strings.Contains(stderr, "Core workflows") || !strings.Contains(stderr, "Commands") {
 		t.Fatalf("stderr = %q, want grouped help sections", stderr)
 	}
 	if !strings.Contains(stderr, "gig inspect ABC-123 --repo github:owner/name") {
@@ -342,20 +342,17 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Start here") {
-		t.Fatalf("stdout = %q, want quick-start heading", stdout)
+	if !strings.Contains(stdout, "Start with GitHub") {
+		t.Fatalf("stdout = %q, want GitHub-first heading", stdout)
 	}
-	if !strings.Contains(stdout, "gig inspect ABC-123 --repo github:owner/name") {
-		t.Fatalf("stdout = %q, want direct remote inspect hint", stdout)
+	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
+		t.Fatalf("stdout = %q, want guided picker hint", stdout)
 	}
 	if !strings.Contains(stdout, "gig remembers a successful remote repo as your current project automatically") {
 		t.Fatalf("stdout = %q, want implicit project-memory hint", stdout)
 	}
-	if !strings.Contains(stdout, "gig workarea add --provider github --use") {
-		t.Fatalf("stdout = %q, want optional workarea command", stdout)
-	}
-	if !strings.Contains(stdout, "Optional picker-first setup if you want to pin a project before running ticket commands.") {
-		t.Fatalf("stdout = %q, want optional workarea note", stdout)
+	if !strings.Contains(stdout, "Core workflows") || !strings.Contains(stdout, "Still local?") {
+		t.Fatalf("stdout = %q, want focused workflow sections", stdout)
 	}
 	if !strings.Contains(stdout, "gig assist doctor") {
 		t.Fatalf("stdout = %q, want DeerFlow doctor suggestion", stdout)
@@ -380,11 +377,11 @@ func TestAppFrontDoorQuickStartInspectsRepoTarget(t *testing.T) {
 	})
 	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "1\ngithub:acme/payments\nABC-123\n", workareaFile)
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "2\ngithub:acme/payments\nABC-123\n", workareaFile)
 	if exitCode != 0 {
 		t.Fatalf("front door quick-start exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Inspect now?") || !strings.Contains(stdout, "Repository target:") || !strings.Contains(stdout, "Ticket ID:") {
+	if !strings.Contains(stdout, "How do you want to start?") || !strings.Contains(stdout, "Repository target:") || !strings.Contains(stdout, "Ticket ID:") {
 		t.Fatalf("stdout = %q, want quick-start prompts", stdout)
 	}
 	if !strings.Contains(stdout, "github:acme/payments") || !strings.Contains(stdout, "Provider evidence") {
@@ -421,10 +418,10 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	if !strings.Contains(stdout, "Current project") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
 	}
-	if !strings.Contains(stdout, "Quick actions") || !strings.Contains(stdout, "gig assist audit --ticket ABC-123 --audience release-manager") {
-		t.Fatalf("stdout = %q, want guided quick actions", stdout)
+	if !strings.Contains(stdout, "Core workflows") || !strings.Contains(stdout, "gig manifest generate --ticket ABC-123") {
+		t.Fatalf("stdout = %q, want guided core workflows", stdout)
 	}
-	if !strings.Contains(stdout, "Run `gig` in a terminal to choose one of these actions interactively.") {
+	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
 		t.Fatalf("stdout = %q, want interactive action hint", stdout)
 	}
 }
@@ -452,7 +449,7 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndInspects(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door inspect exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "What do you want to do?") || !strings.Contains(stdout, "Choice (press Enter to stay on the dashboard):") {
+	if !strings.Contains(stdout, "What do you want to do next?") || !strings.Contains(stdout, "Choice or filter text") {
 		t.Fatalf("stdout = %q, want action picker", stdout)
 	}
 	if !strings.Contains(stdout, "Ticket ID:") {
@@ -491,7 +488,7 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndVerifies(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door verify exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "What do you want to do?") || !strings.Contains(stdout, "Ticket ID:") {
+	if !strings.Contains(stdout, "What do you want to do next?") || !strings.Contains(stdout, "Ticket ID:") {
 		t.Fatalf("stdout = %q, want action picker and ticket prompt", stdout)
 	}
 	if !strings.Contains(stdout, "Promotion") || !strings.Contains(stdout, "staging -> main") || !strings.Contains(stdout, "SAFE") {
@@ -2176,22 +2173,22 @@ func TestAppRootHelpReturnsZero(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("--help stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "gig <command> [flags]") {
+	if !strings.Contains(stderr, "gig [command] [flags]") {
 		t.Fatalf("--help stderr = %q, want root usage", stderr)
 	}
-	if !strings.Contains(stderr, "scan        Find repositories under a path") {
+	if !strings.Contains(stderr, "scan        Find repositories under a local path") {
 		t.Fatalf("--help stderr = %q, want command summary", stderr)
 	}
-	if !strings.Contains(stderr, "workarea    Save and switch project defaults for repeat use") {
+	if !strings.Contains(stderr, "workarea    Remember a project so later commands stay short") {
 		t.Fatalf("--help stderr = %q, want workarea command summary", stderr)
 	}
-	if !strings.Contains(stderr, "manifest    Generate a release packet for QA, client, and release review") {
+	if !strings.Contains(stderr, "manifest    Generate a release packet for QA and release review") {
 		t.Fatalf("--help stderr = %q, want manifest command summary", stderr)
 	}
 	if !strings.Contains(stderr, "snapshot    Save a repeatable ticket baseline for audit and re-check") {
 		t.Fatalf("--help stderr = %q, want snapshot command summary", stderr)
 	}
-	if !strings.Contains(stderr, "doctor      Check inferred topology, optional overrides, and repo health") {
+	if !strings.Contains(stderr, "doctor      Check inferred topology, overrides, and repo health") {
 		t.Fatalf("--help stderr = %q, want doctor command summary", stderr)
 	}
 	if !strings.Contains(stderr, "resolve     Inspect or resolve active Git merge conflicts") {

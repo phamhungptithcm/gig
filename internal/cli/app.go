@@ -2110,36 +2110,37 @@ func powerShellSingleQuote(value string) string {
 }
 func (a *App) printRootUsage() {
 	printHelpHeading(a.stderr, "gig", "Remote-first release audit CLI")
-	printHelpUsage(a.stderr, "gig <command> [flags]")
+	printHelpUsage(a.stderr, "gig [command] [flags]")
+	printHelpBullets(a.stderr, "First-time users",
+		"Run `gig` in a real terminal to open the guided picker.",
+		"Start with GitHub unless your repository lives elsewhere.",
+		"Learn `inspect`, `verify`, and `manifest generate` first.",
+	)
 	printHelpCommands(a.stderr, "Start here",
 		"gig",
 		"gig login github",
 		"gig inspect ABC-123 --repo github:owner/name",
-		"gig verify --ticket ABC-123 --repo github:owner/name",
 	)
-	printHelpCommands(a.stderr, "Common flows",
+	printHelpCommands(a.stderr, "Core workflows",
 		"gig inspect ABC-123",
 		"gig verify --ticket ABC-123",
-		"gig plan --ticket ABC-123",
 		"gig manifest generate --ticket ABC-123",
-		"gig assist doctor",
-		"gig assist setup",
-		"gig assist audit --ticket ABC-123 --repo github:owner/name",
+		"gig inspect ABC-123 --path .",
 	)
 	printHelpRows(a.stderr, "Commands",
-		helpRow{Label: "workarea", Value: "Save and switch project defaults for repeat use"},
-		helpRow{Label: "login", Value: "Authenticate to a live source-control provider"},
-		helpRow{Label: "scan", Value: "Find repositories under a path"},
-		helpRow{Label: "find", Value: "Find commits for one ticket"},
+		helpRow{Label: "workarea", Value: "Remember a project so later commands stay short"},
+		helpRow{Label: "login", Value: "Authenticate to a live provider such as GitHub"},
 		helpRow{Label: "inspect", Value: "Show the full ticket picture across repositories"},
-		helpRow{Label: "env status", Value: "Show where a ticket is present or behind across environments"},
-		helpRow{Label: "diff", Value: "Compare one branch to another for a ticket"},
 		helpRow{Label: "verify", Value: "Return safe, warning, or blocked for the next move"},
-		helpRow{Label: "plan", Value: "Build a read-only promotion plan"},
-		helpRow{Label: "manifest", Value: "Generate a release packet for QA, client, and release review"},
+		helpRow{Label: "manifest", Value: "Generate a release packet for QA and release review"},
+		helpRow{Label: "plan", Value: "Build a read-only promotion plan when you need more detail"},
+		helpRow{Label: "scan", Value: "Find repositories under a local path"},
+		helpRow{Label: "find", Value: "List raw commits for one ticket"},
+		helpRow{Label: "env status", Value: "Show where a ticket is present or behind"},
+		helpRow{Label: "diff", Value: "Compare one branch to another for a ticket"},
 		helpRow{Label: "snapshot", Value: "Save a repeatable ticket baseline for audit and re-check"},
-		helpRow{Label: "assist", Value: "Generate an AI briefing from gig evidence (experimental)"},
-		helpRow{Label: "doctor", Value: "Check inferred topology, optional overrides, and repo health"},
+		helpRow{Label: "assist", Value: "Add an optional AI briefing on top of gig evidence"},
+		helpRow{Label: "doctor", Value: "Check inferred topology, overrides, and repo health"},
 		helpRow{Label: "resolve", Value: "Inspect or resolve active Git merge conflicts"},
 		helpRow{Label: "update", Value: "Install the latest release or a specific version"},
 		helpRow{Label: "version", Value: "Show the installed version"},
@@ -2150,7 +2151,8 @@ func (a *App) printRootUsage() {
 
 func (a *App) printLoginUsage() {
 	fmt.Fprintln(a.stderr, "Usage: gig login <provider>")
-	fmt.Fprintln(a.stderr, "Providers: github, gitlab, bitbucket, azure-devops, svn")
+	fmt.Fprintln(a.stderr, "Start with: github")
+	fmt.Fprintln(a.stderr, "Other providers: gitlab, bitbucket, azure-devops, svn")
 }
 
 func (a *App) printScanUsage() {

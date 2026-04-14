@@ -38,6 +38,7 @@ Before a team moves a ticket or release forward, `gig` should answer:
 
 - deterministic release reasoning instead of manual repo-by-repo checking
 - zero-config-first activation instead of config-heavy onboarding
+- guided terminal onboarding so first-time users can pick a repo before they learn flags
 - reusable workareas for repeated project context
 - optional AI explanation layered on top of auditable source-control evidence
 
@@ -51,7 +52,7 @@ The current build is already strong at:
 - snapshot and manifest generation
 - reusable workareas
 - local Git and SVN fallback flows
-- a guided terminal front door when users run `gig`
+- a guided terminal front door with arrow-key selection when users run `gig`
 
 ## Installation Note
 

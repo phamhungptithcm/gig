@@ -20,6 +20,13 @@ gig verify --ticket ABC-123 --repo github:owner/name
 gig manifest generate --ticket ABC-123 --repo github:owner/name
 ```
 
+When users run `gig` in a real terminal, the front door should behave like a guided picker:
+
+- default to GitHub-first onboarding
+- let users choose with `↑/↓` and `Enter` instead of typing numbers
+- keep local-folder fallback visible
+- surface saved projects without forcing workarea setup first
+
 ## Command Groups
 
 | Command | Use it when you want to... |
@@ -47,7 +54,7 @@ gig
 ```
 
 Use this to open the guided front door.
-In an interactive terminal, `gig` can suggest the next useful action based on your current workarea or recent remote context.
+In an interactive terminal, `gig` should let users pick the next useful action with `↑/↓` and `Enter` based on their current project, saved workareas, or GitHub discovery flow.
 
 ### `gig login`
 

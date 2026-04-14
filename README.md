@@ -17,6 +17,7 @@ That question gets expensive when:
 - `inspect` collects the full ticket story across repositories and branches
 - `verify` returns a `safe`, `warning`, or `blocked` verdict
 - `manifest generate` exports a release packet in Markdown or JSON
+- `gig` opens a guided terminal front door so first-time users can pick a repo with ↑/↓ and Enter instead of memorizing flags
 
 Why teams adopt it:
 
@@ -51,6 +52,9 @@ gig inspect ABC-123 --repo github:owner/name
 gig verify --ticket ABC-123 --repo github:owner/name
 gig manifest generate --ticket ABC-123 --repo github:owner/name
 ```
+
+If you are brand new, start with `gig` first and use `↑/↓` then `Enter` to pick a GitHub repo, a saved project, or the current folder.
+If you already know the repo target, jump straight to `inspect`.
 
 Remote target forms:
 

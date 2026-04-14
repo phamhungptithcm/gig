@@ -3,10 +3,9 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
 	"gig/internal/output"
 	"gig/internal/sourcecontrol"
@@ -83,27 +82,67 @@ func (a *App) frontDoorPromptEnabled() bool {
 func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store, workareas []workarea.Definition) (int, error) {
 	reader := bufio.NewReader(a.stdin)
 
-	fmt.Fprintln(a.stdout)
-	fmt.Fprintln(a.stdout, "Inspect now?")
-	fmt.Fprintln(a.stdout, "  1. Enter a remote repo target")
-	fmt.Fprintln(a.stdout, "  2. Discover a repo from a provider")
-	if len(workareas) > 0 {
-		fmt.Fprintln(a.stdout, "  3. Use a saved workarea")
+	items := []pickerItem{
+		{
+			Value:    "discover-github",
+			Title:    "Pick a GitHub repository",
+			Subtitle: "Recommended first run. gig can browse your GitHub repos after login.",
+			Keywords: []string{"github", "recommended", "remote"},
+		},
+		{
+			Value:    "enter-target",
+			Title:    "Paste a repository target",
+			Subtitle: "Use a target like github:owner/name when you already know the repo.",
+			Keywords: []string{"repo", "target", "github:owner/name"},
+		},
+		{
+			Value:    "use-current-folder",
+			Title:    "Use the current folder",
+			Subtitle: "Local Git or SVN fallback if you already have the code checked out.",
+			Keywords: []string{"local", "path", "folder", "workspace"},
+		},
+		{
+			Value:    "discover-other-provider",
+			Title:    "Pick from another provider",
+			Subtitle: "GitLab, Bitbucket, Azure DevOps, or another supported remote source.",
+			Keywords: []string{"gitlab", "bitbucket", "azure", "provider"},
+		},
 	}
-	fmt.Fprintln(a.stdout, "Press Enter to skip.")
-	fmt.Fprint(a.stdout, "Choice: ")
+	if len(workareas) > 0 {
+		items = append(items, pickerItem{
+			Value:    "saved-workarea",
+			Title:    "Use a saved project",
+			Subtitle: "Reuse a remembered repo so you can skip provider and branch setup.",
+			Keywords: []string{"workarea", "saved", "project"},
+			Recent:   true,
+		})
+	}
 
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
+	fmt.Fprintln(a.stdout)
+	selected, err := a.runPicker(reader, "How do you want to start?", items)
+	if err != nil {
+		if errors.Is(err, errPickerCancelled) {
+			return 0, nil
+		}
 		return -1, err
 	}
-	choice := strings.TrimSpace(line)
-	if choice == "" {
-		return 0, nil
-	}
 
-	switch choice {
-	case "1", "repo", "target":
+	switch selected.Value {
+	case "discover-github":
+		repository, err := a.discoverWorkareaRepositoryWithReader(ctx, reader, "github", "", "")
+		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				return 0, nil
+			}
+			return -1, err
+		}
+		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		if err != nil {
+			return -1, err
+		}
+		return a.runInspect(ctx, []string{ticketID, "--repo", repository.Root}), nil
+	case "enter-target":
+		fmt.Fprintln(a.stdout, "Repository target example: github:owner/name")
 		repoTarget, err := a.promptForLine(reader, "Repository target")
 		if err != nil {
 			return -1, err
@@ -116,9 +155,18 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 			return -1, err
 		}
 		return a.runInspect(ctx, []string{ticketID, "--repo", repoTarget}), nil
-	case "2", "provider", "discover":
+	case "use-current-folder":
+		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		if err != nil {
+			return -1, err
+		}
+		return a.runInspect(ctx, []string{ticketID, "--path", "."}), nil
+	case "discover-other-provider":
 		repository, err := a.discoverWorkareaRepositoryWithReader(ctx, reader, "", "", "")
 		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				return 0, nil
+			}
 			return -1, err
 		}
 		ticketID, err := a.promptForLine(reader, "Ticket ID")
@@ -126,12 +174,12 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 			return -1, err
 		}
 		return a.runInspect(ctx, []string{ticketID, "--repo", repository.Root}), nil
-	case "3", "workarea":
-		if len(workareas) == 0 {
-			return -1, fmt.Errorf("no saved workareas are available")
-		}
+	case "saved-workarea":
 		name, err := a.promptForWorkareaSelectionWithReader(reader, store)
 		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				return 0, nil
+			}
 			return -1, err
 		}
 		if _, err := store.Use(name); err != nil {
@@ -143,27 +191,73 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 		}
 		return a.runInspect(ctx, []string{ticketID}), nil
 	default:
-		return -1, fmt.Errorf("invalid quick-start choice %q", choice)
+		return -1, fmt.Errorf("invalid quick-start choice %q", selected.Value)
 	}
 }
 
 func (a *App) runFrontDoorCurrentProjectAction(ctx context.Context) (int, error) {
 	reader := bufio.NewReader(a.stdin)
 
-	fmt.Fprintln(a.stdout)
-	fmt.Fprintln(a.stdout, "What do you want to do?")
-	fmt.Fprintln(a.stdout, "  1. Inspect ticket")
-	fmt.Fprintln(a.stdout, "  2. Verify ticket")
-	fmt.Fprintln(a.stdout, "  3. Generate manifest")
-	fmt.Fprintln(a.stdout, "  4. AI brief")
-	fmt.Fprint(a.stdout, "Choice (press Enter to stay on the dashboard): ")
-
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
+	store, err := workarea.NewStore()
+	if err != nil {
 		return -1, err
 	}
-	choice := strings.ToLower(strings.TrimSpace(line))
-	if choice == "" {
+	workareas, _, err := store.List()
+	if err != nil {
+		return -1, err
+	}
+
+	items := []pickerItem{
+		{
+			Value:    "inspect",
+			Title:    "Inspect one ticket",
+			Subtitle: "See every commit, branch, PR, and risk hint for a ticket.",
+			Keywords: []string{"inspect", "ticket", "audit"},
+		},
+		{
+			Value:    "verify",
+			Title:    "Verify release readiness",
+			Subtitle: "Get a safe, warning, or blocked verdict for the next move.",
+			Keywords: []string{"verify", "safe", "blocked", "warning"},
+		},
+		{
+			Value:    "manifest",
+			Title:    "Generate a release packet",
+			Subtitle: "Export Markdown or JSON for QA, client review, and handoff.",
+			Keywords: []string{"manifest", "packet", "release"},
+		},
+	}
+	if len(workareas) > 1 {
+		items = append(items, pickerItem{
+			Value:    "switch-workarea",
+			Title:    "Switch saved project",
+			Subtitle: "Change the current project before you run the next ticket command.",
+			Keywords: []string{"switch", "workarea", "project"},
+			Recent:   true,
+		})
+	}
+
+	fmt.Fprintln(a.stdout)
+	selected, err := a.runPicker(reader, "What do you want to do next?", items)
+	if err != nil {
+		if errors.Is(err, errPickerCancelled) {
+			return 0, nil
+		}
+		return -1, err
+	}
+
+	if selected.Value == "switch-workarea" {
+		name, err := a.promptForWorkareaSelectionWithReader(reader, store)
+		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				return 0, nil
+			}
+			return -1, err
+		}
+		if _, err := store.Use(name); err != nil {
+			return -1, err
+		}
+		fmt.Fprintf(a.stdout, "Current project switched to %s.\n", name)
 		return 0, nil
 	}
 
@@ -172,16 +266,14 @@ func (a *App) runFrontDoorCurrentProjectAction(ctx context.Context) (int, error)
 		return -1, err
 	}
 
-	switch choice {
-	case "1", "inspect", "i":
+	switch selected.Value {
+	case "inspect":
 		return a.runInspect(ctx, []string{ticketID}), nil
-	case "2", "verify", "v":
+	case "verify":
 		return a.runVerify(ctx, []string{"--ticket", ticketID}), nil
-	case "3", "manifest", "m":
+	case "manifest":
 		return a.runManifestGenerate(ctx, []string{"--ticket", ticketID}), nil
-	case "4", "assist", "audit", "ai", "brief":
-		return a.runAssistAudit(ctx, []string{"--ticket", ticketID}), nil
 	default:
-		return -1, fmt.Errorf("invalid front-door choice %q", choice)
+		return -1, fmt.Errorf("invalid front-door choice %q", selected.Value)
 	}
 }

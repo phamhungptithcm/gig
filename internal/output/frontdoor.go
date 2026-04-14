@@ -39,18 +39,17 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		if err := ui.Blank(); err != nil {
 			return err
 		}
-		if err := ui.Section("Quick actions"); err != nil {
+		if err := ui.Section("Core workflows"); err != nil {
 			return err
 		}
 		if err := ui.Commands(
 			"gig inspect ABC-123",
 			"gig verify --ticket ABC-123",
 			"gig manifest generate --ticket ABC-123",
-			"gig assist audit --ticket ABC-123 --audience release-manager",
 		); err != nil {
 			return err
 		}
-		if err := ui.Note("Run `gig` in a terminal to choose one of these actions interactively."); err != nil {
+		if err := ui.Note("Run `gig` in a real terminal and use ↑/↓ then Enter to choose the next action."); err != nil {
 			return err
 		}
 		if len(state.Workareas) > 1 {
@@ -65,23 +64,51 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			}
 		}
 	} else {
-		if err := ui.Section("Start here"); err != nil {
+		if err := ui.Section("Start with GitHub"); err != nil {
 			return err
 		}
 		if err := ui.Commands(
+			"gig",
 			"gig login github",
 			"gig inspect ABC-123 --repo github:owner/name",
-			"gig verify --ticket ABC-123 --repo github:owner/name",
 		); err != nil {
+			return err
+		}
+		if err := ui.Note("Run `gig` in a real terminal and use ↑/↓ then Enter if you want gig to guide you to the right repo first."); err != nil {
 			return err
 		}
 		if err := ui.Note("gig remembers a successful remote repo as your current project automatically."); err != nil {
 			return err
 		}
-		if err := ui.Commands("gig workarea add --provider github --use"); err != nil {
+		if err := ui.Blank(); err != nil {
 			return err
 		}
-		if err := ui.Note("Optional picker-first setup if you want to pin a project before running ticket commands."); err != nil {
+		if err := ui.Section("Core workflows"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig inspect ABC-123 --repo github:owner/name",
+			"gig verify --ticket ABC-123 --repo github:owner/name",
+			"gig manifest generate --ticket ABC-123 --repo github:owner/name",
+		); err != nil {
+			return err
+		}
+		if err := ui.Note("These three commands are the main path. Most teams do not need to learn the rest on day one."); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Still local?"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig inspect ABC-123 --path .",
+			"gig verify --ticket ABC-123 --path .",
+		); err != nil {
+			return err
+		}
+		if err := ui.Note("Local Git and SVN still work when you already have a repo checked out."); err != nil {
 			return err
 		}
 		if len(state.Workareas) > 0 {
@@ -117,7 +144,7 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		return err
 	}
 	if state.Current != nil {
-		if err := ui.Commands("gig assist release --release rel-2026-04-09 --path ."); err != nil {
+		if err := ui.Commands("gig assist audit --ticket ABC-123 --audience release-manager"); err != nil {
 			return err
 		}
 	}
