@@ -101,6 +101,18 @@ func (s *Session) Login(ctx context.Context) error {
 	return nil
 }
 
+func (s *Session) Status(ctx context.Context) error {
+	if email, token, ok := envCredentials(); ok {
+		return s.status(ctx, credentials{Email: email, APIToken: token})
+	}
+
+	creds, err := s.credentialStore().Load()
+	if err != nil {
+		return err
+	}
+	return s.status(ctx, creds)
+}
+
 func (s *Session) Credentials(context.Context) (credentials, error) {
 	return s.loadCredentials()
 }

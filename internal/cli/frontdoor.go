@@ -11,6 +11,7 @@ import (
 
 	"gig/internal/buildinfo"
 	"gig/internal/output"
+	"gig/internal/scm"
 	"gig/internal/sourcecontrol"
 	"gig/internal/workarea"
 
@@ -37,11 +38,8 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 		current = &definition
 	}
 
-	if err := output.RenderFrontDoor(a.stdout, output.FrontDoorState{
-		Current:   current,
-		Workareas: workareas,
-		Version:   buildinfo.Version,
-	}); err != nil {
+	state := a.buildFrontDoorState(ctx, current, workareas)
+	if err := output.RenderFrontDoor(a.stdout, state); err != nil {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
@@ -75,6 +73,102 @@ func (a *App) frontDoorPromptEnabled() bool {
 	return false
 }
 
+func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definition, workareas []workarea.Definition) output.FrontDoorState {
+	state := output.FrontDoorState{
+		Current:   current,
+		Workareas: workareas,
+		Version:   buildinfo.Version,
+	}
+
+	if current != nil {
+		state.HeroStatus = "current project ready"
+		state.Prompt = "ask gig > ABC-123"
+		state.Examples = []string{
+			"verify ABC-123",
+			"manifest ABC-123",
+			"switch",
+		}
+		if provider, label, ok := frontDoorWorkareaProvider(*current); ok {
+			providerStatus := a.frontDoorProviderStatus(ctx, provider)
+			state.HeroStatus = formatFrontDoorProviderStatus(label, providerStatus)
+			state.StatusRows = append(state.StatusRows,
+				output.KeyValue{Label: "Mode", Value: "current project"},
+				output.KeyValue{Label: "Provider", Value: formatFrontDoorProviderStatus(label, providerStatus)},
+			)
+			if !providerStatus.Ready && providerStatus.Detail != "" {
+				state.Examples = []string{
+					"login " + strings.ToLower(string(provider)),
+					"ABC-123",
+					"verify ABC-123",
+				}
+			}
+		} else {
+			state.StatusRows = append(state.StatusRows,
+				output.KeyValue{Label: "Mode", Value: "current project"},
+				output.KeyValue{Label: "Provider", Value: "local workspace"},
+			)
+		}
+	} else {
+		githubStatus := a.frontDoorProviderStatus(ctx, scm.TypeGitHub)
+		state.HeroStatus = "no project selected yet"
+		state.StatusRows = append(state.StatusRows,
+			output.KeyValue{Label: "Mode", Value: "new session"},
+			output.KeyValue{Label: "Provider", Value: formatFrontDoorProviderStatus(sourcecontrol.ProviderLabel(scm.TypeGitHub), githubStatus)},
+		)
+		state.Prompt = "ask gig > repo github:owner/name ABC-123"
+		state.Examples = []string{
+			"ABC-123",
+			"repo github:owner/name ABC-123",
+			"login github",
+		}
+		if githubStatus.Ready {
+			state.Prompt = "ask gig > ABC-123"
+			state.Examples = []string{
+				"ABC-123",
+				"repo github:owner/name ABC-123",
+				"verify ABC-123 github:owner/name",
+			}
+		}
+	}
+
+	if len(workareas) > 0 {
+		state.StatusRows = append(state.StatusRows, output.KeyValue{Label: "Saved", Value: fmt.Sprintf("%d project(s)", len(workareas))})
+	}
+
+	return state
+}
+
+func (a *App) frontDoorProviderStatus(ctx context.Context, provider scm.Type) sourcecontrol.ProviderStatus {
+	if !a.terminalPickerEnabled() {
+		return sourcecontrol.ProviderStatus{Provider: provider, Detail: "not checked"}
+	}
+	return sourcecontrol.CheckProviderStatus(ctx, provider, a.stdin)
+}
+
+func formatFrontDoorProviderStatus(label string, status sourcecontrol.ProviderStatus) string {
+	detail := strings.TrimSpace(status.Detail)
+	switch {
+	case detail == "":
+		return label
+	case detail == "not checked":
+		return label + " first-run path"
+	default:
+		return fmt.Sprintf("%s %s", label, detail)
+	}
+}
+
+func frontDoorWorkareaProvider(definition workarea.Definition) (scm.Type, string, bool) {
+	repoTarget := strings.TrimSpace(definition.RepoTarget)
+	if repoTarget == "" {
+		return "", "", false
+	}
+	repositories, err := sourcecontrol.ParseRepositoryTargets(repoTarget)
+	if err != nil || len(repositories) != 1 {
+		return "", "", false
+	}
+	return repositories[0].Type, sourcecontrol.ProviderLabel(repositories[0].Type), true
+}
+
 type frontDoorAction string
 
 const (
@@ -100,8 +194,6 @@ type frontDoorCommand struct {
 
 func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, store *workarea.Store, current *workarea.Definition, workareas []workarea.Definition) (int, error) {
 	fmt.Fprintln(a.stdout)
-	fmt.Fprintln(a.stdout, "Type a ticket or command. Try: ABC-123 | inspect ABC-123 | verify ABC-123 | repo github:owner/name | login github")
-	fmt.Fprintln(a.stdout, "Press Enter to open the picker.")
 	fmt.Fprint(a.stdout, "ask gig > ")
 
 	line, err := reader.ReadString('\n')

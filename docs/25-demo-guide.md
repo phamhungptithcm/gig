@@ -7,6 +7,7 @@ This page shows the fastest way to produce a clean, repeatable demo for `gig`.
 `gig` lands best when people can see the product promise quickly:
 
 - guided CLI front door
+- command-palette front door that accepts ticket-like queries
 - remote-first workflow
 - clear ticket audit
 - release verdict instead of raw Git output
@@ -22,6 +23,7 @@ A strong demo helps docs, portfolio pages, hiring conversations, and GitHub star
 What it shows:
 
 - `gig` opening the guided front door
+- the branded `googling in git` terminal layout
 - saving a remote-style workarea
 - re-opening `gig` with current-project shortcuts
 - `gig assist doctor` readiness output
@@ -71,10 +73,10 @@ This script renders the repo's SVG demo states into PNG frames with `qlmanage`, 
 For a 45 to 60 second product demo, keep the flow tight:
 
 1. show `gig` with no arguments
-2. show one remote-style workarea being saved
-3. show `gig inspect` or the guided shortcut path
-4. show `gig verify` producing `safe`, `warning`, or `blocked`
-5. close with `gig manifest generate` or `gig assist audit`
+2. show the command palette idea: `ABC-123` or `repo github:owner/name ABC-123`
+3. show one remote-style workarea being saved
+4. show `gig inspect` or the guided shortcut path
+5. close with `gig verify`, `gig manifest generate`, or `gig assist audit`
 
 That sequence sells the strongest product story without drowning the viewer in command surface area.
 
@@ -89,6 +91,7 @@ Use the demo in these places:
 
 When writing the caption, lead with:
 
+- `gig = googling in git`
 - multi-repo ticket reconciliation
 - remote-first release audit
 - deterministic evidence with optional AI explanation

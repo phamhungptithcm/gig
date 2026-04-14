@@ -345,6 +345,9 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if !strings.Contains(stdout, "googling in git") || !strings.Contains(stdout, "status:  no project selected yet") || !strings.Contains(stdout, "input:   ticket, command, or Enter for picker") {
 		t.Fatalf("stdout = %q, want branded hero state", stdout)
 	}
+	if !strings.Contains(stdout, "Startup status") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > repo github:owner/name ABC-123") {
+		t.Fatalf("stdout = %q, want startup status and prompt box", stdout)
+	}
 	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
 		t.Fatalf("stdout = %q, want guided picker hint", stdout)
 	}
@@ -417,6 +420,9 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") || !strings.Contains(stdout, "input:   ticket or command palette") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
+	}
+	if !strings.Contains(stdout, "Startup status") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > ABC-123") {
+		t.Fatalf("stdout = %q, want current-project prompt box", stdout)
 	}
 	if !strings.Contains(stdout, "Quick commands") || !strings.Contains(stdout, "gig manifest generate --ticket ABC-123") {
 		t.Fatalf("stdout = %q, want guided core workflows", stdout)

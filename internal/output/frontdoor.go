@@ -9,9 +9,13 @@ import (
 )
 
 type FrontDoorState struct {
-	Current   *workarea.Definition  `json:"current,omitempty"`
-	Workareas []workarea.Definition `json:"workareas,omitempty"`
-	Version   string                `json:"version,omitempty"`
+	Current    *workarea.Definition  `json:"current,omitempty"`
+	Workareas  []workarea.Definition `json:"workareas,omitempty"`
+	Version    string                `json:"version,omitempty"`
+	HeroStatus string                `json:"heroStatus,omitempty"`
+	StatusRows []KeyValue            `json:"statusRows,omitempty"`
+	Prompt     string                `json:"prompt,omitempty"`
+	Examples   []string              `json:"examples,omitempty"`
 }
 
 func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
@@ -22,6 +26,17 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 	}
 	if err := ui.Blank(); err != nil {
 		return err
+	}
+	if len(state.StatusRows) > 0 {
+		if err := ui.Section("Startup status"); err != nil {
+			return err
+		}
+		if err := ui.Rows(state.StatusRows...); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
 	}
 
 	if state.Current != nil {
@@ -193,7 +208,17 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 	if err := ui.Section("More help"); err != nil {
 		return err
 	}
-	return ui.Commands("gig --help")
+	if err := ui.Commands("gig --help"); err != nil {
+		return err
+	}
+
+	if err := ui.Blank(); err != nil {
+		return err
+	}
+	if err := ui.Section("Try one line"); err != nil {
+		return err
+	}
+	return renderPromptBox(w, ui, blankAsDefault(state.Prompt, "ask gig > ABC-123"), state.Examples)
 }
 
 func renderFrontDoorHero(w io.Writer, ui Console, state FrontDoorState) error {
@@ -214,9 +239,9 @@ func renderFrontDoorHero(w io.Writer, ui Console, state FrontDoorState) error {
 			"mode:    guided terminal front door",
 			"input:   ticket, command, or Enter for picker",
 			"focus:   inspect | verify | manifest",
-			"status:  no project selected yet",
 		)
 	}
+	lines = append(lines, fmt.Sprintf("status:  %s", blankAsDefault(state.HeroStatus, "no project selected yet")))
 
 	return writeFrontDoorBox(w, ui, lines)
 }
@@ -251,6 +276,39 @@ func writeFrontDoorBox(w io.Writer, ui Console, lines []string) error {
 	}
 	_, err := fmt.Fprintln(w, ui.Emphasis(border))
 	return err
+}
+
+func renderPromptBox(w io.Writer, ui Console, prompt string, examples []string) error {
+	width := len(prompt)
+	for _, example := range examples {
+		if len(example) > width {
+			width = len(example)
+		}
+	}
+	if width < 28 {
+		width = 28
+	}
+
+	border := "+" + strings.Repeat("-", width+2) + "+"
+	if _, err := fmt.Fprintln(w, ui.Emphasis(border)); err != nil {
+		return err
+	}
+	paddedPrompt := prompt + strings.Repeat(" ", width-len(prompt))
+	if _, err := fmt.Fprintf(w, "%s %s %s\n", ui.Emphasis("|"), ui.Command(paddedPrompt), ui.Emphasis("|")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, ui.Emphasis(border)); err != nil {
+		return err
+	}
+	for _, example := range examples {
+		if strings.TrimSpace(example) == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "  %s %s\n", ui.Muted("try"), example); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func formatFrontDoorPromotion(definition workarea.Definition) string {
