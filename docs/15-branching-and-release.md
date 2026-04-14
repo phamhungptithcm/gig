@@ -34,8 +34,17 @@ The release workflow is split into:
 - GitHub Release publication
 - npm publication after release assets exist
 
-npm publication uses trusted publishing through GitHub Actions OIDC.
-That means the safer setup is:
+npm publication is now a release requirement.
+If neither trusted publishing nor a token fallback is configured, the release workflow fails during verification before it creates a GitHub Release.
+
+npm publication supports two modes:
+
+1. `trusted`
+   steady-state publish through GitHub Actions OIDC after the package already exists on npm
+2. `token`
+   bootstrap or fallback publish through repository secret `NPM_PUBLISH_TOKEN`
+
+The safer steady-state setup is:
 
 1. open npm package settings for `@phamhungptithcm/gig`
 2. add a trusted publisher for GitHub Actions
@@ -49,9 +58,9 @@ That means the safer setup is:
 Bootstrap note:
 
 - npm trusted publisher settings live on the package, so `@phamhungptithcm/gig` usually needs to exist first
-- if this is the first npm publish for the package, create it once with a manual local `npm publish --access public`
-- after the package exists, configure trusted publishing on npm, verify one GitHub Actions publish, then revoke the old publish token
-- until that setup is complete, the release workflow will still publish GitHub Release assets but will intentionally skip npm publication
+- for the first publish, set repository secret `NPM_PUBLISH_TOKEN` so the release workflow can bootstrap the package automatically from GitHub Actions
+- after the package exists, configure trusted publishing on npm, verify one GitHub Actions publish, then remove the token fallback if you no longer want it
+- if you leave `NPM_PUBLISH_TOKEN` configured, the workflow can still use it as an emergency fallback when trusted publishing is not enabled
 
 ## Easiest Bootstrap Commands
 
@@ -73,7 +82,7 @@ make npm-release-bootstrap
 What each command does:
 
 - `prepare`: open a searchable release-tag selector, stage the npm package, and run `npm pack --dry-run`
-- `bootstrap`: open the same selector, publish the first package version, configure npm trusted publishing, verify npm state, and print the exact next commands
+- `bootstrap`: open the same selector, publish the first package version locally, configure npm trusted publishing, verify npm state, and print the exact next commands
 - `verify`: show the published version and trusted publisher configuration
 
 If `fzf` is installed, the selector behaves like a searchable dropdown with type-to-filter.
@@ -84,6 +93,7 @@ Important setup details:
 - the workflow filename is case-sensitive and must match `release.yml` exactly
 - trusted publishing works on GitHub-hosted runners, which this workflow uses
 - automatic provenance on npm requires a public package published from a public repository
+- the first publish can now be done through GitHub Actions by setting repository secret `NPM_PUBLISH_TOKEN`
 - `package.json` repository metadata must continue to match `https://github.com/phamhungptithcm/gig.git`
 - after the first successful trusted publish, switch the npm package to `Require two-factor authentication and disallow tokens`
 

@@ -11,52 +11,42 @@ import (
 )
 
 func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error {
-	if _, err := fmt.Fprintf(w, "Ticket %s\n", promotionPlan.TicketID); err != nil {
+	ui := NewConsole(w)
+
+	if err := ui.Title(fmt.Sprintf("Plan %s", promotionPlan.TicketID)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "Promotion: %s -> %s\n", promotionPlan.FromBranch, promotionPlan.ToBranch); err != nil {
+	if err := ui.Rows(
+		KeyValue{Label: "Promotion", Value: fmt.Sprintf("%s -> %s", promotionPlan.FromBranch, promotionPlan.ToBranch)},
+		KeyValue{Label: "Verdict", Value: ui.Verdict(string(promotionPlan.Verdict))},
+		KeyValue{Label: "Environments", Value: formatEnvironments(promotionPlan.Environments)},
+		KeyValue{Label: "Repositories", Value: fmt.Sprintf("%d touched / %d scanned", promotionPlan.Summary.TouchedRepositories, promotionPlan.Summary.ScannedRepositories)},
+		KeyValue{Label: "Commits", Value: pluralizeCount(promotionPlan.Summary.TotalCommitsToPromote, "commit to include", "commits to include")},
+		KeyValue{Label: "Manual steps", Value: pluralizeCount(promotionPlan.Summary.TotalManualSteps, "manual step", "manual steps")},
+	); err != nil {
 		return err
 	}
-	if len(promotionPlan.Environments) > 0 {
-		if _, err := fmt.Fprintf(w, "Environments: %s\n", formatEnvironments(promotionPlan.Environments)); err != nil {
-			return err
-		}
-	}
-	if _, err := fmt.Fprintf(w, "Verdict: %s\n", promotionPlan.Verdict); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "Scanned repositories: %d\n", promotionPlan.Summary.ScannedRepositories); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "Touched repositories: %d\n\n", promotionPlan.Summary.TouchedRepositories); err != nil {
+	if err := ui.Blank(); err != nil {
 		return err
 	}
 
 	if len(promotionPlan.Notes) > 0 {
-		if _, err := fmt.Fprintln(w, "Summary"); err != nil {
+		if err := ui.Section("Release summary"); err != nil {
 			return err
 		}
-		for _, note := range promotionPlan.Notes {
-			if _, err := fmt.Fprintf(w, "  - %s\n", note); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintf(w, "  - ready repositories: %d\n", promotionPlan.Summary.ReadyRepositories); err != nil {
+		if err := ui.Bullets(promotionPlan.Notes...); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "  - warning repositories: %d\n", promotionPlan.Summary.WarningRepositories); err != nil {
+		if err := ui.Bullets(
+			fmt.Sprintf("%d ready repos", promotionPlan.Summary.ReadyRepositories),
+			fmt.Sprintf("%d warning repos", promotionPlan.Summary.WarningRepositories),
+			fmt.Sprintf("%d blocked repos", promotionPlan.Summary.BlockedRepositories),
+			pluralizeCount(promotionPlan.Summary.TotalCommitsToPromote, "commit to promote", "commits to promote"),
+			pluralizeCount(promotionPlan.Summary.TotalManualSteps, "manual step", "manual steps"),
+		); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "  - blocked repositories: %d\n", promotionPlan.Summary.BlockedRepositories); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(w, "  - commits to promote: %d\n", promotionPlan.Summary.TotalCommitsToPromote); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(w, "  - manual steps: %d\n", promotionPlan.Summary.TotalManualSteps); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintln(w); err != nil {
+		if err := ui.Blank(); err != nil {
 			return err
 		}
 	}
@@ -66,63 +56,73 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 		return err
 	}
 
+	if err := ui.Section("Recommended next step"); err != nil {
+		return err
+	}
+	switch promotionPlan.Verdict {
+	case plansvc.VerdictSafe:
+		if err := ui.Bullets("Run " + ui.Command("gig manifest generate --ticket "+promotionPlan.TicketID) + " with the same scope to prepare the release packet."); err != nil {
+			return err
+		}
+	default:
+		if err := ui.Bullets("Review blocked repositories, dependency gaps, and manual steps below before promoting this ticket."); err != nil {
+			return err
+		}
+	}
+	if err := ui.Blank(); err != nil {
+		return err
+	}
+
 	for i, repositoryPlan := range promotionPlan.Repositories {
-		if _, err := fmt.Fprintf(w, "[%s] %s (%s)\n", repositoryPlan.Repository.Name, repositoryPlan.Repository.Root, repositoryPlan.Repository.Type); err != nil {
+		if err := ui.Section(fmt.Sprintf("Repository %s", repositoryPlan.Repository.Name)); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "  verdict: %s\n", repositoryPlan.Verdict); err != nil {
+		if err := ui.NestedRows(
+			KeyValue{Label: "Scope", Value: fmt.Sprintf("%s (%s)", repositoryPlan.Repository.Root, repositoryPlan.Repository.Type)},
+			KeyValue{Label: "Verdict", Value: ui.Verdict(string(repositoryPlan.Verdict))},
+			KeyValue{Label: "Source commits", Value: fmt.Sprintf("%d on %s", len(repositoryPlan.Compare.SourceCommits), promotionPlan.FromBranch)},
+			KeyValue{Label: "Target commits", Value: fmt.Sprintf("%d on %s", len(repositoryPlan.Compare.TargetCommits), promotionPlan.ToBranch)},
+			KeyValue{Label: "To include", Value: pluralizeCount(len(repositoryPlan.Compare.MissingCommits), "commit", "commits")},
+			KeyValue{Label: "Branches", Value: strings.Join(repositoryPlan.Branches, ", ")},
+		); err != nil {
 			return err
-		}
-		if _, err := fmt.Fprintf(w, "  source commits on %s: %d\n", promotionPlan.FromBranch, len(repositoryPlan.Compare.SourceCommits)); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(w, "  target commits on %s: %d\n", promotionPlan.ToBranch, len(repositoryPlan.Compare.TargetCommits)); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(w, "  commits to include: %d\n", len(repositoryPlan.Compare.MissingCommits)); err != nil {
-			return err
-		}
-		if len(repositoryPlan.Branches) > 0 {
-			if _, err := fmt.Fprintf(w, "  branches seen: %s\n", strings.Join(repositoryPlan.Branches, ", ")); err != nil {
-				return err
-			}
 		}
 		if len(repositoryPlan.EnvironmentStatuses) > 0 {
-			if _, err := fmt.Fprintln(w, "  environment status:"); err != nil {
+			if err := ui.NestedSection("Environment status"); err != nil {
 				return err
 			}
 			for _, status := range repositoryPlan.EnvironmentStatuses {
-				if _, err := fmt.Fprintf(w, "    - %s\n", formatEnvironmentStatus(status)); err != nil {
+				if err := ui.NestedBullets(formatEnvironmentStatus(status)); err != nil {
 					return err
 				}
 			}
 		}
 		if len(repositoryPlan.RiskSignals) > 0 {
-			if _, err := fmt.Fprintln(w, "  risk signals:"); err != nil {
+			if err := ui.NestedSection("Risk signals"); err != nil {
 				return err
 			}
 			for _, riskSignal := range repositoryPlan.RiskSignals {
-				line := fmt.Sprintf("    - %s (%s)", riskSignal.Code, riskSignal.Level)
+				line := fmt.Sprintf("%s (%s)", riskSignal.Code, riskSignal.Level)
 				if riskSignal.Summary != "" {
 					line += ": " + riskSignal.Summary
 				}
-				if _, err := fmt.Fprintln(w, line); err != nil {
+				if err := ui.NestedBullets(line); err != nil {
 					return err
 				}
 			}
 		}
 		if len(repositoryPlan.DependencyResolutions) > 0 {
-			if _, err := fmt.Fprintln(w, "  dependency status:"); err != nil {
+			if err := ui.NestedSection("Dependency status"); err != nil {
 				return err
 			}
 			for _, resolution := range repositoryPlan.DependencyResolutions {
-				if _, err := fmt.Fprintf(w, "    - %s\n", formatDependencyResolution(resolution, promotionPlan.FromBranch, promotionPlan.ToBranch)); err != nil {
+				if err := ui.NestedBullets(formatDependencyResolution(resolution, promotionPlan.FromBranch, promotionPlan.ToBranch)); err != nil {
 					return err
 				}
 			}
 		}
 		if repositoryPlan.ProviderEvidence != nil && (len(repositoryPlan.ProviderEvidence.PullRequests) > 0 || len(repositoryPlan.ProviderEvidence.Deployments) > 0) {
-			if _, err := fmt.Fprintln(w, "  provider evidence:"); err != nil {
+			if err := ui.NestedSection("Provider evidence"); err != nil {
 				return err
 			}
 			if err := renderProviderEvidence(w, *repositoryPlan.ProviderEvidence, "    "); err != nil {
@@ -130,41 +130,41 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 			}
 		}
 		if len(repositoryPlan.ManualSteps) > 0 {
-			if _, err := fmt.Fprintln(w, "  manual steps:"); err != nil {
+			if err := ui.NestedSection("Manual steps"); err != nil {
 				return err
 			}
 			for _, step := range repositoryPlan.ManualSteps {
-				if _, err := fmt.Fprintf(w, "    - %s\n", step.Summary); err != nil {
+				if err := ui.NestedBullets(step.Summary); err != nil {
 					return err
 				}
 			}
 		}
 		if len(repositoryPlan.Actions) > 0 {
-			if _, err := fmt.Fprintln(w, "  plan actions:"); err != nil {
+			if err := ui.NestedSection("Plan actions"); err != nil {
 				return err
 			}
 			for _, action := range repositoryPlan.Actions {
-				if _, err := fmt.Fprintf(w, "    - %s\n", action.Summary); err != nil {
+				if err := ui.NestedBullets(action.Summary); err != nil {
 					return err
 				}
 			}
 		}
 		if len(repositoryPlan.Notes) > 0 {
-			if _, err := fmt.Fprintln(w, "  notes:"); err != nil {
+			if err := ui.NestedSection("Notes"); err != nil {
 				return err
 			}
 			for _, note := range repositoryPlan.Notes {
-				if _, err := fmt.Fprintf(w, "    - %s\n", note); err != nil {
+				if err := ui.NestedBullets(note); err != nil {
 					return err
 				}
 			}
 		}
 		if len(repositoryPlan.Compare.MissingCommits) > 0 {
-			if _, err := fmt.Fprintln(w, "  commits to include:"); err != nil {
+			if err := ui.NestedSection("Commits to include"); err != nil {
 				return err
 			}
 			for _, commit := range repositoryPlan.Compare.MissingCommits {
-				if _, err := fmt.Fprintf(w, "    - %s  %s\n", commit.ShortHash(), commit.Subject); err != nil {
+				if err := ui.NestedBullets(fmt.Sprintf("%s  %s", commit.ShortHash(), commit.Subject)); err != nil {
 					return err
 				}
 			}
@@ -181,37 +181,33 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 }
 
 func RenderVerification(w io.Writer, verification plansvc.Verification) error {
-	if _, err := fmt.Fprintf(w, "Ticket %s\n", verification.TicketID); err != nil {
+	ui := NewConsole(w)
+
+	if err := ui.Title(fmt.Sprintf("Verify %s", verification.TicketID)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "Verification: %s -> %s\n", verification.FromBranch, verification.ToBranch); err != nil {
+	if err := ui.Rows(
+		KeyValue{Label: "Promotion", Value: fmt.Sprintf("%s -> %s", verification.FromBranch, verification.ToBranch)},
+		KeyValue{Label: "Verdict", Value: ui.Verdict(string(verification.Verdict))},
+		KeyValue{Label: "Environments", Value: formatEnvironments(verification.Environments)},
+		KeyValue{Label: "Repositories", Value: fmt.Sprintf("%d touched / %d scanned", verification.Summary.TouchedRepositories, verification.Summary.ScannedRepositories)},
+		KeyValue{Label: "Manual steps", Value: pluralizeCount(totalVerificationManualSteps(verification), "manual step", "manual steps")},
+		KeyValue{Label: "Dependencies", Value: pluralizeCount(totalVerificationDependencyFindings(verification), "dependency gap", "dependency gaps")},
+	); err != nil {
 		return err
 	}
-	if len(verification.Environments) > 0 {
-		if _, err := fmt.Fprintf(w, "Environments: %s\n", formatEnvironments(verification.Environments)); err != nil {
-			return err
-		}
-	}
-	if _, err := fmt.Fprintf(w, "Verdict: %s\n", verification.Verdict); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "Scanned repositories: %d\n", verification.Summary.ScannedRepositories); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "Touched repositories: %d\n\n", verification.Summary.TouchedRepositories); err != nil {
+	if err := ui.Blank(); err != nil {
 		return err
 	}
 
 	if len(verification.Reasons) > 0 {
-		if _, err := fmt.Fprintln(w, "Why"); err != nil {
+		if err := ui.Section("Why"); err != nil {
 			return err
 		}
-		for _, reason := range verification.Reasons {
-			if _, err := fmt.Fprintf(w, "  - %s\n", reason); err != nil {
-				return err
-			}
+		if err := ui.Bullets(verification.Reasons...); err != nil {
+			return err
 		}
-		if _, err := fmt.Fprintln(w); err != nil {
+		if err := ui.Blank(); err != nil {
 			return err
 		}
 	}
@@ -221,43 +217,66 @@ func RenderVerification(w io.Writer, verification plansvc.Verification) error {
 		return err
 	}
 
+	if err := ui.Section("Recommended next step"); err != nil {
+		return err
+	}
+	switch verification.Verdict {
+	case plansvc.VerdictSafe:
+		if err := ui.Bullets("Run " + ui.Command("gig manifest generate --ticket "+verification.TicketID) + " with the same scope to prepare handoff and release notes."); err != nil {
+			return err
+		}
+	default:
+		if err := ui.Bullets("Run " + ui.Command("gig plan --ticket "+verification.TicketID) + " with the same scope to review missing commits, dependencies, and manual steps."); err != nil {
+			return err
+		}
+	}
+	if err := ui.Blank(); err != nil {
+		return err
+	}
+
 	for i, repositoryVerification := range verification.Repositories {
-		if _, err := fmt.Fprintf(w, "[%s] %s (%s)\n", repositoryVerification.Repository.Name, repositoryVerification.Repository.Root, repositoryVerification.Repository.Type); err != nil {
+		if err := ui.Section(fmt.Sprintf("Repository %s", repositoryVerification.Repository.Name)); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "  verdict: %s\n", repositoryVerification.Verdict); err != nil {
+		if err := ui.NestedRows(
+			KeyValue{Label: "Scope", Value: fmt.Sprintf("%s (%s)", repositoryVerification.Repository.Root, repositoryVerification.Repository.Type)},
+			KeyValue{Label: "Verdict", Value: ui.Verdict(string(repositoryVerification.Verdict))},
+			KeyValue{Label: "Checks", Value: pluralizeCount(len(repositoryVerification.Checks), "check", "checks")},
+			KeyValue{Label: "Dependencies", Value: pluralizeCount(len(repositoryVerification.DependencyResolutions), "finding", "findings")},
+			KeyValue{Label: "Manual steps", Value: pluralizeCount(len(repositoryVerification.ManualSteps), "step", "steps")},
+		); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(w, "  checks:"); err != nil {
+		if err := ui.NestedSection("Checks"); err != nil {
 			return err
 		}
 		for _, check := range repositoryVerification.Checks {
-			if _, err := fmt.Fprintf(w, "    - %s\n", check); err != nil {
+			if err := ui.NestedBullets(check); err != nil {
 				return err
 			}
 		}
 		if len(repositoryVerification.DependencyResolutions) > 0 {
-			if _, err := fmt.Fprintln(w, "  dependency status:"); err != nil {
+			if err := ui.NestedSection("Dependency status"); err != nil {
 				return err
 			}
 			for _, resolution := range repositoryVerification.DependencyResolutions {
-				if _, err := fmt.Fprintf(w, "    - %s\n", formatDependencyResolution(resolution, verification.FromBranch, verification.ToBranch)); err != nil {
+				if err := ui.NestedBullets(formatDependencyResolution(resolution, verification.FromBranch, verification.ToBranch)); err != nil {
 					return err
 				}
 			}
 		}
 		if len(repositoryVerification.ManualSteps) > 0 {
-			if _, err := fmt.Fprintln(w, "  manual steps:"); err != nil {
+			if err := ui.NestedSection("Manual steps"); err != nil {
 				return err
 			}
 			for _, step := range repositoryVerification.ManualSteps {
-				if _, err := fmt.Fprintf(w, "    - %s\n", step.Summary); err != nil {
+				if err := ui.NestedBullets(step.Summary); err != nil {
 					return err
 				}
 			}
 		}
 		if repositoryVerification.ProviderEvidence != nil && (len(repositoryVerification.ProviderEvidence.PullRequests) > 0 || len(repositoryVerification.ProviderEvidence.Deployments) > 0) {
-			if _, err := fmt.Fprintln(w, "  provider evidence:"); err != nil {
+			if err := ui.NestedSection("Provider evidence"); err != nil {
 				return err
 			}
 			if err := renderProviderEvidence(w, *repositoryVerification.ProviderEvidence, "    "); err != nil {
@@ -273,6 +292,26 @@ func RenderVerification(w io.Writer, verification plansvc.Verification) error {
 	}
 
 	return nil
+}
+
+func totalVerificationManualSteps(verification plansvc.Verification) int {
+	total := 0
+	for _, repositoryVerification := range verification.Repositories {
+		total += len(repositoryVerification.ManualSteps)
+	}
+	return total
+}
+
+func totalVerificationDependencyFindings(verification plansvc.Verification) int {
+	total := 0
+	for _, repositoryVerification := range verification.Repositories {
+		for _, resolution := range repositoryVerification.DependencyResolutions {
+			if resolution.Status != depsvc.StatusSatisfied {
+				total++
+			}
+		}
+	}
+	return total
 }
 
 func formatEnvironmentStatus(status inspectsvc.EnvironmentResult) string {

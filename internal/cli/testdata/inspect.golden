@@ -1,18 +1,25 @@
-Ticket ABC-123
-Workspace: <WORKSPACE>
-Scanned repositories: 1
-Touched repositories: 1
-Total commits: 2
+Inspect ABC-123
+Scope         <WORKSPACE>
+Repositories  1 touched / 1 scanned
+Commits       2 ticket commits
+Risks         1 risk signal
+Dependencies  1 declared dependency
 
-[a-service] <WORKSPACE>/a-service (git)
-  ticket commits: 2
-  branches seen: dev, test
-  risk signals:
+Recommended next step
+  - Run gig verify --ticket ABC-123 with the same scope to turn this evidence into a release verdict.
+
+Repository a-service
+  Scope         <WORKSPACE>/a-service (git)
+  Commits       2 ticket commits
+  Branches      dev, test
+  Risks         1 signal
+  Dependencies  1 declared dependency
+  Risk signals
     - db-change (manual-review): Database-related changes should be reviewed before promotion [db/migrations/001_add_column.sql]
-  declared dependencies:
+  Declared dependencies
     - XYZ-456 (declared by <HASH>  ABC-123 | service-a | add validation fix)
-  commits:
+  Commits
     - <HASH>  ABC-123 | service-a | add migration
-      branches: dev
+      branches  dev
     - <HASH>  ABC-123 | service-a | add validation fix
-      branches: dev, test
+      branches  dev, test

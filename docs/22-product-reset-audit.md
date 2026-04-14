@@ -24,6 +24,7 @@ Status update:
 - initial workarea save and switch flow is live
 - interactive workarea and repository pickers with recent-history ranking are live
 - running `gig` with no subcommand now opens a guided front door
+- successful remote runs can now save inferred branch topology back into the current workarea
 - `gig assist doctor` now checks whether the bundled DeerFlow sidecar is configured, startable, and reachable
 - `gig assist setup` now bootstraps the bundled DeerFlow sidecar config
 

@@ -1,79 +1,38 @@
 # Quick Start
 
-This page is for the first 5 minutes.
+This page is for the first few minutes with `gig`.
 
-If you want to know what `gig` does and try it fast, start here.
+If you only remember one thing, remember this path:
 
-The product direction is moving toward:
+`install -> login -> inspect -> verify -> export`
 
-`install -> login -> choose workarea -> inspect`
+## 1. Install
 
-The commands below stay within what the current build can already do today.
+Use the direct installer until the first npm bootstrap publish is live:
 
-## Install
+```bash
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
+gig version
+```
+
+If `@phamhungptithcm/gig` is already available in your environment, this also works:
 
 ```bash
 npm install -g @phamhungptithcm/gig
 gig version
 ```
 
-## What `gig` Helps You Answer
+If npm returns `404`, the first package publish has not completed yet.
 
-Before release, teams often ask:
-
-- did we miss any change for this ticket?
-- is `test` behind `dev` for this ticket?
-- is `main` missing a late follow-up fix?
-- does this ticket include DB, config, or Mendix work that needs manual review?
-
-`gig` helps answer those questions from repository history in a simple, read-only way.
-
-Today that means:
-
-- GitHub, GitLab, Bitbucket, and Azure DevOps-backed remote inspection for supported live flows
-- local Git and SVN workspaces for the broader read-only flow
-- local Git conflict inspection and optional AI conflict briefings when Git is already stopped on a conflict
-
-## First Command To Run
+## 2. Open The Front Door
 
 ```bash
 gig
 ```
 
-That opens the guided front door with the current workarea, next commands, and the optional DeerFlow doctor plus setup hints.
+If you are in an interactive terminal, `gig` can guide you toward the next useful action instead of dropping straight into raw help output.
 
-## Full Command List
-
-```bash
-gig --help
-```
-
-That shows the full command list and the compact help patterns.
-
-## The Fastest Current Flow
-
-```bash
-gig login github
-gig workarea add --provider github --use
-gig inspect ABC-123
-gig verify --ticket ABC-123
-gig assist doctor
-gig assist setup
-gig manifest generate --ticket ABC-123
-gig assist audit --ticket ABC-123 --audience release-manager
-```
-
-Supported remote repository targets today:
-
-- `github:owner/name`
-- `gitlab:group/project`
-- `bitbucket:workspace/repo`
-- `azure-devops:org/project/repo`
-- `svn:https://svn.example.com/repos/app/branches/staging/ProductName`
-
-## A Good First Workflow
-
-### 1. Connect to a provider once
+## 3. Log In Once
 
 ```bash
 gig login github
@@ -83,178 +42,102 @@ gig login azure-devops
 gig login svn
 ```
 
-Use this when you want live inspection without cloning first.
+Use the provider that matches the repository you want to audit.
 
-### 2. Save a workarea for one project
-
-```bash
-gig workarea add --provider github --use
-gig workarea add payments --repo github:owner/name --from staging --to main --use
-gig workarea list
-gig workarea use payments
-```
-
-Use this when you want `gig` to remember repo scope and promotion defaults so later commands can stay short.
-If you omit `--repo` and `--path`, `gig` can discover a repository from a logged-in GitHub, GitLab, Bitbucket, or Azure DevOps account and let you choose it interactively.
-The picker accepts either a number or filter text, and recent workareas or repositories are promoted to the top.
-
-### 3. Inspect one ticket directly on a remote repository or the current workarea
+## 4. Inspect One Ticket
 
 ```bash
-gig inspect ABC-123
 gig inspect ABC-123 --repo github:owner/name
-gig inspect ABC-123 --repo gitlab:group/project
-gig inspect ABC-123 --repo bitbucket:workspace/repo
-gig inspect ABC-123 --repo azure-devops:org/project/repo
-gig inspect ABC-123 --repo svn:https://svn.example.com/repos/app/branches/staging/ProductName
 ```
 
-Use this to see what changed, which branches contain the ticket, and whether risky files were touched.
-On GitHub, GitLab, Bitbucket, and Azure DevOps, `gig` also shows pull request and deployment evidence when the provider can confirm it.
+Supported remote target forms:
 
-### 4. Check whether the next move looks safe
+- `github:owner/name`
+- `gitlab:group/project`
+- `bitbucket:workspace/repo`
+- `azure-devops:org/project/repo`
+- `svn:https://svn.example.com/repos/app/branches/staging/ProductName`
+
+Use `inspect` when you want the full ticket picture in one place:
+
+- repositories touched
+- commits found
+- branches containing those commits
+- risk hints such as DB or config changes
+
+## 5. Verify The Next Move
 
 ```bash
-gig verify --ticket ABC-123
 gig verify --ticket ABC-123 --repo github:owner/name
 ```
 
-Use this when you want a quick release decision:
+Use `verify` when you want a release decision instead of raw evidence:
 
 - `safe`
 - `warning`
 - `blocked`
 
-### 5. Generate a release packet people can actually read
+`gig` will try to infer the likely promotion path before you reach for `--from` or `--to`.
+
+## 6. Export A Release Packet
 
 ```bash
-gig manifest generate --ticket ABC-123
 gig manifest generate --ticket ABC-123 --repo github:owner/name
 ```
 
-This produces a Markdown packet with:
+Use this when you want release-ready output for QA, release review, or downstream tooling without rewriting the audit by hand.
 
-- a short summary
-- QA checklist
-- client review notes
-- release manager checklist
-- per-repo details, risks, notes, and commits to include
+## 7. Optional: Save A Workarea
 
-### 5.1 Optional: Ask DeerFlow for an audience-specific ticket briefing
+```bash
+gig workarea add payments --repo github:owner/name --from staging --to main --use
+gig inspect ABC-123
+gig verify --ticket ABC-123
+```
 
-If the bundled DeerFlow sidecar is not configured yet, bootstrap it first:
+Use a workarea when you want `gig` to remember project scope and defaults so repeated commands stay short.
+
+## 8. Optional: Add An AI Briefing Layer
+
+If you want an audience-specific explanation on top of the deterministic audit bundle:
 
 ```bash
 gig assist doctor
 gig assist setup
-```
-
-```bash
-gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
-gig assist audit --ticket ABC-123 --repo github:owner/name --audience client
 gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
 ```
 
-Use this experimental command when you want the same ticket evidence explained for QA, a client, or a release manager without changing the deterministic core.
+The AI layer is additive.
+`gig` stays the source of truth.
 
-### 5.2 Optional: Ask DeerFlow for a release-level briefing
+## 9. Local Fallback When Needed
 
-```bash
-gig assist release --release rel-2026-04-09 --path . --audience release-manager
-gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name --audience release-manager
-```
-
-Use the first form after you save ticket snapshots into the same release.
-Use the second form when you want `gig` to build the release bundle live from a ticket file and a remote repository target.
-
-### 5.3 Optional: Ask DeerFlow for an active conflict brief
+Use local mode when remote access is not enough yet:
 
 ```bash
-gig assist resolve --path . --ticket ABC-123 --audience release-manager
+gig scan --path .
+gig inspect ABC-123 --path .
+gig verify --ticket ABC-123 --path .
+gig manifest generate --ticket ABC-123 --path .
 ```
 
-Use this when Git has already stopped on a merge, rebase, or cherry-pick conflict and you want `gig` to explain the active block and its risks before you choose an action.
+## 10. Only Add Config If Inference Needs Help
 
-### 5.4 Optional: Run the deterministic terminal demo
+Most teams should not start with `gig.yaml`.
+
+Add config only when you need:
+
+- branch topology overrides
+- repo metadata such as service names or owners
+- team notes that should appear in output
+
+## Demo
+
+For a stable terminal walkthrough that is good for README updates, portfolio clips, or documentation:
 
 ```bash
 ./scripts/demo/frontdoor.sh
 ./scripts/demo/record-frontdoor.sh
 ```
 
-Use this when you want a stable screencast or README demo without relying on live provider APIs.
-
-### 6. If needed, fall back to local workspace mode
-
-```bash
-gig scan --path .
-gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --from test --to main --path .
-gig manifest generate --ticket ABC-123 --from test --to main --path .
-gig doctor --path .
-gig resolve status --path .
-gig assist resolve --path . --ticket ABC-123 --audience release-manager
-gig resolve start --path .
-```
-
-Use local mode when:
-
-- remote provider access is not enough yet
-- you need broad workspace scanning
-- your team depends on explicit branch overrides or repo catalog metadata
-
-## If Your Team Uses Real Branch Names
-
-You do not have to keep passing `--envs` manually.
-
-Create a `gig.yaml` like this:
-
-```yaml
-ticketPattern: '\b[A-Z][A-Z0-9]+-\d+\b'
-
-environments:
-  - name: dev
-    branch: develop
-  - name: test
-    branch: release/test
-  - name: prod
-    branch: main
-
-repositories:
-  - path: services/accounts-api
-    service: Accounts API
-    owner: Backend Team
-    kind: app
-    notes:
-      - Verify login and billing summary in QA.
-```
-
-Then run:
-
-```bash
-gig verify --ticket ABC-123 --from test --to main --path .
-gig manifest generate --ticket ABC-123 --from test --to main --path .
-gig doctor --path .
-```
-
-There is a sample file in the repo:
-
-- [gig.example.yaml](https://github.com/phamhungptithcm/gig/blob/main/gig.example.yaml)
-
-## What `gig` Does Not Do Yet
-
-Right now, `gig` does not move code for you.
-
-It does not cherry-pick, merge, or deploy.
-
-It now includes an initial workarea flow, but it does not yet deliver the full guided project picker and richer console navigation the product is aiming for.
-
-That is intentional.
-The current product focus is to help teams make safer release decisions first.
-
-## Where To Go Next
-
-- read [CLI Guide](03-cli-spec.md) for full command help
-- read [Agent Skills](24-agent-skills.md) for project-specific agent workflows
-- read [Config Spec](09-config-spec.md) to map your real workflow
-- read [Roadmap](13-roadmap.md) to see what is next
+See [Demo Guide](25-demo-guide.md) and [Portfolio Guide](26-portfolio-guide.md) for publishing advice.

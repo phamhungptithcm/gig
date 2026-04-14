@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"gig/internal/config"
+	inspectsvc "gig/internal/inspect"
 	"gig/internal/repo"
 	"gig/internal/scm"
+	"gig/internal/sourcecontrol"
 )
 
 type adapterProvider interface {
@@ -105,37 +107,15 @@ func (s *Service) Run(ctx context.Context, workspacePath string, loaded config.L
 		return report, nil
 	}
 
-	if !loaded.Found {
-		report.Findings = append(report.Findings, Finding{
-			Severity: VerdictWarning,
-			Code:     "config-not-found",
-			Summary:  "No gig config file was found. Built-in defaults are being used.",
-		})
-	}
-	if !loaded.ExplicitEnvironments {
-		report.Findings = append(report.Findings, Finding{
-			Severity: VerdictWarning,
-			Code:     "default-environments",
-			Summary:  "Environment mapping is still using defaults. Add team-specific env branches to the config file.",
-		})
-	}
-	if len(loaded.Config.Repositories) == 0 {
-		report.Findings = append(report.Findings, Finding{
-			Severity: VerdictWarning,
-			Code:     "empty-repository-catalog",
-			Summary:  "No repository catalog entries were defined. Add service, owner, and kind information for each repo.",
-		})
-	}
-
 	results := make([]RepositoryResult, 0, len(repositories))
 	for _, repository := range repositories {
-		result, err := s.inspectRepository(ctx, workspacePath, repository, loaded.Config)
+		result, err := s.inspectRepository(ctx, workspacePath, repository, loaded)
 		if err != nil {
 			return Report{}, err
 		}
 		results = append(results, result)
 
-		if result.ConfigEntry != nil {
+		if result.ConfigEntry != nil || !loaded.ExplicitRepositories {
 			report.Summary.CoveredRepositories++
 		} else {
 			report.Summary.MissingCatalogEntries++
@@ -154,6 +134,9 @@ func (s *Service) Run(ctx context.Context, workspacePath string, loaded config.L
 	}
 
 	for _, repository := range loaded.Config.Repositories {
+		if !loaded.ExplicitRepositories {
+			continue
+		}
 		if repository.Path == "" {
 			continue
 		}
@@ -192,13 +175,13 @@ func (s *Service) Run(ctx context.Context, workspacePath string, loaded config.L
 	return report, nil
 }
 
-func (s *Service) inspectRepository(ctx context.Context, workspacePath string, repository scm.Repository, cfg config.Config) (RepositoryResult, error) {
+func (s *Service) inspectRepository(ctx context.Context, workspacePath string, repository scm.Repository, loaded config.Loaded) (RepositoryResult, error) {
 	result := RepositoryResult{
 		Repository: repository,
 		Verdict:    VerdictOK,
 	}
 
-	if entry, ok := cfg.FindRepository(workspacePath, repository.Root, repository.Name); ok {
+	if entry, ok := loaded.Config.FindRepository(workspacePath, repository.Root, repository.Name); ok {
 		entryCopy := entry
 		result.ConfigEntry = &entryCopy
 		if strings.TrimSpace(entry.Service) == "" {
@@ -222,7 +205,7 @@ func (s *Service) inspectRepository(ctx context.Context, workspacePath string, r
 				Summary:  "Config entry is missing a repository kind such as app, db, mendix, or infra.",
 			})
 		}
-	} else {
+	} else if loaded.ExplicitRepositories {
 		result.Findings = append(result.Findings, Finding{
 			Severity: VerdictWarning,
 			Code:     "missing-catalog-entry",
@@ -232,7 +215,11 @@ func (s *Service) inspectRepository(ctx context.Context, workspacePath string, r
 
 	adapter, ok := s.adapters.For(repository.Type)
 	if ok {
-		for _, environment := range cfg.Environments {
+		environments, err := effectiveEnvironments(ctx, adapter, repository.Root, loaded)
+		if err != nil {
+			return RepositoryResult{}, err
+		}
+		for _, environment := range environments {
 			exists, err := refExists(ctx, adapter, repository.Root, environment.Branch)
 			if err != nil {
 				return RepositoryResult{}, err
@@ -262,6 +249,37 @@ func (s *Service) inspectRepository(ctx context.Context, workspacePath string, r
 	}
 
 	return result, nil
+}
+
+func effectiveEnvironments(ctx context.Context, adapter scm.Adapter, repoRoot string, loaded config.Loaded) ([]config.Environment, error) {
+	if loaded.ExplicitEnvironments {
+		return loaded.Config.Environments, nil
+	}
+
+	provider, ok := adapter.(scm.ProtectedBranchProvider)
+	if !ok {
+		return nil, nil
+	}
+
+	protectedBranches, err := provider.ProtectedBranches(ctx, repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return toConfigEnvironments(sourcecontrol.InferEnvironments(protectedBranches)), nil
+}
+
+func toConfigEnvironments(environments []inspectsvc.Environment) []config.Environment {
+	results := make([]config.Environment, 0, len(environments))
+	for _, environment := range environments {
+		if strings.TrimSpace(environment.Name) == "" || strings.TrimSpace(environment.Branch) == "" {
+			continue
+		}
+		results = append(results, config.Environment{
+			Name:   environment.Name,
+			Branch: environment.Branch,
+		})
+	}
+	return results
 }
 
 func deriveVerdict(report Report) Verdict {

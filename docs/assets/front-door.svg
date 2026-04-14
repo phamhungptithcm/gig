@@ -15,9 +15,9 @@
     <text x="48" y="272" fill="#f8fafc">No workarea selected yet.</text>
     <text x="48" y="330" fill="#f8fafc">Start here</text>
     <text x="72" y="368" fill="#cbd5e1">gig login github</text>
-    <text x="72" y="406" fill="#cbd5e1">gig workarea add --provider github --use</text>
-    <text x="72" y="444" fill="#cbd5e1">gig inspect ABC-123 --repo github:owner/name</text>
-    <text x="72" y="482" fill="#cbd5e1">gig verify --ticket ABC-123 --repo github:owner/name</text>
+    <text x="72" y="406" fill="#cbd5e1">gig inspect ABC-123 --repo github:owner/name</text>
+    <text x="72" y="444" fill="#cbd5e1">gig verify --ticket ABC-123 --repo github:owner/name</text>
+    <text x="72" y="482" fill="#cbd5e1">gig remembers successful remote repos automatically</text>
     <text x="48" y="540" fill="#f8fafc">Optional AI sidecar</text>
     <text x="72" y="578" fill="#cbd5e1">gig assist doctor</text>
     <text x="72" y="616" fill="#cbd5e1">gig assist setup</text>
