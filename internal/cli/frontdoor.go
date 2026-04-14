@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"gig/internal/buildinfo"
 	"gig/internal/output"
 	"gig/internal/sourcecontrol"
 	"gig/internal/workarea"
@@ -37,6 +38,7 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 	if err := output.RenderFrontDoor(a.stdout, output.FrontDoorState{
 		Current:   current,
 		Workareas: workareas,
+		Version:   buildinfo.Version,
 	}); err != nil {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1

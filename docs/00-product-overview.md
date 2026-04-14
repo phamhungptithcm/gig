@@ -4,6 +4,10 @@
 
 `gig` is a remote-first release audit CLI that reconciles ticket evidence across repositories, verifies promotion readiness, and generates release-ready output.
 
+The memorable shorthand is:
+
+`gig = googling in git`
+
 ## The Problem
 
 Release teams rarely struggle to find Git history.

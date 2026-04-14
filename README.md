@@ -6,6 +6,10 @@
 
 `Did we miss any change for this ticket?`
 
+The product story is simple:
+
+`gig = googling in git`
+
 That question gets expensive when:
 
 - one ticket touches backend, frontend, database, scripts, or low-code assets

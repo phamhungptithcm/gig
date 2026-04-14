@@ -342,8 +342,8 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Start with GitHub") {
-		t.Fatalf("stdout = %q, want GitHub-first heading", stdout)
+	if !strings.Contains(stdout, "googling in git") || !strings.Contains(stdout, "status:  no project selected yet") {
+		t.Fatalf("stdout = %q, want branded hero state", stdout)
 	}
 	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
 		t.Fatalf("stdout = %q, want guided picker hint", stdout)
@@ -351,7 +351,7 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if !strings.Contains(stdout, "gig remembers a successful remote repo as your current project automatically") {
 		t.Fatalf("stdout = %q, want implicit project-memory hint", stdout)
 	}
-	if !strings.Contains(stdout, "Core workflows") || !strings.Contains(stdout, "Still local?") {
+	if !strings.Contains(stdout, "Ask gig to") || !strings.Contains(stdout, "Still local?") {
 		t.Fatalf("stdout = %q, want focused workflow sections", stdout)
 	}
 	if !strings.Contains(stdout, "gig assist doctor") {
@@ -415,10 +415,10 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Current project") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
+	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
 	}
-	if !strings.Contains(stdout, "Core workflows") || !strings.Contains(stdout, "gig manifest generate --ticket ABC-123") {
+	if !strings.Contains(stdout, "Quick commands") || !strings.Contains(stdout, "gig manifest generate --ticket ABC-123") {
 		t.Fatalf("stdout = %q, want guided core workflows", stdout)
 	}
 	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
@@ -1638,7 +1638,7 @@ func TestAppInspectRemoteRepoAutoCreatesCurrentProject(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Current project") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
+	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
 	}
 }
