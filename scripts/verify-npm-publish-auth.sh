@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-package_name="${1:-${GIG_NPM_PACKAGE:-@phamhungptithcm/gig}}"
+package_name="${1:-${GIG_NPM_PACKAGE:-@hunpeolabs/gig}}"
 registry_url="${NPM_REGISTRY_URL:-https://registry.npmjs.org/}"
 
 if [ -z "${NODE_AUTH_TOKEN:-}" ]; then

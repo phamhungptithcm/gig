@@ -51,7 +51,7 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_SHA_VALUE: ${{ github.sha }}
           REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
-          PACKAGE_NAME: "@phamhungptithcm/gig"
+          PACKAGE_NAME: "@hunpeolabs/gig"
           REGISTRY_URL: "https://registry.npmjs.org/"
         run: |
           requested_tag="$(printf '%s' "${REQUESTED_RELEASE_TAG:-}" | tr -d '[:space:]')"
@@ -149,13 +149,13 @@ jobs:
           NPM_TRUSTED_PUBLISHING: ${{ vars.NPM_TRUSTED_PUBLISHING }}
           NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
           GIG_NPM_REQUIRE_MODE: "true"
-        run: ./scripts/resolve-npm-publish-mode.sh "@phamhungptithcm/gig"
+        run: ./scripts/resolve-npm-publish-mode.sh "@hunpeolabs/gig"
 
       - name: Validate npm token publish auth
         if: steps.npm_publish_mode.outputs.mode == 'token'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-        run: ./scripts/verify-npm-publish-auth.sh "@phamhungptithcm/gig"
+        run: ./scripts/verify-npm-publish-auth.sh "@hunpeolabs/gig"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -259,7 +259,7 @@ jobs:
       - name: Verify published npm package version
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.next_tag }}
-          PACKAGE_NAME: "@phamhungptithcm/gig"
+          PACKAGE_NAME: "@hunpeolabs/gig"
         run: |
           expected_version="$(node -e '
             const tag = String(process.env.RELEASE_TAG || "").trim();

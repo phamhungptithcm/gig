@@ -24,7 +24,7 @@ When code is pushed to `main`:
 - breaking commits are surfaced as upgrade notes
 - a compare link is added when the repository remote can be resolved to GitHub
 - GitHub Release assets are published
-- the npm package `@phamhungptithcm/gig` is published from this same repository
+- the npm package `@hunpeolabs/gig` is published from this same repository
 - the release tag is mapped to npm package version `YYYY.M.D` for registry compatibility
 
 The release workflow is split into:
@@ -46,7 +46,7 @@ npm publication supports two modes:
 
 The safer steady-state setup is:
 
-1. open npm package settings for `@phamhungptithcm/gig`
+1. open npm package settings for `@hunpeolabs/gig`
 2. add a trusted publisher for GitHub Actions
 3. set owner `phamhungptithcm`
 4. set repository `gig`
@@ -55,11 +55,16 @@ The safer steady-state setup is:
 7. optionally require approvals on the GitHub environment `npm-release`
 8. set repository variable `NPM_TRUSTED_PUBLISHING=true` after npm trusted publishing is configured and ready
 
+The npm package scope and the GitHub repository owner are different here:
+
+- npm package scope: `@hunpeolabs/gig`
+- GitHub repository for the trusted publisher: `phamhungptithcm/gig`
+
 Bootstrap note:
 
-- npm trusted publisher settings live on the package, so `@phamhungptithcm/gig` usually needs to exist first
+- npm trusted publisher settings live on the package, so `@hunpeolabs/gig` usually needs to exist first
 - for the first publish, set repository secret `NPM_PUBLISH_TOKEN` so the release workflow can bootstrap the package automatically from GitHub Actions
-- `NPM_PUBLISH_TOKEN` must come from an npm identity that can publish to `@phamhungptithcm`
+- `NPM_PUBLISH_TOKEN` must come from an npm identity that can publish to `@hunpeolabs/gig`
 - if the token path is used, prefer an npm automation token or a granular token with bypass 2FA enabled
 - after the package exists, configure trusted publishing on npm, verify one GitHub Actions publish, then remove the token fallback if you no longer want it
 - if you leave `NPM_PUBLISH_TOKEN` configured, the workflow can still use it as an emergency fallback when trusted publishing is not enabled
