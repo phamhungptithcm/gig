@@ -1,5 +1,5 @@
 site_name: gig
-site_description: Ticket-aware release workflow helper for multi-repo teams
+site_description: Remote-first release audit CLI for ticket-based delivery
 site_url: https://phamhungptithcm.github.io/gig/
 repo_name: phamhungptithcm/gig
 repo_url: https://github.com/phamhungptithcm/gig
@@ -12,6 +12,7 @@ nav:
   - Start Here:
       - Quick Start: 19-quickstart.md
       - Demo Guide: 25-demo-guide.md
+      - Portfolio Guide: 26-portfolio-guide.md
       - Product Overview: 00-product-overview.md
       - Problem Statement: 01-problem-statement.md
       - Scope And Phases: 02-scope-and-phases.md

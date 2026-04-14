@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	inspectsvc "gig/internal/inspect"
 	"gig/internal/output"
 	"gig/internal/scm"
 	"gig/internal/sourcecontrol"
@@ -145,7 +146,7 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", "", "Local workspace path for this workarea")
-	configPath := fs.String("config", "", "Optional gig config file to keep with this workarea")
+	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name")
 	providerValue := fs.String("provider", "", "Provider to discover from when --repo is omitted")
 	organizationValue := fs.String("org", "", "Owner, group, workspace, or organization filter for discovery")
@@ -349,6 +350,10 @@ func (a *App) runWorkareaShow(args []string) int {
 }
 
 func (a *App) promptForWorkareaSelection(store *workarea.Store) (string, error) {
+	return a.promptForWorkareaSelectionWithReader(bufio.NewReader(a.stdin), store)
+}
+
+func (a *App) promptForWorkareaSelectionWithReader(reader *bufio.Reader, store *workarea.Store) (string, error) {
 	workareas, current, err := store.List()
 	if err != nil {
 		return "", err
@@ -373,7 +378,7 @@ func (a *App) promptForWorkareaSelection(store *workarea.Store) (string, error) 
 		})
 	}
 
-	selected, err := a.runPicker(bufio.NewReader(a.stdin), "Select a workarea:", items)
+	selected, err := a.runPicker(reader, "Select a workarea:", items)
 	if err != nil {
 		return "", err
 	}
@@ -381,8 +386,10 @@ func (a *App) promptForWorkareaSelection(store *workarea.Store) (string, error) 
 }
 
 func (a *App) discoverWorkareaRepository(ctx context.Context, providerValue, organization, project string) (scm.Repository, error) {
-	reader := bufio.NewReader(a.stdin)
+	return a.discoverWorkareaRepositoryWithReader(ctx, bufio.NewReader(a.stdin), providerValue, organization, project)
+}
 
+func (a *App) discoverWorkareaRepositoryWithReader(ctx context.Context, reader *bufio.Reader, providerValue, organization, project string) (scm.Repository, error) {
 	provider, err := a.resolveDiscoveryProvider(reader, providerValue)
 	if err != nil {
 		return scm.Repository{}, err
@@ -397,7 +404,7 @@ func (a *App) discoverWorkareaRepository(ctx context.Context, providerValue, org
 	repositories, err := sourcecontrol.DiscoverRepositories(ctx, provider, sourcecontrol.RepositoryDiscoveryOptions{
 		Organization: organization,
 		Project:      project,
-	}, a.stdin, a.stdout, a.stderr)
+	}, reader, a.stdout, a.stderr)
 	if err != nil {
 		return scm.Repository{}, err
 	}
@@ -591,6 +598,60 @@ func resolveCommandDefaults(selected *workarea.Definition, envSpec, fromBranch, 
 	return defaults
 }
 
+func (a *App) rememberProjectMemory(scope commandScope, defaults commandDefaults, runtime commandRuntime, repositories []scm.Repository, environments []inspectsvc.Environment, fromBranch, toBranch string) {
+	if !containsRemoteRepositories(repositories) {
+		return
+	}
+
+	store, err := workarea.NewStore()
+	if err != nil {
+		return
+	}
+
+	workareaName := ""
+	switch {
+	case scope.Workarea != nil:
+		workareaName = scope.Workarea.Name
+	case strings.TrimSpace(scope.RepoSpec) != "":
+		repository, err := parseSingleRepository(scope.RepoSpec)
+		if err != nil {
+			return
+		}
+		saved, _, err := store.EnsureRemoteRepository(repository)
+		if err != nil {
+			return
+		}
+		workareaName = saved.Name
+		_ = store.RecordRepositorySelection(repository)
+	default:
+		return
+	}
+
+	if workareaName == "" || runtime.loaded.Found || strings.TrimSpace(scope.ConfigPath) != "" {
+		return
+	}
+
+	environmentSpec := ""
+	if scope.Workarea == nil || (scope.Workarea.EnvironmentSpec == "" && defaults.EnvironmentSpec == "") {
+		environmentSpec = formatEnvironmentSpec(environments)
+	}
+
+	resolvedFromBranch := ""
+	if scope.Workarea == nil || (scope.Workarea.FromBranch == "" && defaults.FromBranch == "") {
+		resolvedFromBranch = strings.TrimSpace(fromBranch)
+	}
+
+	resolvedToBranch := ""
+	if scope.Workarea == nil || (scope.Workarea.ToBranch == "" && defaults.ToBranch == "") {
+		resolvedToBranch = strings.TrimSpace(toBranch)
+	}
+
+	if environmentSpec == "" && resolvedFromBranch == "" && resolvedToBranch == "" {
+		return
+	}
+	_, _, _ = store.SaveInferredDefaults(workareaName, resolvedFromBranch, resolvedToBranch, environmentSpec)
+}
+
 func (a *App) announceWorkareaSelection(scope commandScope, defaults commandDefaults) {
 	if scope.Workarea == nil {
 		return
@@ -614,6 +675,19 @@ func blankIfEmpty(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func formatEnvironmentSpec(environments []inspectsvc.Environment) string {
+	parts := make([]string, 0, len(environments))
+	for _, environment := range environments {
+		name := strings.TrimSpace(environment.Name)
+		branch := strings.TrimSpace(environment.Branch)
+		if name == "" || branch == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", name, branch))
+	}
+	return strings.Join(parts, ",")
 }
 
 func inferWorkareaName(repoSpec, pathValue string) string {
@@ -791,7 +865,7 @@ func flagProvided(fs *flag.FlagSet, name string) bool {
 func (a *App) printWorkareaUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
 	fmt.Fprintln(a.stderr, "  gig workarea list [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig workarea add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--project name] [--path /path/to/workspace] [--config gig.yaml] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
+	fmt.Fprintln(a.stderr, "  gig workarea add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--project name] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
 	fmt.Fprintln(a.stderr, "  gig workarea use [<name>]")
 	fmt.Fprintln(a.stderr, "  gig workarea show [<name>]")
 }
@@ -801,7 +875,7 @@ func (a *App) printWorkareaListUsage() {
 }
 
 func (a *App) printWorkareaAddUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig workarea add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--project name] [--path /path/to/workspace] [--config gig.yaml] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
+	fmt.Fprintln(a.stderr, "Usage: gig workarea add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--project name] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
 }
 
 func (a *App) printWorkareaUseUsage() {

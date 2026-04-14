@@ -5,12 +5,13 @@ Safe: 1
 Warning: 0
 Blocked: 1
 
-Ticket ABC-123
-Verification: test -> main
-Environments: dev=dev -> test=test -> prod=main
-Verdict: blocked
-Scanned repositories: 2
-Touched repositories: 1
+Verify ABC-123
+Promotion     test -> main
+Verdict       BLOCKED
+Environments  dev=dev -> test=test -> prod=main
+Repositories  1 touched / 2 scanned
+Manual steps  1 manual step
+Dependencies  1 dependency gap
 
 Why
   - At least one repository is missing the correct source or target release evidence.
@@ -18,34 +19,49 @@ Why
   - 1 manual review step(s) were inferred from the changed files.
   - 1 dependency ticket(s) are still missing from main.
 
-[a-service] <WORKSPACE>/a-service (git)
-  verdict: blocked
-  checks:
+Recommended next step
+  - Run gig plan --ticket ABC-123 with the same scope to review missing commits, dependencies, and manual steps.
+
+Repository a-service
+  Scope         <WORKSPACE>/a-service (git)
+  Verdict       BLOCKED
+  Checks        5 checks
+  Dependencies  1 finding
+  Manual steps  1 step
+  Checks
     - test contains 1 ticket commit(s).
     - main is missing 1 ticket commit(s).
     - Source branch test is behind an earlier environment by 1 commit(s).
     - Declared dependency XYZ-456 is present in test but missing from main.
     - 2 risk signal(s) require review.
-  dependency status:
+  Dependency status
     - XYZ-456: present in test but missing from main
-  manual steps:
+  Manual steps
     - Review DB migration ordering, rollback steps, and deployment timing before promotion.
 
 ---
-Ticket XYZ-999
-Verification: test -> main
-Environments: dev=dev -> test=test -> prod=main
-Verdict: safe
-Scanned repositories: 2
-Touched repositories: 1
+Verify XYZ-999
+Promotion     test -> main
+Verdict       SAFE
+Environments  dev=dev -> test=test -> prod=main
+Repositories  1 touched / 2 scanned
+Manual steps  0 manual steps
+Dependencies  0 dependency gaps
 
 Why
   - Source branch contains the ticket scope and no repository is currently blocked.
   - Target branch already contains the ticket commits from the selected source.
 
-[b-service] <WORKSPACE>/b-service (git)
-  verdict: safe
-  checks:
+Recommended next step
+  - Run gig manifest generate --ticket XYZ-999 with the same scope to prepare handoff and release notes.
+
+Repository b-service
+  Scope         <WORKSPACE>/b-service (git)
+  Verdict       SAFE
+  Checks        3 checks
+  Dependencies  0 findings
+  Manual steps  0 steps
+  Checks
     - test contains 1 ticket commit(s).
     - main already contains the ticket commits from test.
     - Target branch main already contains the ticket commits from test.

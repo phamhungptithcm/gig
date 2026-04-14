@@ -52,6 +52,10 @@ jobs:
     needs: metadata
     if: needs.metadata.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      npm_publish_mode: ${{ steps.npm_publish_mode.outputs.mode }}
+      npm_package_exists: ${{ steps.npm_publish_mode.outputs.package_exists }}
+      npm_publish_reason: ${{ steps.npm_publish_mode.outputs.reason }}
 
     steps:
       - name: Check out repository
@@ -76,8 +80,17 @@ jobs:
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
           node --check scripts/prepare-npm-package.cjs
+          bash -n scripts/resolve-npm-publish-mode.sh
           node scripts/prepare-npm-package.cjs "${{ needs.metadata.outputs.next_tag }}" dist/npm-package
           npm pack --dry-run ./dist/npm-package
+
+      - name: Resolve npm publish mode
+        id: npm_publish_mode
+        env:
+          NPM_TRUSTED_PUBLISHING: ${{ vars.NPM_TRUSTED_PUBLISHING }}
+          NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          GIG_NPM_REQUIRE_MODE: "true"
+        run: ./scripts/resolve-npm-publish-mode.sh "@phamhungptithcm/gig"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -139,8 +152,9 @@ jobs:
   publish_npm:
     needs:
       - metadata
+      - verify
       - publish_release
-    if: needs.metadata.outputs.should_release == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+    if: needs.metadata.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -164,21 +178,32 @@ jobs:
           npm pack --dry-run ./dist/npm-package
 
       - name: Publish npm package with trusted publishing
+        if: needs.verify.outputs.npm_publish_mode == 'trusted'
         run: npm publish ./dist/npm-package --access public
 
-  skip_npm_publish:
-    needs:
-      - metadata
-      - publish_release
-    if: needs.metadata.outputs.should_release == 'true' && vars.NPM_TRUSTED_PUBLISHING != 'true'
-    runs-on: ubuntu-latest
+      - name: Publish npm package with automation token
+        if: needs.verify.outputs.npm_publish_mode == 'token'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+        run: npm publish ./dist/npm-package --access public
 
-    steps:
-      - name: Explain npm publish skip
+      - name: Verify published npm package version
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.next_tag }}
+          PACKAGE_NAME: "@phamhungptithcm/gig"
         run: |
-          echo "Skipping npm publish because repository variable NPM_TRUSTED_PUBLISHING is not set to true."
-          echo "Use this bootstrap order:"
-          echo "1. Publish a GitHub Release."
-          echo "2. Create the initial npm package manually if it does not exist yet."
-          echo "3. Configure npm trusted publishing for release.yml and environment npm-release."
-          echo "4. Set repository variable NPM_TRUSTED_PUBLISHING=true."
+          expected_version="$(node -e '
+            const tag = String(process.env.RELEASE_TAG || "").trim();
+            const match = tag.match(/^v(\d{4})\.(\d{2})\.(\d{2})$/);
+            if (!match) {
+              console.error(`invalid release tag: ${tag}`);
+              process.exit(1);
+            }
+            console.log(`${match[1]}.${Number(match[2])}.${Number(match[3])}`);
+          ')"
+          published_version="$(npm view "${PACKAGE_NAME}" version --registry=https://registry.npmjs.org)"
+          if [ "${published_version}" != "${expected_version}" ]; then
+            echo "Published npm version ${published_version} did not match expected ${expected_version}." >&2
+            exit 1
+          fi
+          echo "Published ${PACKAGE_NAME}@${published_version}"
