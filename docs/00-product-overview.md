@@ -43,6 +43,7 @@ Before a team moves a ticket or release forward, `gig` should answer:
 - deterministic release reasoning instead of manual repo-by-repo checking
 - zero-config-first activation instead of config-heavy onboarding
 - guided terminal onboarding so first-time users can pick a repo before they learn flags
+- a command-palette front door so users can type `ABC-123` or `verify ABC-123` directly
 - reusable workareas for repeated project context
 - optional AI explanation layered on top of auditable source-control evidence
 

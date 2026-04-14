@@ -206,11 +206,13 @@ func renderFrontDoorHero(w io.Writer, ui Console, state FrontDoorState) error {
 		lines = append(lines,
 			fmt.Sprintf("project: %s", state.Current.Name),
 			fmt.Sprintf("target:  %s", formatWorkareaTarget(*state.Current)),
+			"input:   ticket or command palette",
 			"focus:   inspect | verify | manifest",
 		)
 	} else {
 		lines = append(lines,
 			"mode:    guided terminal front door",
+			"input:   ticket, command, or Enter for picker",
 			"focus:   inspect | verify | manifest",
 			"status:  no project selected yet",
 		)

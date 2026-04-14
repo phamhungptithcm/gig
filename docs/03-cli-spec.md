@@ -27,6 +27,15 @@ When users run `gig` in a real terminal, the front door should behave like a gui
 - keep local-folder fallback visible
 - surface saved projects without forcing workarea setup first
 
+The front door also accepts direct palette input such as:
+
+- `ABC-123`
+- `inspect ABC-123`
+- `verify ABC-123`
+- `manifest ABC-123`
+- `repo github:owner/name ABC-123`
+- `login github`
+
 ## Command Groups
 
 | Command | Use it when you want to... |

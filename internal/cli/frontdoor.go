@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"gig/internal/buildinfo"
 	"gig/internal/output"
@@ -44,16 +46,8 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 		return 1
 	}
 	if a.frontDoorPromptEnabled() {
-		var (
-			exitCode int
-			err      error
-		)
-		switch {
-		case current != nil:
-			exitCode, err = a.runFrontDoorCurrentProjectAction(ctx)
-		default:
-			exitCode, err = a.runFrontDoorQuickStart(ctx, store, workareas)
-		}
+		reader := bufio.NewReader(a.stdin)
+		exitCode, err := a.runFrontDoorPalette(ctx, reader, store, current, workareas)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "front door failed: %v\n", err)
 			return 1
@@ -81,8 +75,100 @@ func (a *App) frontDoorPromptEnabled() bool {
 	return false
 }
 
+type frontDoorAction string
+
+const (
+	frontDoorActionPicker                frontDoorAction = "picker"
+	frontDoorActionInspect               frontDoorAction = "inspect"
+	frontDoorActionVerify                frontDoorAction = "verify"
+	frontDoorActionManifest              frontDoorAction = "manifest"
+	frontDoorActionLogin                 frontDoorAction = "login"
+	frontDoorActionDiscoverGitHub        frontDoorAction = "discover-github"
+	frontDoorActionEnterTarget           frontDoorAction = "enter-target"
+	frontDoorActionUseCurrentFolder      frontDoorAction = "use-current-folder"
+	frontDoorActionDiscoverOtherProvider frontDoorAction = "discover-other-provider"
+	frontDoorActionSavedWorkarea         frontDoorAction = "saved-workarea"
+	frontDoorActionSwitchWorkarea        frontDoorAction = "switch-workarea"
+)
+
+type frontDoorCommand struct {
+	Action     frontDoorAction
+	TicketID   string
+	RepoTarget string
+	Provider   string
+}
+
+func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, store *workarea.Store, current *workarea.Definition, workareas []workarea.Definition) (int, error) {
+	fmt.Fprintln(a.stdout)
+	fmt.Fprintln(a.stdout, "Type a ticket or command. Try: ABC-123 | inspect ABC-123 | verify ABC-123 | repo github:owner/name | login github")
+	fmt.Fprintln(a.stdout, "Press Enter to open the picker.")
+	fmt.Fprint(a.stdout, "ask gig > ")
+
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return -1, err
+	}
+
+	command, err := parseFrontDoorCommand(line, current != nil, len(workareas) > 0)
+	if err != nil {
+		return -1, err
+	}
+
+	switch command.Action {
+	case frontDoorActionPicker:
+		if current != nil {
+			return a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
+		}
+		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, "")
+	case frontDoorActionLogin:
+		return a.runLogin(ctx, []string{command.Provider}), nil
+	case frontDoorActionDiscoverGitHub, frontDoorActionEnterTarget, frontDoorActionUseCurrentFolder, frontDoorActionDiscoverOtherProvider, frontDoorActionSavedWorkarea:
+		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, command.TicketID, command.Action)
+	case frontDoorActionSwitchWorkarea:
+		if current == nil {
+			if len(workareas) == 0 {
+				return -1, fmt.Errorf("no saved projects are available yet")
+			}
+			name, err := a.promptForWorkareaSelectionWithReader(reader, store)
+			if err != nil {
+				if errors.Is(err, errPickerCancelled) {
+					return 0, nil
+				}
+				return -1, err
+			}
+			if _, err := store.Use(name); err != nil {
+				return -1, err
+			}
+			fmt.Fprintf(a.stdout, "Current project switched to %s.\n", name)
+			return 0, nil
+		}
+		return a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
+	case frontDoorActionInspect, frontDoorActionVerify, frontDoorActionManifest:
+		if current == nil && strings.TrimSpace(command.RepoTarget) == "" {
+			return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, command.Action, command.TicketID)
+		}
+		ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
+		if err != nil {
+			return -1, err
+		}
+		if strings.TrimSpace(command.RepoTarget) != "" {
+			return a.executeFrontDoorAction(ctx, command.Action, ticketID, command.RepoTarget, ""), nil
+		}
+		return a.executeFrontDoorAction(ctx, command.Action, ticketID, "", ""), nil
+	default:
+		return -1, fmt.Errorf("unsupported front-door action %q", command.Action)
+	}
+}
+
 func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store, workareas []workarea.Definition) (int, error) {
-	reader := bufio.NewReader(a.stdin)
+	return a.runFrontDoorActionWithoutCurrentProject(ctx, bufio.NewReader(a.stdin), store, workareas, frontDoorActionInspect, "")
+}
+
+func (a *App) runFrontDoorActionWithoutCurrentProject(ctx context.Context, reader *bufio.Reader, store *workarea.Store, workareas []workarea.Definition, action frontDoorAction, presetTicket string, preferredModes ...frontDoorAction) (int, error) {
+	selectedAction := frontDoorActionPicker
+	if len(preferredModes) > 0 {
+		selectedAction = preferredModes[0]
+	}
 
 	items := []pickerItem{
 		{
@@ -120,17 +206,20 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 		})
 	}
 
-	fmt.Fprintln(a.stdout)
-	selected, err := a.runPicker(reader, "How do you want to start?", items)
-	if err != nil {
-		if errors.Is(err, errPickerCancelled) {
-			return 0, nil
+	if selectedAction == frontDoorActionPicker {
+		fmt.Fprintln(a.stdout)
+		selected, err := a.runPicker(reader, "How should gig look this up?", items)
+		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				return 0, nil
+			}
+			return -1, err
 		}
-		return -1, err
+		selectedAction = frontDoorAction(selected.Value)
 	}
 
-	switch selected.Value {
-	case "discover-github":
+	switch selectedAction {
+	case frontDoorActionDiscoverGitHub:
 		repository, err := a.discoverWorkareaRepositoryWithReader(ctx, reader, "github", "", "")
 		if err != nil {
 			if errors.Is(err, errPickerCancelled) {
@@ -138,12 +227,12 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 			}
 			return -1, err
 		}
-		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		ticketID, err := a.resolveFrontDoorTicketID(reader, presetTicket)
 		if err != nil {
 			return -1, err
 		}
-		return a.runInspect(ctx, []string{ticketID, "--repo", repository.Root}), nil
-	case "enter-target":
+		return a.executeFrontDoorAction(ctx, action, ticketID, repository.Root, ""), nil
+	case frontDoorActionEnterTarget:
 		fmt.Fprintln(a.stdout, "Repository target example: github:owner/name")
 		repoTarget, err := a.promptForLine(reader, "Repository target")
 		if err != nil {
@@ -152,18 +241,18 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 		if _, err := sourcecontrol.ParseRepositoryTargets(repoTarget); err != nil {
 			return -1, err
 		}
-		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		ticketID, err := a.resolveFrontDoorTicketID(reader, presetTicket)
 		if err != nil {
 			return -1, err
 		}
-		return a.runInspect(ctx, []string{ticketID, "--repo", repoTarget}), nil
-	case "use-current-folder":
-		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		return a.executeFrontDoorAction(ctx, action, ticketID, repoTarget, ""), nil
+	case frontDoorActionUseCurrentFolder:
+		ticketID, err := a.resolveFrontDoorTicketID(reader, presetTicket)
 		if err != nil {
 			return -1, err
 		}
-		return a.runInspect(ctx, []string{ticketID, "--path", "."}), nil
-	case "discover-other-provider":
+		return a.executeFrontDoorAction(ctx, action, ticketID, "", "."), nil
+	case frontDoorActionDiscoverOtherProvider:
 		repository, err := a.discoverWorkareaRepositoryWithReader(ctx, reader, "", "", "")
 		if err != nil {
 			if errors.Is(err, errPickerCancelled) {
@@ -171,12 +260,12 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 			}
 			return -1, err
 		}
-		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		ticketID, err := a.resolveFrontDoorTicketID(reader, presetTicket)
 		if err != nil {
 			return -1, err
 		}
-		return a.runInspect(ctx, []string{ticketID, "--repo", repository.Root}), nil
-	case "saved-workarea":
+		return a.executeFrontDoorAction(ctx, action, ticketID, repository.Root, ""), nil
+	case frontDoorActionSavedWorkarea:
 		name, err := a.promptForWorkareaSelectionWithReader(reader, store)
 		if err != nil {
 			if errors.Is(err, errPickerCancelled) {
@@ -187,18 +276,21 @@ func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store,
 		if _, err := store.Use(name); err != nil {
 			return -1, err
 		}
-		ticketID, err := a.promptForLine(reader, "Ticket ID")
+		ticketID, err := a.resolveFrontDoorTicketID(reader, presetTicket)
 		if err != nil {
 			return -1, err
 		}
-		return a.runInspect(ctx, []string{ticketID}), nil
+		return a.executeFrontDoorAction(ctx, action, ticketID, "", ""), nil
 	default:
-		return -1, fmt.Errorf("invalid quick-start choice %q", selected.Value)
+		return -1, fmt.Errorf("invalid quick-start choice %q", selectedAction)
 	}
 }
 
 func (a *App) runFrontDoorCurrentProjectAction(ctx context.Context) (int, error) {
-	reader := bufio.NewReader(a.stdin)
+	return a.runFrontDoorCurrentProjectActionWithReader(ctx, bufio.NewReader(a.stdin))
+}
+
+func (a *App) runFrontDoorCurrentProjectActionWithReader(ctx context.Context, reader *bufio.Reader) (int, error) {
 
 	store, err := workarea.NewStore()
 	if err != nil {
@@ -263,19 +355,169 @@ func (a *App) runFrontDoorCurrentProjectAction(ctx context.Context) (int, error)
 		return 0, nil
 	}
 
-	ticketID, err := a.promptForLine(reader, "Ticket ID")
+	ticketID, err := a.resolveFrontDoorTicketID(reader, "")
 	if err != nil {
 		return -1, err
 	}
 
 	switch selected.Value {
 	case "inspect":
-		return a.runInspect(ctx, []string{ticketID}), nil
+		return a.executeFrontDoorAction(ctx, frontDoorActionInspect, ticketID, "", ""), nil
 	case "verify":
-		return a.runVerify(ctx, []string{"--ticket", ticketID}), nil
+		return a.executeFrontDoorAction(ctx, frontDoorActionVerify, ticketID, "", ""), nil
 	case "manifest":
-		return a.runManifestGenerate(ctx, []string{"--ticket", ticketID}), nil
+		return a.executeFrontDoorAction(ctx, frontDoorActionManifest, ticketID, "", ""), nil
 	default:
 		return -1, fmt.Errorf("invalid front-door choice %q", selected.Value)
 	}
+}
+
+func (a *App) resolveFrontDoorTicketID(reader *bufio.Reader, preset string) (string, error) {
+	preset = normalizeTicketID(preset)
+	if preset != "" {
+		return preset, nil
+	}
+	return a.promptForLine(reader, "Ticket ID")
+}
+
+func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction, ticketID, repoTarget, path string) int {
+	ticketID = normalizeTicketID(ticketID)
+	switch action {
+	case frontDoorActionInspect:
+		args := []string{ticketID}
+		if strings.TrimSpace(repoTarget) != "" {
+			args = append(args, "--repo", repoTarget)
+		}
+		if strings.TrimSpace(path) != "" {
+			args = append(args, "--path", path)
+		}
+		return a.runInspect(ctx, args)
+	case frontDoorActionVerify:
+		args := []string{"--ticket", ticketID}
+		if strings.TrimSpace(repoTarget) != "" {
+			args = append(args, "--repo", repoTarget)
+		}
+		if strings.TrimSpace(path) != "" {
+			args = append(args, "--path", path)
+		}
+		return a.runVerify(ctx, args)
+	case frontDoorActionManifest:
+		args := []string{"--ticket", ticketID}
+		if strings.TrimSpace(repoTarget) != "" {
+			args = append(args, "--repo", repoTarget)
+		}
+		if strings.TrimSpace(path) != "" {
+			args = append(args, "--path", path)
+		}
+		return a.runManifestGenerate(ctx, args)
+	default:
+		fmt.Fprintf(a.stderr, "front door failed: unsupported action %q\n", action)
+		return 1
+	}
+}
+
+func parseFrontDoorCommand(line string, hasCurrent, hasSaved bool) (frontDoorCommand, error) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return frontDoorCommand{Action: frontDoorActionPicker}, nil
+	}
+
+	tokens := strings.Fields(trimmed)
+	if len(tokens) == 0 {
+		return frontDoorCommand{Action: frontDoorActionPicker}, nil
+	}
+
+	if len(tokens) == 1 {
+		switch strings.ToLower(tokens[0]) {
+		case "1":
+			if hasCurrent {
+				return frontDoorCommand{Action: frontDoorActionInspect}, nil
+			}
+			return frontDoorCommand{Action: frontDoorActionDiscoverGitHub}, nil
+		case "2":
+			if hasCurrent {
+				return frontDoorCommand{Action: frontDoorActionVerify}, nil
+			}
+			return frontDoorCommand{Action: frontDoorActionEnterTarget}, nil
+		case "3":
+			if hasCurrent {
+				return frontDoorCommand{Action: frontDoorActionManifest}, nil
+			}
+			return frontDoorCommand{Action: frontDoorActionUseCurrentFolder}, nil
+		case "4":
+			if hasCurrent {
+				return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
+			}
+			return frontDoorCommand{Action: frontDoorActionDiscoverOtherProvider}, nil
+		case "5":
+			if hasSaved && !hasCurrent {
+				return frontDoorCommand{Action: frontDoorActionSavedWorkarea}, nil
+			}
+		case "?", "help", "menu", "pick", "browse":
+			return frontDoorCommand{Action: frontDoorActionPicker}, nil
+		case "github":
+			return frontDoorCommand{Action: frontDoorActionDiscoverGitHub}, nil
+		case "local", "folder":
+			return frontDoorCommand{Action: frontDoorActionUseCurrentFolder}, nil
+		case "switch", "project", "workarea":
+			return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
+		}
+	}
+
+	repoTarget := ""
+	filtered := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if repoTarget == "" && isFrontDoorRepoTarget(token) {
+			repoTarget = token
+			continue
+		}
+		filtered = append(filtered, token)
+	}
+	tokens = filtered
+	if len(tokens) == 0 && repoTarget != "" {
+		return frontDoorCommand{Action: frontDoorActionInspect, RepoTarget: repoTarget}, nil
+	}
+
+	first := strings.ToLower(tokens[0])
+	switch first {
+	case "inspect", "find":
+		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
+	case "verify":
+		return frontDoorCommand{Action: frontDoorActionVerify, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
+	case "manifest":
+		args := tokens[1:]
+		if len(args) > 0 && strings.EqualFold(args[0], "generate") {
+			args = args[1:]
+		}
+		return frontDoorCommand{Action: frontDoorActionManifest, TicketID: frontDoorTicketArg(args), RepoTarget: repoTarget}, nil
+	case "login":
+		provider := "github"
+		if len(tokens) > 1 {
+			provider = strings.TrimSpace(tokens[1])
+		}
+		return frontDoorCommand{Action: frontDoorActionLogin, Provider: provider}, nil
+	case "repo", "target":
+		if repoTarget == "" {
+			return frontDoorCommand{}, fmt.Errorf("type a repository target such as github:owner/name")
+		}
+		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
+	case "local", "folder":
+		return frontDoorCommand{Action: frontDoorActionUseCurrentFolder, TicketID: frontDoorTicketArg(tokens[1:])}, nil
+	case "switch", "project", "workarea":
+		return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
+	}
+
+	return frontDoorCommand{Action: frontDoorActionInspect, TicketID: tokens[0], RepoTarget: repoTarget}, nil
+}
+
+func isFrontDoorRepoTarget(value string) bool {
+	_, err := sourcecontrol.ParseRepositoryTargets(value)
+	return err == nil
+}
+
+func frontDoorTicketArg(tokens []string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	return tokens[0]
 }

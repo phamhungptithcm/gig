@@ -342,7 +342,7 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "googling in git") || !strings.Contains(stdout, "status:  no project selected yet") {
+	if !strings.Contains(stdout, "googling in git") || !strings.Contains(stdout, "status:  no project selected yet") || !strings.Contains(stdout, "input:   ticket, command, or Enter for picker") {
 		t.Fatalf("stdout = %q, want branded hero state", stdout)
 	}
 	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
@@ -381,8 +381,8 @@ func TestAppFrontDoorQuickStartInspectsRepoTarget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door quick-start exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "How do you want to start?") || !strings.Contains(stdout, "Repository target:") || !strings.Contains(stdout, "Ticket ID:") {
-		t.Fatalf("stdout = %q, want quick-start prompts", stdout)
+	if !strings.Contains(stdout, "ask gig >") || !strings.Contains(stdout, "Repository target:") || !strings.Contains(stdout, "Ticket ID:") {
+		t.Fatalf("stdout = %q, want palette and quick-start prompts", stdout)
 	}
 	if !strings.Contains(stdout, "github:acme/payments") || !strings.Contains(stdout, "Provider evidence") {
 		t.Fatalf("stdout = %q, want inspect output after quick start", stdout)
@@ -415,7 +415,7 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
+	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") || !strings.Contains(stdout, "input:   ticket or command palette") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
 	}
 	if !strings.Contains(stdout, "Quick commands") || !strings.Contains(stdout, "gig manifest generate --ticket ABC-123") {
@@ -449,11 +449,8 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndInspects(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door inspect exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "What do you want to do next?") || !strings.Contains(stdout, "Choice or filter text") {
-		t.Fatalf("stdout = %q, want action picker", stdout)
-	}
-	if !strings.Contains(stdout, "Ticket ID:") {
-		t.Fatalf("stdout = %q, want ticket prompt", stdout)
+	if !strings.Contains(stdout, "ask gig >") || !strings.Contains(stdout, "Ticket ID:") {
+		t.Fatalf("stdout = %q, want command palette and ticket prompt", stdout)
 	}
 	if !strings.Contains(stdout, "github:acme/payments") || !strings.Contains(stdout, "Provider evidence") {
 		t.Fatalf("stdout = %q, want inspect output", stdout)
@@ -488,8 +485,8 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndVerifies(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door verify exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "What do you want to do next?") || !strings.Contains(stdout, "Ticket ID:") {
-		t.Fatalf("stdout = %q, want action picker and ticket prompt", stdout)
+	if !strings.Contains(stdout, "ask gig >") || !strings.Contains(stdout, "Ticket ID:") {
+		t.Fatalf("stdout = %q, want command palette and ticket prompt", stdout)
 	}
 	if !strings.Contains(stdout, "Promotion") || !strings.Contains(stdout, "staging -> main") || !strings.Contains(stdout, "SAFE") {
 		t.Fatalf("stdout = %q, want verification output", stdout)
@@ -1640,6 +1637,33 @@ func TestAppInspectRemoteRepoAutoCreatesCurrentProject(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
+	}
+}
+
+func TestAppFrontDoorPaletteRepoCommandInspects(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments": `{"default_branch":"main"}`,
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1":      `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"repos/acme/payments/commits?sha=staging&per_page=100&page=1":          `[{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"}}]`,
+		"repos/acme/payments/commits?sha=main&per_page=100&page=1":             `[]`,
+		"repos/acme/payments/commits/abc123456789":                             `{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"},"files":[{"filename":"service/app.txt"}]}`,
+		"repos/acme/payments/commits/abc123456789/pulls?per_page=100&page=1":   `[{"number":42,"title":"ABC-123 payments release","state":"closed","merged_at":"2026-04-10T01:02:03Z","html_url":"https://github.com/acme/payments/pull/42","head":{"ref":"staging"},"base":{"ref":"main"}}]`,
+		"repos/acme/payments/deployments?sha=abc123456789&per_page=100&page=1": `[{"id":1001,"sha":"abc123456789","ref":"main","environment":"production"}]`,
+		"repos/acme/payments/deployments/1001/statuses?per_page=100&page=1":    `[{"state":"success","environment":"production","log_url":"https://deploy.example.com/github/1001"}]`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "repo github:acme/payments ABC-123\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door palette exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "ask gig >") || !strings.Contains(stdout, "Provider evidence") {
+		t.Fatalf("stdout = %q, want palette output and inspect results", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
 	}
 }
 

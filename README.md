@@ -59,6 +59,7 @@ gig manifest generate --ticket ABC-123 --repo github:owner/name
 
 If you are brand new, start with `gig` first and use `↑/↓` then `Enter` to pick a GitHub repo, a saved project, or the current folder.
 If you already know the repo target, jump straight to `inspect`.
+You can also type straight into the front door, for example: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, or `repo github:owner/name ABC-123`.
 
 Remote target forms:
 

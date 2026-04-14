@@ -36,6 +36,7 @@ If you are in an interactive terminal, `gig` opens a picker-first front door:
 - press `Enter` or `Space` to select
 - start with GitHub if you are not sure what to pick
 - use the current folder when you already have a repo checked out locally
+- or type directly into the command palette: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `repo github:owner/name ABC-123`
 
 The goal is that a new user can get to the first audit without learning repo target syntax first.
 
