@@ -1,5 +1,5 @@
 {
-  "name": "@phamhungptithcm/gig",
+  "name": "@hunpeolabs/gig",
   "version": "0.0.0-development",
   "description": "Remote-first release audit CLI for ticket-based delivery across repositories",
   "bin": {

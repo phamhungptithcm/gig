@@ -55,7 +55,7 @@ The current build is already strong at:
 
 ## Installation Note
 
-Use the direct installer until `@phamhungptithcm/gig` completes its first bootstrap publish.
+Use the direct installer until `@hunpeolabs/gig` completes its first bootstrap publish.
 If npm still returns `404`, that publish has not landed yet.
 
 ## Product Boundary
