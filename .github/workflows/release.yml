@@ -140,7 +140,7 @@ jobs:
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
           node --check scripts/prepare-npm-package.cjs
-          bash -n scripts/resolve-npm-publish-mode.sh scripts/verify-npm-publish-auth.sh scripts/publish-npm-package.sh
+          bash -n scripts/resolve-npm-publish-mode.sh scripts/verify-npm-publish-auth.sh scripts/publish-npm-package.sh scripts/verify-published-npm-version.sh
           node scripts/prepare-npm-package.cjs "${{ needs.metadata.outputs.next_tag }}" dist/npm-package
           npm pack --dry-run ./dist/npm-package
 
@@ -261,19 +261,4 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.next_tag }}
           PACKAGE_NAME: "@hunpeolabs/gig"
-        run: |
-          expected_version="$(node -e '
-            const tag = String(process.env.RELEASE_TAG || "").trim();
-            const match = tag.match(/^v(\d{4})\.(\d{2})\.(\d{2})$/);
-            if (!match) {
-              console.error(`invalid release tag: ${tag}`);
-              process.exit(1);
-            }
-            console.log(`${match[1]}.${Number(match[2])}.${Number(match[3])}`);
-          ')"
-          published_version="$(npm view "${PACKAGE_NAME}" version --registry=https://registry.npmjs.org)"
-          if [ "${published_version}" != "${expected_version}" ]; then
-            echo "Published npm version ${published_version} did not match expected ${expected_version}." >&2
-            exit 1
-          fi
-          echo "Published ${PACKAGE_NAME}@${published_version}"
+        run: ./scripts/verify-published-npm-version.sh "${PACKAGE_NAME}" "${RELEASE_TAG}"

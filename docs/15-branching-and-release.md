@@ -32,6 +32,7 @@ The release workflow is split into:
 - metadata resolution
 - release verification across Go, docs, and npm package staging
 - npm publication
+- npm registry verification with retry for first-visibility lag
 - GitHub Release publication after npm succeeds
 
 npm publication is now a release requirement.
