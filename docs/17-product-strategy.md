@@ -6,9 +6,9 @@
 
 `A remote-first release audit CLI for ticket-based delivery across many repositories.`
 
-That is more useful than "find commits by ticket" and sharper than "generic release tool."
+That is sharper than "find commits by ticket" and more honest than "generic release tool."
 It centers the real job:
-help a user inspect remote evidence, spot what is missing, and decide whether a ticket can move forward safely.
+inspect ticket evidence, spot what is missing, and decide whether the next move is safe.
 
 ## The Core Promise
 
@@ -19,9 +19,9 @@ The shortest successful path should feel like this:
 
 1. run `gig`
 2. log in to a provider if needed
-3. choose or create a workarea
-4. inspect a ticket or release
-5. review a clear audit result with evidence and next steps
+3. inspect a ticket
+4. verify the next move
+5. export a release packet when needed
 
 ## What Problem It Actually Solves
 
@@ -48,7 +48,7 @@ Needs visibility into what changed since the last failed verification round.
 
 ### Release Engineer
 
-Needs a promotion plan and a release packet, not just a list of commits.
+Needs a release verdict and a release packet, not just a list of commits.
 
 ### Delivery Lead Or Outsourcing Lead
 
@@ -59,7 +59,7 @@ Needs confidence that cross-repo tickets can be promoted without hidden omission
 ### 1. Install Must Lead To First Value Fast
 
 The product should assume that first-run friction kills adoption.
-Install, login, connect, and inspect must be the main path.
+Install, login, inspect, and verify must be the main path.
 
 ### 2. Remote Evidence First, Local Evidence Second
 
@@ -96,7 +96,7 @@ The terminal experience should be:
 - keyboard-first
 - readable under multi-repo complexity
 - summary first, detail on demand
-- visually consistent across inspect, check, and release views
+- visually consistent across inspect, verify, and release views
 - explicit about risk, missing evidence, and manual review items
 
 ### 6. Read Evidence, Do Not Guess
@@ -107,7 +107,7 @@ Whenever possible, `gig` should use evidence from:
 - pull requests or merge requests
 - build status
 - deployment records
-- issue tracker links
+- issue tracker links when available
 
 ### 7. Separate Branch State From Environment State
 
@@ -167,7 +167,7 @@ The console UX should revolve around a few durable user intents:
 
 - open or switch workarea
 - inspect ticket
-- check release readiness
+- verify release readiness
 - capture release evidence
 - export human or machine output
 
@@ -193,7 +193,7 @@ The broader delivery metrics can still align with DORA-style outcomes such as de
 
 - install and run immediately
 - guided login
-- remote repo connection
+- remote repo targeting
 - zero-config first success
 
 ### Stage 2: Audit
@@ -222,21 +222,22 @@ The broader delivery metrics can still align with DORA-style outcomes such as de
 
 ## Where The Project Is Now
 
-Today, `gig` has strong pieces of Stage 2, limited pieces of remote access, and not enough Stage 1 or Stage 3.
+Today, `gig` already has strong pieces of Stages 1 through 3, with the biggest remaining gap being polish and depth rather than direction.
 
 Already available:
 
 - ticket inspection across repos
-- GitHub-backed remote inspection for some flows
-- environment-aware status
+- remote inspection across GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN in supported live flows
+- a guided terminal front door
+- reusable workareas
 - risk and manual-step hints
 - read-only verification and promotion planning
 - JSON output for `plan` and `verify`
 
 Still missing from the intended direction:
 
-- zero-config first success as the main story
-- durable workareas
+- stronger zero-config first-run polish across every provider path
+- deeper remote evidence and release context in the common case
 - stronger console UX for repeated daily use
 - broader provider support
 - richer PR, deployment, and issue evidence
