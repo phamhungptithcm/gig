@@ -109,6 +109,16 @@ gig workarea show
 
 Use a workarea when you want `gig` to remember repo scope and defaults so later commands can stay short.
 
+### `gig update`
+
+```bash
+gig update
+gig update v2026.04.09
+```
+
+Use this to refresh the installed CLI.
+If your npm install still returns `404`, the first package publish has not completed yet; use the direct installer until it does.
+
 ## Optional AI Layer
 
 ### Readiness And Setup

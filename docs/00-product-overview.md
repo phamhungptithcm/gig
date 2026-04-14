@@ -53,6 +53,11 @@ The current build is already strong at:
 - local Git and SVN fallback flows
 - a guided terminal front door when users run `gig`
 
+## Installation Note
+
+Use the direct installer until `@phamhungptithcm/gig` completes its first bootstrap publish.
+If npm still returns `404`, that publish has not landed yet.
+
 ## Product Boundary
 
 `gig` does not try to replace:

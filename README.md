@@ -26,17 +26,21 @@ Why teams adopt it:
 
 ## Install
 
-```bash
-npm install -g @phamhungptithcm/gig
-gig version
-```
-
-Direct installer fallback:
+Use the direct installer until the first npm bootstrap publish is live:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
 gig version
 ```
+
+If `@phamhungptithcm/gig` is already available in your environment, this also works:
+
+```bash
+npm install -g @phamhungptithcm/gig
+gig version
+```
+
+If npm returns `404`, the first package publish has not completed yet.
 
 ## Fastest Path
 
