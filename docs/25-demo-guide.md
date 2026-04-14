@@ -76,7 +76,7 @@ For a 45 to 60 second product demo, keep the flow tight:
 2. show the command palette idea: `ABC-123` or `repo github:owner/name ABC-123`
 3. show one remote-style workarea being saved
 4. show `gig inspect` or the guided shortcut path
-5. close with `gig verify`, `gig manifest generate`, or `gig assist audit`
+5. close with `gig verify`, `gig manifest`, or `gig assist audit`
 
 That sequence sells the strongest product story without drowning the viewer in command surface area.
 

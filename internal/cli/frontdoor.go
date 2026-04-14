@@ -485,7 +485,7 @@ func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction
 		}
 		return a.runInspect(ctx, args)
 	case frontDoorActionVerify:
-		args := []string{"--ticket", ticketID}
+		args := []string{ticketID}
 		if strings.TrimSpace(repoTarget) != "" {
 			args = append(args, "--repo", repoTarget)
 		}
@@ -494,14 +494,14 @@ func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction
 		}
 		return a.runVerify(ctx, args)
 	case frontDoorActionManifest:
-		args := []string{"--ticket", ticketID}
+		args := []string{ticketID}
 		if strings.TrimSpace(repoTarget) != "" {
 			args = append(args, "--repo", repoTarget)
 		}
 		if strings.TrimSpace(path) != "" {
 			args = append(args, "--path", path)
 		}
-		return a.runManifestGenerate(ctx, args)
+		return a.runManifest(ctx, args)
 	default:
 		fmt.Fprintf(a.stderr, "front door failed: unsupported action %q\n", action)
 		return 1

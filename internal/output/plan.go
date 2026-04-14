@@ -61,7 +61,7 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 	}
 	switch promotionPlan.Verdict {
 	case plansvc.VerdictSafe:
-		if err := ui.Bullets("Run " + ui.Command("gig manifest generate --ticket "+promotionPlan.TicketID) + " with the same scope to prepare the release packet."); err != nil {
+		if err := ui.Bullets("Run " + ui.Command("gig manifest "+promotionPlan.TicketID) + " with the same scope to prepare the release packet."); err != nil {
 			return err
 		}
 	default:
@@ -222,11 +222,11 @@ func RenderVerification(w io.Writer, verification plansvc.Verification) error {
 	}
 	switch verification.Verdict {
 	case plansvc.VerdictSafe:
-		if err := ui.Bullets("Run " + ui.Command("gig manifest generate --ticket "+verification.TicketID) + " with the same scope to prepare handoff and release notes."); err != nil {
+		if err := ui.Bullets("Run " + ui.Command("gig manifest "+verification.TicketID) + " with the same scope to prepare handoff and release notes."); err != nil {
 			return err
 		}
 	default:
-		if err := ui.Bullets("Run " + ui.Command("gig plan --ticket "+verification.TicketID) + " with the same scope to review missing commits, dependencies, and manual steps."); err != nil {
+		if err := ui.Bullets("Run " + ui.Command("gig plan "+verification.TicketID) + " with the same scope to review missing commits, dependencies, and manual steps."); err != nil {
 			return err
 		}
 	}

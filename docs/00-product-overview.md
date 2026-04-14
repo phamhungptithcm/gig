@@ -36,7 +36,7 @@ Before a team moves a ticket or release forward, `gig` should answer:
 - remote-first repository inspection for GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
 - `inspect` for the full ticket story
 - `verify` for a `safe`, `warning`, or `blocked` release verdict
-- `manifest generate` for Markdown and JSON release packets
+- `manifest` for Markdown and JSON release packets
 
 ## Why It Wins
 

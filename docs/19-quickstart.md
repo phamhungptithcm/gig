@@ -36,7 +36,7 @@ If you are in an interactive terminal, `gig` opens a picker-first front door:
 - press `Enter` or `Space` to select
 - start with GitHub if you are not sure what to pick
 - use the current folder when you already have a repo checked out locally
-- or type directly into the command palette: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `repo github:owner/name ABC-123`
+- or type directly into the command palette: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `manifest ABC-123`, `repo github:owner/name ABC-123`
 
 The goal is that a new user can get to the first audit without learning repo target syntax first.
 
@@ -55,7 +55,7 @@ Use the provider that matches the repository you want to audit.
 ## 4. Inspect One Ticket
 
 ```bash
-gig inspect ABC-123 --repo github:owner/name
+gig ABC-123 --repo github:owner/name
 ```
 
 Supported remote target forms:
@@ -76,7 +76,7 @@ Use `inspect` when you want the full ticket picture in one place:
 ## 5. Verify The Next Move
 
 ```bash
-gig verify --ticket ABC-123 --repo github:owner/name
+gig verify ABC-123 --repo github:owner/name
 ```
 
 Use `verify` when you want a release decision instead of raw evidence:
@@ -90,7 +90,7 @@ Use `verify` when you want a release decision instead of raw evidence:
 ## 6. Export A Release Packet
 
 ```bash
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig manifest ABC-123 --repo github:owner/name
 ```
 
 Use this when you want release-ready output for QA, release review, or downstream tooling without rewriting the audit by hand.
@@ -99,8 +99,8 @@ Use this when you want release-ready output for QA, release review, or downstrea
 
 ```bash
 gig workarea add payments --repo github:owner/name --from staging --to main --use
-gig inspect ABC-123
-gig verify --ticket ABC-123
+gig ABC-123
+gig verify ABC-123
 ```
 
 Use a workarea when you want `gig` to remember project scope and defaults so repeated commands stay short.
@@ -125,9 +125,9 @@ Use local mode when remote access is not enough yet:
 
 ```bash
 gig scan --path .
-gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --path .
-gig manifest generate --ticket ABC-123 --path .
+gig ABC-123 --path .
+gig verify ABC-123 --path .
+gig manifest ABC-123 --path .
 ```
 
 ## 10. Only Add Config If Inference Needs Help

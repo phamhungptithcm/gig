@@ -15,9 +15,9 @@ For most teams, `gig` should feel like this:
 ```bash
 gig
 gig login github
-gig inspect ABC-123 --repo github:owner/name
-gig verify --ticket ABC-123 --repo github:owner/name
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig ABC-123 --repo github:owner/name
+gig verify ABC-123 --repo github:owner/name
+gig manifest ABC-123 --repo github:owner/name
 ```
 
 When users run `gig` in a real terminal, the front door should behave like a guided picker:
@@ -44,7 +44,7 @@ The front door also accepts direct palette input such as:
 | `gig login` | authenticate to a live provider |
 | `gig inspect` | see the full ticket story |
 | `gig verify` | get a `safe`, `warning`, or `blocked` verdict |
-| `gig manifest generate` | export a release packet |
+| `gig manifest` | export a release packet |
 | `gig workarea` | remember repo scope and defaults for repeat use |
 | `gig plan` | build a read-only promotion plan |
 | `gig snapshot create` | save a repeatable ticket baseline |
@@ -80,10 +80,11 @@ Use this once per provider before running remote-backed commands.
 ### `gig inspect`
 
 ```bash
+gig ABC-123
+gig ABC-123 --repo github:owner/name
 gig inspect ABC-123
-gig inspect ABC-123 --repo github:owner/name
 gig inspect ABC-123 --workarea payments
-gig inspect ABC-123 --path .
+gig ABC-123 --path .
 ```
 
 Use this when you need the full ticket audit:
@@ -96,8 +97,8 @@ Use this when you need the full ticket audit:
 ### `gig verify`
 
 ```bash
-gig verify --ticket ABC-123
-gig verify --ticket ABC-123 --repo github:owner/name
+gig verify ABC-123
+gig verify ABC-123 --repo github:owner/name
 gig verify --ticket-file tickets.txt --repo github:owner/name
 gig verify --release rel-2026-04-09 --path .
 ```
@@ -105,14 +106,16 @@ gig verify --release rel-2026-04-09 --path .
 Use this when you need a release decision instead of raw evidence.
 Add `--from` and `--to` only when `gig` cannot infer the promotion path.
 
-### `gig manifest generate`
+### `gig manifest`
 
 ```bash
-gig manifest generate --ticket ABC-123
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig manifest ABC-123
+gig manifest ABC-123 --repo github:owner/name
+gig manifest generate ABC-123
 ```
 
 Use this to generate a release packet for QA, release review, or automation.
+The older `gig manifest generate ...` form still works, but `gig manifest ...` is the main command to remember.
 
 ### `gig workarea`
 
@@ -182,7 +185,7 @@ Use these when you need a narrower tool than `inspect` or `verify`:
   see where a ticket is present or behind across environment branches
 - `gig diff --ticket ABC-123 --from dev --to test --path .`
   compare one branch to another for a ticket
-- `gig plan --ticket ABC-123 --repo github:owner/name`
+- `gig plan ABC-123 --repo github:owner/name`
   build a read-only promotion plan
 - `gig snapshot create --ticket ABC-123 --path .`
   save a repeatable audit baseline
@@ -224,8 +227,8 @@ Start with:
 
 1. `gig`
 2. `gig login <provider>`
-3. `gig inspect`
-4. `gig verify`
-5. `gig manifest generate`
+3. `gig <ticket-id>`
+4. `gig verify <ticket-id>`
+5. `gig manifest <ticket-id>`
 
 Reach for the rest only when the main workflow does not answer the question fast enough.

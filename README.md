@@ -20,7 +20,7 @@ That question gets expensive when:
 
 - `inspect` collects the full ticket story across repositories and branches
 - `verify` returns a `safe`, `warning`, or `blocked` verdict
-- `manifest generate` exports a release packet in Markdown or JSON
+- `manifest` exports a release packet in Markdown or JSON
 - `gig` opens a guided terminal front door so first-time users can pick a repo with ↑/↓ and Enter instead of memorizing flags
 
 Why teams adopt it:
@@ -52,14 +52,14 @@ If npm returns `404`, the first package publish has not completed yet.
 ```bash
 gig
 gig login github
-gig inspect ABC-123 --repo github:owner/name
-gig verify --ticket ABC-123 --repo github:owner/name
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig ABC-123 --repo github:owner/name
+gig verify ABC-123 --repo github:owner/name
+gig manifest ABC-123 --repo github:owner/name
 ```
 
 If you are brand new, start with `gig` first and use `↑/↓` then `Enter` to pick a GitHub repo, a saved project, or the current folder.
 If you already know the repo target, jump straight to `inspect`.
-You can also type straight into the front door, for example: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, or `repo github:owner/name ABC-123`.
+You can also type straight into the front door, for example: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `manifest ABC-123`, or `repo github:owner/name ABC-123`.
 
 Remote target forms:
 
@@ -72,8 +72,8 @@ Remote target forms:
 Local fallback is still available:
 
 ```bash
-gig inspect ABC-123 --path .
-gig verify --ticket ABC-123 --path .
+gig ABC-123 --path .
+gig verify ABC-123 --path .
 ```
 
 ## Demo And Docs

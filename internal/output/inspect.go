@@ -50,7 +50,7 @@ func RenderInspect(w io.Writer, ticketID, basePath string, scannedRepoCount int,
 		if err := ui.Section("Recommended next step"); err != nil {
 			return err
 		}
-		if err := ui.Bullets("Confirm the ticket ID or run " + ui.Command("gig verify --ticket "+ticketID) + " with the same scope after checking your repo target."); err != nil {
+		if err := ui.Bullets("Confirm the ticket ID or run " + ui.Command("gig verify "+ticketID) + " with the same scope after checking your repo target."); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(w, "No commits found for %s.\n", ticketID)
@@ -60,7 +60,7 @@ func RenderInspect(w io.Writer, ticketID, basePath string, scannedRepoCount int,
 	if err := ui.Section("Recommended next step"); err != nil {
 		return err
 	}
-	if err := ui.Bullets("Run " + ui.Command("gig verify --ticket "+ticketID) + " with the same scope to turn this evidence into a release verdict."); err != nil {
+	if err := ui.Bullets("Run " + ui.Command("gig verify "+ticketID) + " with the same scope to turn this evidence into a release verdict."); err != nil {
 		return err
 	}
 	if err := ui.Blank(); err != nil {

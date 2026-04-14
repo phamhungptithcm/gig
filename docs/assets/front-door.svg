@@ -36,9 +36,9 @@
     <text x="678" y="254" fill="#d1d5db">- generate a release packet</text>
 
     <text x="650" y="314" fill="#f8fafc">Core workflows</text>
-    <text x="678" y="350" fill="#39d0ff">gig inspect ABC-123 --repo github:owner/name</text>
-    <text x="678" y="382" fill="#39d0ff">gig verify --ticket ABC-123 --repo github:owner/name</text>
-    <text x="678" y="414" fill="#39d0ff">gig manifest generate --ticket ABC-123 --repo github:owner/name</text>
+    <text x="678" y="350" fill="#39d0ff">gig ABC-123 --repo github:owner/name</text>
+    <text x="678" y="382" fill="#39d0ff">gig verify ABC-123 --repo github:owner/name</text>
+    <text x="678" y="414" fill="#39d0ff">gig manifest ABC-123 --repo github:owner/name</text>
     <text x="678" y="446" fill="#7d8591">These three commands are the main path.</text>
 
     <text x="650" y="506" fill="#f8fafc">Try one line</text>

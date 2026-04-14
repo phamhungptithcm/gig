@@ -46,7 +46,7 @@ The repo earns stars when the value is obvious in under a minute.
 
 Do these consistently:
 
-- keep the README focused on `inspect`, `verify`, and `manifest generate`
+- keep the README focused on `inspect`, `verify`, and `manifest`
 - keep a short terminal demo near the top of the repo
 - show one clear enterprise use case instead of every possible command
 - keep the roadmap credible and incremental

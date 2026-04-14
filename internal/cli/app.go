@@ -109,6 +109,9 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		a.printRootUsage()
 		return 0
 	default:
+		if looksLikeTicketID(args[0]) {
+			return a.runInspect(ctx, args)
+		}
 		fmt.Fprintf(a.stderr, "unknown command %q\n\n", args[0])
 		a.printRootUsage()
 		return usageExitCode
@@ -306,7 +309,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 	if fs.NArg() != 1 {
-		printUsageFailure(a.stderr, "inspect", "provide exactly one ticket ID.", "gig inspect ABC-123", "gig inspect ABC-123 --repo github:owner/name")
+		printUsageFailure(a.stderr, "inspect", "provide exactly one ticket ID.", "gig inspect ABC-123", "gig ABC-123 --repo github:owner/name")
 		a.printInspectUsage()
 		return usageExitCode
 	}
@@ -438,6 +441,26 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 }
 
 func (a *App) runPlan(ctx context.Context, args []string) int {
+	reorderedArgs, err := reorderArgsWithSinglePositional(args,
+		"-path", "--path",
+		"-config", "--config",
+		"-repo", "--repo",
+		"-workarea", "--workarea",
+		"-release", "--release",
+		"-ticket", "--ticket",
+		"-ticket-file", "--ticket-file",
+		"-from", "--from",
+		"-to", "--to",
+		"-envs", "--envs",
+		"-format", "--format",
+	)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		a.printPlanUsage()
+		return usageExitCode
+	}
+	args = reorderedArgs
+
 	if hasHelpFlag(args) {
 		a.printPlanUsage()
 		return 0
@@ -462,10 +485,18 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		a.printPlanUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 0 {
-		printUsageFailure(a.stderr, "plan", "use flags instead of positional arguments.", "gig plan --ticket ABC-123", "gig plan --release rel-2026-04-09 --path .")
+	if fs.NArg() > 1 {
+		printUsageFailure(a.stderr, "plan", "provide at most one positional ticket ID.", "gig plan ABC-123", "gig plan --release rel-2026-04-09 --path .")
 		a.printPlanUsage()
 		return usageExitCode
+	}
+	if fs.NArg() == 1 {
+		if strings.TrimSpace(*releaseID) != "" || strings.TrimSpace(*ticketID) != "" || strings.TrimSpace(*ticketFile) != "" {
+			printUsageFailure(a.stderr, "plan", "choose either one ticket ID, --ticket-file, or --release.", "gig plan ABC-123", "gig plan --ticket-file tickets.txt --repo github:owner/name")
+			a.printPlanUsage()
+			return usageExitCode
+		}
+		*ticketID = normalizeTicketID(fs.Arg(0))
 	}
 
 	outputFormat, err := parseOutputFormat(*format)
@@ -492,17 +523,17 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			printUsageFailure(a.stderr, "plan", "do not combine --release with an explicit --repo target.", "gig plan --release rel-2026-04-09 --path .", "gig plan --ticket ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "plan", "do not combine --release with an explicit --repo target.", "gig plan --release rel-2026-04-09 --path .", "gig plan ABC-123 --repo github:owner/name")
 			a.printPlanUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			printUsageFailure(a.stderr, "plan", "choose either --release or ticket-based flags, not both.", "gig plan --release rel-2026-04-09 --path .", "gig plan --ticket ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "plan", "choose either --release or ticket-based flags, not both.", "gig plan --release rel-2026-04-09 --path .", "gig plan ABC-123 --repo github:owner/name")
 			a.printPlanUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			printUsageFailure(a.stderr, "plan", "--from, --to, and --envs are only for ticket-based planning.", "gig plan --release rel-2026-04-09 --path .", "gig plan --ticket ABC-123 --from test --to main --path .")
+			printUsageFailure(a.stderr, "plan", "--from, --to, and --envs are only for ticket-based planning.", "gig plan --release rel-2026-04-09 --path .", "gig plan ABC-123 --from test --to main --path .")
 			a.printPlanUsage()
 			return usageExitCode
 		}
@@ -626,6 +657,26 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runVerify(ctx context.Context, args []string) int {
+	reorderedArgs, err := reorderArgsWithSinglePositional(args,
+		"-path", "--path",
+		"-config", "--config",
+		"-repo", "--repo",
+		"-workarea", "--workarea",
+		"-release", "--release",
+		"-ticket", "--ticket",
+		"-ticket-file", "--ticket-file",
+		"-from", "--from",
+		"-to", "--to",
+		"-envs", "--envs",
+		"-format", "--format",
+	)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		a.printVerifyUsage()
+		return usageExitCode
+	}
+	args = reorderedArgs
+
 	if hasHelpFlag(args) {
 		a.printVerifyUsage()
 		return 0
@@ -650,10 +701,18 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		a.printVerifyUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 0 {
-		printUsageFailure(a.stderr, "verify", "use flags instead of positional arguments.", "gig verify --ticket ABC-123", "gig verify --release rel-2026-04-09 --path .")
+	if fs.NArg() > 1 {
+		printUsageFailure(a.stderr, "verify", "provide at most one positional ticket ID.", "gig verify ABC-123", "gig verify --release rel-2026-04-09 --path .")
 		a.printVerifyUsage()
 		return usageExitCode
+	}
+	if fs.NArg() == 1 {
+		if strings.TrimSpace(*releaseID) != "" || strings.TrimSpace(*ticketID) != "" || strings.TrimSpace(*ticketFile) != "" {
+			printUsageFailure(a.stderr, "verify", "choose either one ticket ID, --ticket-file, or --release.", "gig verify ABC-123", "gig verify --ticket-file tickets.txt --repo github:owner/name")
+			a.printVerifyUsage()
+			return usageExitCode
+		}
+		*ticketID = normalizeTicketID(fs.Arg(0))
 	}
 
 	outputFormat, err := parseOutputFormat(*format)
@@ -680,17 +739,17 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			printUsageFailure(a.stderr, "verify", "do not combine --release with an explicit --repo target.", "gig verify --release rel-2026-04-09 --path .", "gig verify --ticket ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "verify", "do not combine --release with an explicit --repo target.", "gig verify --release rel-2026-04-09 --path .", "gig verify ABC-123 --repo github:owner/name")
 			a.printVerifyUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			printUsageFailure(a.stderr, "verify", "choose either --release or ticket-based flags, not both.", "gig verify --release rel-2026-04-09 --path .", "gig verify --ticket ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "verify", "choose either --release or ticket-based flags, not both.", "gig verify --release rel-2026-04-09 --path .", "gig verify ABC-123 --repo github:owner/name")
 			a.printVerifyUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			printUsageFailure(a.stderr, "verify", "--from, --to, and --envs are only for ticket-based verification.", "gig verify --release rel-2026-04-09 --path .", "gig verify --ticket ABC-123 --from test --to main --path .")
+			printUsageFailure(a.stderr, "verify", "--from, --to, and --envs are only for ticket-based verification.", "gig verify --release rel-2026-04-09 --path .", "gig verify ABC-123 --from test --to main --path .")
 			a.printVerifyUsage()
 			return usageExitCode
 		}
@@ -826,19 +885,37 @@ func (a *App) runManifest(ctx context.Context, args []string) int {
 	case "generate":
 		return a.runManifestGenerate(ctx, args[1:])
 	default:
-		fmt.Fprintf(a.stderr, "unknown manifest subcommand %q\n\n", args[0])
-		a.printManifestUsage()
-		return usageExitCode
+		return a.runManifestGenerate(ctx, args)
 	}
 }
 
 func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
+	reorderedArgs, err := reorderArgsWithSinglePositional(args,
+		"-path", "--path",
+		"-config", "--config",
+		"-repo", "--repo",
+		"-workarea", "--workarea",
+		"-release", "--release",
+		"-ticket", "--ticket",
+		"-ticket-file", "--ticket-file",
+		"-from", "--from",
+		"-to", "--to",
+		"-envs", "--envs",
+		"-format", "--format",
+	)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
+		a.printManifestGenerateUsage()
+		return usageExitCode
+	}
+	args = reorderedArgs
+
 	if hasHelpFlag(args) {
 		a.printManifestGenerateUsage()
 		return 0
 	}
 
-	fs := flag.NewFlagSet("manifest generate", flag.ContinueOnError)
+	fs := flag.NewFlagSet("manifest", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
 	path := fs.String("path", ".", "Path to a repository or workspace")
@@ -857,21 +934,29 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		a.printManifestGenerateUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 0 {
-		printUsageFailure(a.stderr, "manifest generate", "use flags instead of positional arguments.", "gig manifest generate --ticket ABC-123", "gig manifest generate --release rel-2026-04-09 --path .")
+	if fs.NArg() > 1 {
+		printUsageFailure(a.stderr, "manifest", "provide at most one positional ticket ID.", "gig manifest ABC-123", "gig manifest --release rel-2026-04-09 --path .")
 		a.printManifestGenerateUsage()
 		return usageExitCode
+	}
+	if fs.NArg() == 1 {
+		if strings.TrimSpace(*releaseID) != "" || strings.TrimSpace(*ticketID) != "" || strings.TrimSpace(*ticketFile) != "" {
+			printUsageFailure(a.stderr, "manifest", "choose either one ticket ID, --ticket-file, or --release.", "gig manifest ABC-123", "gig manifest --ticket-file tickets.txt --repo github:owner/name")
+			a.printManifestGenerateUsage()
+			return usageExitCode
+		}
+		*ticketID = normalizeTicketID(fs.Arg(0))
 	}
 
 	selectedFormat, err := parseManifestFormat(*format)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return usageExitCode
 	}
 
 	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
@@ -880,36 +965,36 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
 	runtime, err := newCommandRuntimeWithOptions(scope.WorkspacePath, scope.ConfigPath, runtimeOptions{DisableAutoConfig: remoteMode})
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return 1
 	}
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			printUsageFailure(a.stderr, "manifest generate", "do not combine --release with an explicit --repo target.", "gig manifest generate --release rel-2026-04-09 --path .", "gig manifest generate --ticket ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "manifest", "do not combine --release with an explicit --repo target.", "gig manifest --release rel-2026-04-09 --path .", "gig manifest ABC-123 --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			printUsageFailure(a.stderr, "manifest generate", "choose either --release or ticket-based flags, not both.", "gig manifest generate --release rel-2026-04-09 --path .", "gig manifest generate --ticket ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "manifest", "choose either --release or ticket-based flags, not both.", "gig manifest --release rel-2026-04-09 --path .", "gig manifest ABC-123 --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			printUsageFailure(a.stderr, "manifest generate", "--from, --to, and --envs are only for ticket-based packets.", "gig manifest generate --release rel-2026-04-09 --path .", "gig manifest generate --ticket ABC-123 --from test --to main --path .")
+			printUsageFailure(a.stderr, "manifest", "--from, --to, and --envs are only for ticket-based packets.", "gig manifest --release rel-2026-04-09 --path .", "gig manifest ABC-123 --from test --to main --path .")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 
 		normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(normalizedReleaseID)
 		if err != nil {
-			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 			return usageExitCode
 		}
 		snapshots, snapshotDir, err := snapshotsvc.LoadReleaseSnapshots(scope.WorkspacePath, normalizedReleaseID)
 		if err != nil {
-			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 			return 1
 		}
 
@@ -948,19 +1033,19 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 
 	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return usageExitCode
 	}
 
 	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return 1
 	}
 
 	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return usageExitCode
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
@@ -969,7 +1054,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	for _, ticketID := range ticketIDs {
 		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
 		if err != nil {
-			fmt.Fprintf(a.stderr, "manifest generate failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 			return 1
 		}
 		packets = append(packets, manifestsvc.BuildReleasePacket(scopeLabel, runtime.loaded, promotionPlan))
@@ -2110,22 +2195,22 @@ func powerShellSingleQuote(value string) string {
 }
 func (a *App) printRootUsage() {
 	printHelpHeading(a.stderr, "gig", "Remote-first release audit CLI")
-	printHelpUsage(a.stderr, "gig [command] [flags]")
+	printHelpUsage(a.stderr, "gig [ticket-id | command] [flags]")
 	printHelpBullets(a.stderr, "First-time users",
 		"Run `gig` in a real terminal to open the guided picker.",
 		"Start with GitHub unless your repository lives elsewhere.",
-		"Learn `inspect`, `verify`, and `manifest generate` first.",
+		"Learn `inspect`, `verify`, and `manifest` first.",
 	)
 	printHelpCommands(a.stderr, "Start here",
 		"gig",
 		"gig login github",
-		"gig inspect ABC-123 --repo github:owner/name",
+		"gig ABC-123 --repo github:owner/name",
 	)
 	printHelpCommands(a.stderr, "Core workflows",
-		"gig inspect ABC-123",
-		"gig verify --ticket ABC-123",
-		"gig manifest generate --ticket ABC-123",
-		"gig inspect ABC-123 --path .",
+		"gig ABC-123",
+		"gig verify ABC-123",
+		"gig manifest ABC-123",
+		"gig ABC-123 --path .",
 	)
 	printHelpRows(a.stderr, "Commands",
 		helpRow{Label: "workarea", Value: "Remember a project so later commands stay short"},
@@ -2172,7 +2257,7 @@ func (a *App) printInspectUsage() {
 	printHelpUsage(a.stderr, "gig inspect <ticket-id> [--workarea name] [--path . | --repo <provider-target>]")
 	printHelpCommands(a.stderr, "Start here",
 		"gig inspect ABC-123",
-		"gig inspect ABC-123 --repo github:owner/name",
+		"gig ABC-123 --repo github:owner/name",
 		"gig inspect ABC-123 --workarea payments",
 	)
 	printHelpRows(a.stderr, "Common flags",
@@ -2182,9 +2267,9 @@ func (a *App) printInspectUsage() {
 		helpRow{Label: "--config", Value: "Optional override file when inference needs help"},
 	)
 	printHelpCommands(a.stderr, "Next commands",
-		"gig verify --ticket ABC-123",
-		"gig plan --ticket ABC-123",
-		"gig manifest generate --ticket ABC-123",
+		"gig verify ABC-123",
+		"gig plan ABC-123",
+		"gig manifest ABC-123",
 	)
 }
 
@@ -2200,13 +2285,13 @@ func (a *App) printEnvStatusUsage() {
 func (a *App) printPlanUsage() {
 	printHelpHeading(a.stderr, "gig plan", "Build a read-only promotion plan for one ticket or a saved release.")
 	printHelpUsage(a.stderr,
-		"gig plan --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
+		"gig plan ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
 		"gig plan --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
 		"gig plan --release rel-2026-04-09 --path . [--format human|json]",
 	)
 	printHelpCommands(a.stderr, "Start here",
-		"gig plan --ticket ABC-123",
-		"gig plan --ticket ABC-123 --repo github:owner/name",
+		"gig plan ABC-123",
+		"gig plan ABC-123 --repo github:owner/name",
 		"gig plan --release rel-2026-04-09 --path .",
 	)
 	printHelpRows(a.stderr, "Common flags",
@@ -2217,21 +2302,21 @@ func (a *App) printPlanUsage() {
 		helpRow{Label: "--format", Value: "Use json for automation or human for terminal review"},
 	)
 	printHelpCommands(a.stderr, "Next commands",
-		"gig verify --ticket ABC-123",
-		"gig manifest generate --ticket ABC-123",
+		"gig verify ABC-123",
+		"gig manifest ABC-123",
 	)
 }
 
 func (a *App) printVerifyUsage() {
 	printHelpHeading(a.stderr, "gig verify", "Turn ticket evidence into a safe, warning, or blocked release verdict.")
 	printHelpUsage(a.stderr,
-		"gig verify --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
+		"gig verify ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
 		"gig verify --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
 		"gig verify --release rel-2026-04-09 --path .",
 	)
 	printHelpCommands(a.stderr, "Start here",
-		"gig verify --ticket ABC-123",
-		"gig verify --ticket ABC-123 --repo github:owner/name",
+		"gig verify ABC-123",
+		"gig verify ABC-123 --repo github:owner/name",
 		"gig verify --release rel-2026-04-09 --path .",
 	)
 	printHelpRows(a.stderr, "Common flags",
@@ -2241,28 +2326,29 @@ func (a *App) printVerifyUsage() {
 		helpRow{Label: "--format", Value: "Add json output for automation"},
 	)
 	printHelpCommands(a.stderr, "Next commands",
-		"gig plan --ticket ABC-123",
-		"gig manifest generate --ticket ABC-123",
+		"gig plan ABC-123",
+		"gig manifest ABC-123",
 	)
 }
 
 func (a *App) printManifestUsage() {
-	printHelpHeading(a.stderr, "gig manifest generate", "Generate a release packet for QA, client, and release review.")
+	printHelpHeading(a.stderr, "gig manifest", "Generate a release packet for QA, client, and release review.")
 	printHelpUsage(a.stderr,
-		"gig manifest generate --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
-		"gig manifest generate --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
-		"gig manifest generate --release rel-2026-04-09 --path .",
+		"gig manifest ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
+		"gig manifest --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
+		"gig manifest --release rel-2026-04-09 --path .",
 	)
 	printHelpCommands(a.stderr, "Start here",
-		"gig manifest generate --ticket ABC-123",
-		"gig manifest generate --ticket ABC-123 --repo github:owner/name",
-		"gig manifest generate --release rel-2026-04-09 --path .",
+		"gig manifest ABC-123",
+		"gig manifest ABC-123 --repo github:owner/name",
+		"gig manifest --release rel-2026-04-09 --path .",
 	)
 	printHelpRows(a.stderr, "Common flags",
 		helpRow{Label: "--repo", Value: "Generate a packet directly from a live remote repository"},
 		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
 		helpRow{Label: "--format", Value: "Keep markdown for handoff or use json for tooling"},
 		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
+		helpRow{Label: "Alias", Value: "`gig manifest generate ...` still works for existing scripts"},
 	)
 	printHelpCommands(a.stderr, "Next commands",
 		"gig assist audit --ticket ABC-123 --audience release-manager",
@@ -2382,6 +2468,14 @@ func normalizeCLIPath(path string) (string, error) {
 
 func normalizeTicketID(ticketID string) string {
 	return strings.ToUpper(strings.TrimSpace(ticketID))
+}
+
+func looksLikeTicketID(ticketID string) bool {
+	parser, err := ticketsvc.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		return false
+	}
+	return parser.Validate(normalizeTicketID(ticketID)) == nil
 }
 
 func resolveTicketIDs(ticketID, ticketFile string, parser ticketsvc.Parser) ([]string, string, error) {

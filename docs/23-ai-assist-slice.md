@@ -111,7 +111,7 @@ This slice helps with the practical pain points that deterministic JSON alone do
 It does not:
 
 - replace `verify`
-- replace `manifest generate`
+- replace `manifest`
 - guess release state without `gig` evidence
 - require DeerFlow for the main remote audit workflow
 - change `gig` into a write-enabled automation tool

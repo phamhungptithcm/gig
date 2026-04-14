@@ -106,6 +106,19 @@ func TestAppInspectGolden(t *testing.T) {
 	assertGolden(t, "inspect.golden", normalizeOutput(stdout, workspace))
 }
 
+func TestAppRootTicketShortcutGolden(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "abc-123", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("root inspect exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	assertGolden(t, "inspect.golden", normalizeOutput(stdout, workspace))
+}
+
 func TestAppEnvStatusGolden(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +152,7 @@ func TestAppPlanGolden(t *testing.T) {
 
 	workspace := createPromotionFixture(t)
 
-	stdout, stderr, exitCode := runApp(t, "plan", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	stdout, stderr, exitCode := runApp(t, "plan", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
 	if exitCode != 0 {
 		t.Fatalf("plan exit code = %d, stderr = %q", exitCode, stderr)
 	}
@@ -152,7 +165,7 @@ func TestAppPlanJSONGolden(t *testing.T) {
 
 	workspace := createPromotionFixture(t)
 
-	stdout, stderr, exitCode := runApp(t, "plan", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--format", "json")
+	stdout, stderr, exitCode := runApp(t, "plan", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("plan json exit code = %d, stderr = %q", exitCode, stderr)
 	}
@@ -165,7 +178,7 @@ func TestAppVerifyGolden(t *testing.T) {
 
 	workspace := createPromotionFixture(t)
 
-	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	stdout, stderr, exitCode := runApp(t, "verify", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
 	if exitCode != 0 {
 		t.Fatalf("verify exit code = %d, stderr = %q", exitCode, stderr)
 	}
@@ -234,7 +247,7 @@ repositories:
       - Verify login and billing summary.
 `)
 
-	stdout, stderr, exitCode := runApp(t, "manifest", "generate", "--ticket", "ABC-123", "--from", "test", "--to", "main", "--path", workspace)
+	stdout, stderr, exitCode := runApp(t, "manifest", "ABC-123", "--from", "test", "--to", "main", "--path", workspace)
 	if exitCode != 0 {
 		t.Fatalf("manifest generate exit code = %d, stderr = %q", exitCode, stderr)
 	}
@@ -255,7 +268,7 @@ func TestAppRootHelpGroupsCommonFlows(t *testing.T) {
 	if !strings.Contains(stderr, "First-time users") || !strings.Contains(stderr, "Core workflows") || !strings.Contains(stderr, "Commands") {
 		t.Fatalf("stderr = %q, want grouped help sections", stderr)
 	}
-	if !strings.Contains(stderr, "gig inspect ABC-123 --repo github:owner/name") {
+	if !strings.Contains(stderr, "gig ABC-123 --repo github:owner/name") {
 		t.Fatalf("stderr = %q, want remote-first example", stderr)
 	}
 }
@@ -273,26 +286,25 @@ func TestAppInspectHelpShowsExamplesAndNextCommands(t *testing.T) {
 	if !strings.Contains(stderr, "Start here") || !strings.Contains(stderr, "Common flags") || !strings.Contains(stderr, "Next commands") {
 		t.Fatalf("stderr = %q, want structured inspect help", stderr)
 	}
-	if !strings.Contains(stderr, "gig plan --ticket ABC-123") {
+	if !strings.Contains(stderr, "gig plan ABC-123") {
 		t.Fatalf("stderr = %q, want next-command guidance", stderr)
 	}
 }
 
-func TestAppVerifyUsageErrorSuggestsNextCommand(t *testing.T) {
+func TestAppVerifyPositionalTicketWorks(t *testing.T) {
 	t.Parallel()
 
-	stdout, stderr, exitCode := runApp(t, "verify", "ABC-123")
-	if exitCode != 2 {
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runApp(t, "verify", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main")
+	if exitCode != 0 {
 		t.Fatalf("verify exit code = %d, stdout = %q, stderr = %q", exitCode, stdout, stderr)
 	}
-	if stdout != "" {
-		t.Fatalf("stdout = %q, want empty", stdout)
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
 	}
-	if !strings.Contains(stderr, "verify failed: use flags instead of positional arguments.") {
-		t.Fatalf("stderr = %q, want friendlier verify error", stderr)
-	}
-	if !strings.Contains(stderr, "Try next") || !strings.Contains(stderr, "gig verify --ticket ABC-123") {
-		t.Fatalf("stderr = %q, want next-step examples", stderr)
+	if !strings.Contains(stdout, "Verify ABC-123") {
+		t.Fatalf("stdout = %q, want verification output", stdout)
 	}
 }
 
@@ -424,7 +436,7 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	if !strings.Contains(stdout, "Startup status") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > ABC-123") {
 		t.Fatalf("stdout = %q, want current-project prompt box", stdout)
 	}
-	if !strings.Contains(stdout, "Quick commands") || !strings.Contains(stdout, "gig manifest generate --ticket ABC-123") {
+	if !strings.Contains(stdout, "Quick commands") || !strings.Contains(stdout, "gig manifest ABC-123") {
 		t.Fatalf("stdout = %q, want guided core workflows", stdout)
 	}
 	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
@@ -2203,7 +2215,7 @@ func TestAppRootHelpReturnsZero(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("--help stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "gig [command] [flags]") {
+	if !strings.Contains(stderr, "gig [ticket-id | command] [flags]") {
 		t.Fatalf("--help stderr = %q, want root usage", stderr)
 	}
 	if !strings.Contains(stderr, "scan        Find repositories under a local path") {

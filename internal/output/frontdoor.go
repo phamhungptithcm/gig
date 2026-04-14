@@ -70,9 +70,9 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			return err
 		}
 		if err := ui.Commands(
-			"gig inspect ABC-123",
-			"gig verify --ticket ABC-123",
-			"gig manifest generate --ticket ABC-123",
+			"gig ABC-123",
+			"gig verify ABC-123",
+			"gig manifest ABC-123",
 		); err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		if err := ui.Commands(
 			"gig",
 			"gig login github",
-			"gig inspect ABC-123 --repo github:owner/name",
+			"gig ABC-123 --repo github:owner/name",
 		); err != nil {
 			return err
 		}
@@ -140,9 +140,9 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			return err
 		}
 		if err := ui.Commands(
-			"gig inspect ABC-123 --repo github:owner/name",
-			"gig verify --ticket ABC-123 --repo github:owner/name",
-			"gig manifest generate --ticket ABC-123 --repo github:owner/name",
+			"gig ABC-123 --repo github:owner/name",
+			"gig verify ABC-123 --repo github:owner/name",
+			"gig manifest ABC-123 --repo github:owner/name",
 		); err != nil {
 			return err
 		}
@@ -156,8 +156,8 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			return err
 		}
 		if err := ui.Commands(
-			"gig inspect ABC-123 --path .",
-			"gig verify --ticket ABC-123 --path .",
+			"gig ABC-123 --path .",
+			"gig verify ABC-123 --path .",
 		); err != nil {
 			return err
 		}

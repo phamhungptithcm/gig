@@ -85,7 +85,7 @@ Show the full ticket change set across repositories.
 
 Show what is known about the ticket in each environment line.
 
-### `gig plan --ticket <ticket-id> --from <branch> --to <branch>`
+### `gig plan <ticket-id> --from <branch> --to <branch>`
 
 Build a promotion plan with risks, blockers, and manual steps.
 
@@ -93,7 +93,7 @@ Build a promotion plan with risks, blockers, and manual steps.
 
 Run pre-release checks and emit `safe / warning / blocked` outcomes.
 
-### `gig manifest generate`
+### `gig manifest`
 
 Produce a Markdown or JSON release packet for QA, client review, and release managers.
 
