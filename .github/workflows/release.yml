@@ -140,14 +140,15 @@ jobs:
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
           node --check scripts/prepare-npm-package.cjs
+          node --check scripts/npm-publish-state.cjs
           bash -n scripts/resolve-npm-publish-mode.sh scripts/verify-npm-publish-auth.sh scripts/publish-npm-package.sh scripts/verify-published-npm-version.sh
+          node --test scripts/npm-publish.test.cjs
           node scripts/prepare-npm-package.cjs "${{ needs.metadata.outputs.next_tag }}" dist/npm-package
           npm pack --dry-run ./dist/npm-package
 
       - name: Resolve npm publish mode
         id: npm_publish_mode
         env:
-          NPM_TRUSTED_PUBLISHING: ${{ vars.NPM_TRUSTED_PUBLISHING }}
           NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
           GIG_NPM_REQUIRE_MODE: "true"
         run: ./scripts/resolve-npm-publish-mode.sh "@hunpeolabs/gig"

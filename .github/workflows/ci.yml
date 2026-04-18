@@ -69,6 +69,8 @@ jobs:
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
           node --check scripts/prepare-npm-package.cjs
+          node --check scripts/npm-publish-state.cjs
+          node --test scripts/npm-publish.test.cjs
 
       - name: Validate npm package staging
         run: |
