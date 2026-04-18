@@ -75,13 +75,14 @@ type EvidenceQuery struct {
 }
 
 type PullRequestEvidence struct {
-	ID           string `json:"id"`
-	Title        string `json:"title,omitempty"`
-	State        string `json:"state,omitempty"`
-	SourceBranch string `json:"sourceBranch,omitempty"`
-	TargetBranch string `json:"targetBranch,omitempty"`
-	URL          string `json:"url,omitempty"`
-	CommitHash   string `json:"commitHash,omitempty"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title,omitempty"`
+	State        string          `json:"state,omitempty"`
+	SourceBranch string          `json:"sourceBranch,omitempty"`
+	TargetBranch string          `json:"targetBranch,omitempty"`
+	URL          string          `json:"url,omitempty"`
+	CommitHash   string          `json:"commitHash,omitempty"`
+	LinkedIssues []IssueEvidence `json:"linkedIssues,omitempty"`
 }
 
 type DeploymentEvidence struct {
@@ -93,13 +94,42 @@ type DeploymentEvidence struct {
 	CommitHash  string `json:"commitHash,omitempty"`
 }
 
+type CheckEvidence struct {
+	Context    string `json:"context"`
+	State      string `json:"state,omitempty"`
+	URL        string `json:"url,omitempty"`
+	CommitHash string `json:"commitHash,omitempty"`
+}
+
+type IssueEvidence struct {
+	ID     string   `json:"id"`
+	Title  string   `json:"title,omitempty"`
+	State  string   `json:"state,omitempty"`
+	Labels []string `json:"labels,omitempty"`
+	URL    string   `json:"url,omitempty"`
+}
+
+type ReleaseEvidence struct {
+	ID          string   `json:"id,omitempty"`
+	Tag         string   `json:"tag,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	State       string   `json:"state,omitempty"`
+	Target      string   `json:"target,omitempty"`
+	URL         string   `json:"url,omitempty"`
+	PublishedAt string   `json:"publishedAt,omitempty"`
+	TicketIDs   []string `json:"ticketIds,omitempty"`
+}
+
 type ProviderEvidence struct {
 	PullRequests []PullRequestEvidence `json:"pullRequests,omitempty"`
 	Deployments  []DeploymentEvidence  `json:"deployments,omitempty"`
+	Checks       []CheckEvidence       `json:"checks,omitempty"`
+	Issues       []IssueEvidence       `json:"issues,omitempty"`
+	Releases     []ReleaseEvidence     `json:"releases,omitempty"`
 }
 
 func (e ProviderEvidence) IsZero() bool {
-	return len(e.PullRequests) == 0 && len(e.Deployments) == 0
+	return len(e.PullRequests) == 0 && len(e.Deployments) == 0 && len(e.Checks) == 0 && len(e.Issues) == 0 && len(e.Releases) == 0
 }
 
 func NormalizeProviderEvidence(e *ProviderEvidence) *ProviderEvidence {

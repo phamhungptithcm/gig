@@ -131,7 +131,7 @@ The current command set is internally coherent, but externally it exposes too mu
 - `env status`
 - `plan`
 - `verify`
-- `manifest generate`
+- `manifest`
 - `snapshot create`
 - `doctor`
 - `resolve`

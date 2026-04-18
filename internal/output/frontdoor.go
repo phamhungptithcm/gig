@@ -3,30 +3,77 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"gig/internal/workarea"
 )
 
 type FrontDoorState struct {
-	Current   *workarea.Definition  `json:"current,omitempty"`
-	Workareas []workarea.Definition `json:"workareas,omitempty"`
+	Current                 *workarea.Definition  `json:"current,omitempty"`
+	Workareas               []workarea.Definition `json:"workareas,omitempty"`
+	Version                 string                `json:"version,omitempty"`
+	HeroStatus              string                `json:"heroStatus,omitempty"`
+	StatusRows              []KeyValue            `json:"statusRows,omitempty"`
+	ProviderCoverage        []KeyValue            `json:"providerCoverage,omitempty"`
+	ResumeTitle             string                `json:"resumeTitle,omitempty"`
+	ResumeSummary           string                `json:"resumeSummary,omitempty"`
+	ResumeScope             string                `json:"resumeScope,omitempty"`
+	ResumeQuestion          string                `json:"resumeQuestion,omitempty"`
+	ResumeSuggestedQuestion string                `json:"resumeSuggestedQuestion,omitempty"`
+	Prompt                  string                `json:"prompt,omitempty"`
+	Examples                []string              `json:"examples,omitempty"`
 }
 
 func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 	ui := NewConsole(w)
 
-	if err := ui.Title("gig"); err != nil {
-		return err
-	}
-	if err := ui.Subtitle("Remote-first release audit CLI"); err != nil {
+	if err := renderFrontDoorHero(w, ui, state); err != nil {
 		return err
 	}
 	if err := ui.Blank(); err != nil {
 		return err
 	}
+	if len(state.StatusRows) > 0 {
+		if err := ui.Section("Startup status"); err != nil {
+			return err
+		}
+		if err := ui.Rows(state.StatusRows...); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+	}
+	if state.ResumeSummary != "" {
+		if err := ui.Section(blankAsDefault(state.ResumeTitle, "Resume AI context")); err != nil {
+			return err
+		}
+		if err := ui.Bullets(state.ResumeSummary); err != nil {
+			return err
+		}
+		if strings.TrimSpace(state.ResumeScope) != "" {
+			if err := ui.Note("Scope: " + strings.TrimSpace(state.ResumeScope)); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(state.ResumeQuestion) != "" {
+			if err := ui.Note("Last question: " + strings.TrimSpace(state.ResumeQuestion)); err != nil {
+				return err
+			}
+		}
+		if err := ui.Commands(
+			fmt.Sprintf("gig ask %q", blankAsDefault(state.ResumeSuggestedQuestion, "what is still blocked?")),
+			"gig resume",
+		); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+	}
 
 	if state.Current != nil {
-		if err := ui.Section("Current project"); err != nil {
+		if err := ui.Section("Ready now"); err != nil {
 			return err
 		}
 		if err := ui.Rows(
@@ -39,18 +86,45 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		if err := ui.Blank(); err != nil {
 			return err
 		}
-		if err := ui.Section("Quick actions"); err != nil {
+		if err := ui.Section("Ask gig to"); err != nil {
 			return err
 		}
-		if err := ui.Commands(
-			"gig inspect ABC-123",
-			"gig verify --ticket ABC-123",
-			"gig manifest generate --ticket ABC-123",
-			"gig assist audit --ticket ABC-123 --audience release-manager",
+		if err := ui.Bullets(
+			"inspect one ticket across branches and repos",
+			"verify whether the next release move is safe",
+			"generate a release packet for QA or release review",
 		); err != nil {
 			return err
 		}
-		if err := ui.Note("Run `gig` in a terminal to choose one of these actions interactively."); err != nil {
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Quick commands"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig ABC-123",
+			"gig verify ABC-123",
+			"gig manifest ABC-123",
+			"gig ask \"what changed since the last brief?\"",
+		); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Release day path"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig workarea use payments",
+			"gig verify --release rel-YYYY-MM-DD",
+			"gig manifest --release rel-YYYY-MM-DD",
+			"gig assist release --release rel-YYYY-MM-DD --audience release-manager",
+		); err != nil {
+			return err
+		}
+		if err := ui.Note("Run `gig` in a real terminal and use ↑/↓ then Enter to choose the next action."); err != nil {
 			return err
 		}
 		if len(state.Workareas) > 1 {
@@ -68,20 +142,75 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		if err := ui.Section("Start here"); err != nil {
 			return err
 		}
-		if err := ui.Commands(
-			"gig login github",
-			"gig inspect ABC-123 --repo github:owner/name",
-			"gig verify --ticket ABC-123 --repo github:owner/name",
+		if err := ui.Bullets(
+			"pick a GitHub repository",
+			"paste a repository target",
+			"use the current folder if the repo is already checked out",
 		); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Fastest path"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig",
+			"gig login github",
+			"gig ABC-123 --repo github:owner/name",
+		); err != nil {
+			return err
+		}
+		if err := ui.Note("Run `gig` in a real terminal and use ↑/↓ then Enter if you want gig to guide you to the right repo first."); err != nil {
 			return err
 		}
 		if err := ui.Note("gig remembers a successful remote repo as your current project automatically."); err != nil {
 			return err
 		}
-		if err := ui.Commands("gig workarea add --provider github --use"); err != nil {
+		if err := ui.Blank(); err != nil {
 			return err
 		}
-		if err := ui.Note("Optional picker-first setup if you want to pin a project before running ticket commands."); err != nil {
+		if err := ui.Section("Ask gig to"); err != nil {
+			return err
+		}
+		if err := ui.Bullets(
+			"inspect one ticket",
+			"verify release readiness",
+			"generate a release packet",
+		); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Core workflows"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig ABC-123 --repo github:owner/name",
+			"gig verify ABC-123 --repo github:owner/name",
+			"gig manifest ABC-123 --repo github:owner/name",
+			"gig ask \"what is still blocked?\"",
+		); err != nil {
+			return err
+		}
+		if err := ui.Note("These three commands are the main path. Most teams do not need to learn the rest on day one."); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Still local?"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig ABC-123 --path .",
+			"gig verify ABC-123 --path .",
+		); err != nil {
+			return err
+		}
+		if err := ui.Note("Local Git and SVN still work when you already have a repo checked out."); err != nil {
 			return err
 		}
 		if len(state.Workareas) > 0 {
@@ -107,6 +236,18 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		}
 	}
 
+	if len(state.ProviderCoverage) > 0 {
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Provider coverage"); err != nil {
+			return err
+		}
+		if err := ui.Rows(state.ProviderCoverage...); err != nil {
+			return err
+		}
+	}
+
 	if err := ui.Blank(); err != nil {
 		return err
 	}
@@ -117,7 +258,7 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		return err
 	}
 	if state.Current != nil {
-		if err := ui.Commands("gig assist release --release rel-2026-04-09 --path ."); err != nil {
+		if err := ui.Commands("gig assist audit --ticket ABC-123 --audience release-manager"); err != nil {
 			return err
 		}
 	}
@@ -128,7 +269,107 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 	if err := ui.Section("More help"); err != nil {
 		return err
 	}
-	return ui.Commands("gig --help")
+	if err := ui.Commands("gig --help"); err != nil {
+		return err
+	}
+
+	if err := ui.Blank(); err != nil {
+		return err
+	}
+	if err := ui.Section("Try one line"); err != nil {
+		return err
+	}
+	return renderPromptBox(w, ui, blankAsDefault(state.Prompt, "ask gig > ABC-123"), state.Examples)
+}
+
+func renderFrontDoorHero(w io.Writer, ui Console, state FrontDoorState) error {
+	lines := []string{
+		fmt.Sprintf(">_ gig  (%s)", blankAsDefault(state.Version, "dev")),
+		"googling in git",
+	}
+
+	if state.Current != nil {
+		lines = append(lines,
+			fmt.Sprintf("project: %s", state.Current.Name),
+			fmt.Sprintf("target:  %s", formatWorkareaTarget(*state.Current)),
+			"input:   ticket or command palette",
+			"focus:   inspect | verify | manifest",
+		)
+	} else {
+		lines = append(lines,
+			"mode:    guided terminal front door",
+			"input:   ticket, command, or Enter for picker",
+			"focus:   inspect | verify | manifest",
+		)
+	}
+	lines = append(lines, fmt.Sprintf("status:  %s", blankAsDefault(state.HeroStatus, "no project selected yet")))
+
+	return writeFrontDoorBox(w, ui, lines)
+}
+
+func writeFrontDoorBox(w io.Writer, ui Console, lines []string) error {
+	width := 0
+	normalized := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimRight(line, " ")
+		normalized = append(normalized, line)
+		if len(line) > width {
+			width = len(line)
+		}
+	}
+
+	border := "+" + strings.Repeat("-", width+2) + "+"
+	if _, err := fmt.Fprintln(w, ui.Emphasis(border)); err != nil {
+		return err
+	}
+	for index, line := range normalized {
+		padded := line + strings.Repeat(" ", width-len(line))
+		value := padded
+		switch {
+		case index == 1:
+			value = ui.Command(padded)
+		case strings.HasPrefix(line, "status:"):
+			value = ui.Muted(padded)
+		}
+		if _, err := fmt.Fprintf(w, "%s %s %s\n", ui.Emphasis("|"), value, ui.Emphasis("|")); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(w, ui.Emphasis(border))
+	return err
+}
+
+func renderPromptBox(w io.Writer, ui Console, prompt string, examples []string) error {
+	width := len(prompt)
+	for _, example := range examples {
+		if len(example) > width {
+			width = len(example)
+		}
+	}
+	if width < 28 {
+		width = 28
+	}
+
+	border := "+" + strings.Repeat("-", width+2) + "+"
+	if _, err := fmt.Fprintln(w, ui.Emphasis(border)); err != nil {
+		return err
+	}
+	paddedPrompt := prompt + strings.Repeat(" ", width-len(prompt))
+	if _, err := fmt.Fprintf(w, "%s %s %s\n", ui.Emphasis("|"), ui.Command(paddedPrompt), ui.Emphasis("|")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, ui.Emphasis(border)); err != nil {
+		return err
+	}
+	for _, example := range examples {
+		if strings.TrimSpace(example) == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "  %s %s\n", ui.Muted("try"), example); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func formatFrontDoorPromotion(definition workarea.Definition) string {
@@ -136,4 +377,12 @@ func formatFrontDoorPromotion(definition workarea.Definition) string {
 		return ""
 	}
 	return fmt.Sprintf("%s -> %s", blankAsAuto(definition.FromBranch), blankAsAuto(definition.ToBranch))
+}
+
+func blankAsDefault(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }

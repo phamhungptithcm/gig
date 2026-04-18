@@ -34,7 +34,7 @@ This config is already used by:
 - `gig env status`
 - `gig verify`
 - `gig plan`
-- `gig manifest generate`
+- `gig manifest`
 - `gig doctor`
 
 ## Example Config
@@ -94,7 +94,7 @@ Example:
 - `test` -> `release/test`
 - `prod` -> `main`
 
-Commands such as `env status`, `verify`, `plan`, and `manifest generate` use this mapping when `--envs` is not passed.
+Commands such as `env status`, `verify`, `plan`, and `manifest` use this mapping when `--envs` is not passed.
 
 ### `repositories`
 

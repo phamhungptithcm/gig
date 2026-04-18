@@ -10,7 +10,7 @@ import (
 )
 
 func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent string) error {
-	if len(evidence.PullRequests) == 0 && len(evidence.Deployments) == 0 {
+	if evidence.IsZero() {
 		return nil
 	}
 
@@ -36,11 +36,44 @@ func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent s
 		}
 	}
 
+	if len(evidence.Checks) > 0 {
+		if _, err := fmt.Fprintf(w, "%schecks:\n", indent); err != nil {
+			return err
+		}
+		for _, item := range sortedChecks(evidence.Checks) {
+			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatCheckEvidence(item)); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(evidence.Issues) > 0 {
+		if _, err := fmt.Fprintf(w, "%slinked issues:\n", indent); err != nil {
+			return err
+		}
+		for _, item := range sortedIssues(evidence.Issues) {
+			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatIssueEvidence(item)); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(evidence.Releases) > 0 {
+		if _, err := fmt.Fprintf(w, "%sreleases:\n", indent); err != nil {
+			return err
+		}
+		for _, item := range sortedReleases(evidence.Releases) {
+			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatReleaseEvidence(item)); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
 func renderProviderEvidenceMarkdown(w io.Writer, evidence scm.ProviderEvidence) error {
-	if len(evidence.PullRequests) == 0 && len(evidence.Deployments) == 0 {
+	if evidence.IsZero() {
 		return nil
 	}
 
@@ -67,6 +100,54 @@ func renderProviderEvidenceMarkdown(w io.Writer, evidence scm.ProviderEvidence) 
 		lines := make([]string, 0, len(evidence.Deployments))
 		for _, item := range sortedDeployments(evidence.Deployments) {
 			lines = append(lines, formatDeploymentEvidence(item))
+		}
+		if err := renderMarkdownList(w, lines); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+	}
+
+	if len(evidence.Checks) > 0 {
+		if _, err := fmt.Fprintln(w, "Checks:"); err != nil {
+			return err
+		}
+		lines := make([]string, 0, len(evidence.Checks))
+		for _, item := range sortedChecks(evidence.Checks) {
+			lines = append(lines, formatCheckEvidence(item))
+		}
+		if err := renderMarkdownList(w, lines); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+	}
+
+	if len(evidence.Issues) > 0 {
+		if _, err := fmt.Fprintln(w, "Linked issues:"); err != nil {
+			return err
+		}
+		lines := make([]string, 0, len(evidence.Issues))
+		for _, item := range sortedIssues(evidence.Issues) {
+			lines = append(lines, formatIssueEvidence(item))
+		}
+		if err := renderMarkdownList(w, lines); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+	}
+
+	if len(evidence.Releases) > 0 {
+		if _, err := fmt.Fprintln(w, "Releases:"); err != nil {
+			return err
+		}
+		lines := make([]string, 0, len(evidence.Releases))
+		for _, item := range sortedReleases(evidence.Releases) {
+			lines = append(lines, formatReleaseEvidence(item))
 		}
 		if err := renderMarkdownList(w, lines); err != nil {
 			return err
@@ -133,6 +214,69 @@ func formatDeploymentEvidence(item scm.DeploymentEvidence) string {
 	return strings.Join(parts, " | ")
 }
 
+func formatCheckEvidence(item scm.CheckEvidence) string {
+	parts := make([]string, 0, 4)
+	if context := strings.TrimSpace(item.Context); context != "" {
+		parts = append(parts, context)
+	}
+	if state := strings.TrimSpace(item.State); state != "" {
+		parts = append(parts, state)
+	}
+	if commit := shortHash(item.CommitHash); commit != "" {
+		parts = append(parts, "commit "+commit)
+	}
+	if link := strings.TrimSpace(item.URL); link != "" {
+		parts = append(parts, link)
+	}
+	return strings.Join(parts, " | ")
+}
+
+func formatIssueEvidence(item scm.IssueEvidence) string {
+	parts := make([]string, 0, 5)
+	if id := strings.TrimSpace(item.ID); id != "" {
+		parts = append(parts, id)
+	}
+	if title := strings.TrimSpace(item.Title); title != "" {
+		parts = append(parts, title)
+	}
+	if state := strings.TrimSpace(item.State); state != "" {
+		parts = append(parts, state)
+	}
+	if len(item.Labels) > 0 {
+		parts = append(parts, "labels "+strings.Join(item.Labels, ", "))
+	}
+	if link := strings.TrimSpace(item.URL); link != "" {
+		parts = append(parts, link)
+	}
+	return strings.Join(parts, " | ")
+}
+
+func formatReleaseEvidence(item scm.ReleaseEvidence) string {
+	parts := make([]string, 0, 6)
+	if tag := firstNonEmpty(item.Tag, item.ID); tag != "" {
+		parts = append(parts, tag)
+	}
+	if name := strings.TrimSpace(item.Name); name != "" && name != strings.TrimSpace(item.Tag) {
+		parts = append(parts, name)
+	}
+	if state := strings.TrimSpace(item.State); state != "" {
+		parts = append(parts, state)
+	}
+	if target := strings.TrimSpace(item.Target); target != "" {
+		parts = append(parts, "target "+target)
+	}
+	if len(item.TicketIDs) > 0 {
+		parts = append(parts, "tickets "+strings.Join(item.TicketIDs, ", "))
+	}
+	if publishedAt := strings.TrimSpace(item.PublishedAt); publishedAt != "" {
+		parts = append(parts, publishedAt)
+	}
+	if link := strings.TrimSpace(item.URL); link != "" {
+		parts = append(parts, link)
+	}
+	return strings.Join(parts, " | ")
+}
+
 func formatBranchPair(source, target string) string {
 	source = strings.TrimSpace(source)
 	target = strings.TrimSpace(target)
@@ -168,4 +312,48 @@ func sortedDeployments(values []scm.DeploymentEvidence) []scm.DeploymentEvidence
 		return sorted[i].Environment < sorted[j].Environment
 	})
 	return sorted
+}
+
+func sortedChecks(values []scm.CheckEvidence) []scm.CheckEvidence {
+	sorted := append([]scm.CheckEvidence(nil), values...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].CommitHash == sorted[j].CommitHash {
+			return sorted[i].Context < sorted[j].Context
+		}
+		return sorted[i].CommitHash < sorted[j].CommitHash
+	})
+	return sorted
+}
+
+func sortedIssues(values []scm.IssueEvidence) []scm.IssueEvidence {
+	sorted := append([]scm.IssueEvidence(nil), values...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].ID < sorted[j].ID
+	})
+	return sorted
+}
+
+func sortedReleases(values []scm.ReleaseEvidence) []scm.ReleaseEvidence {
+	sorted := append([]scm.ReleaseEvidence(nil), values...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].PublishedAt == sorted[j].PublishedAt {
+			return sorted[i].Tag < sorted[j].Tag
+		}
+		return sorted[i].PublishedAt > sorted[j].PublishedAt
+	})
+	return sorted
+}
+
+func hasProviderEvidence(evidence *scm.ProviderEvidence) bool {
+	return evidence != nil && !evidence.IsZero()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

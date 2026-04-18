@@ -8,7 +8,7 @@ After this slice:
 
 - `gig` can read declared ticket dependencies from commit trailers
 - `gig inspect` can show dependency evidence for the requested ticket
-- `gig plan`, `gig verify`, and `gig manifest generate` can flag when a declared dependency is not yet present in the target branch
+- `gig plan`, `gig verify`, and `gig manifest` can flag when a declared dependency is not yet present in the target branch
 - dependency findings appear in both human-readable output and structured output
 
 ## Why This Slice Comes Next

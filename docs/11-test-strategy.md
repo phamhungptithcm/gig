@@ -47,7 +47,7 @@ Current good targets:
 - `env status`
 - `verify`
 - `plan`
-- `manifest generate`
+- `manifest`
 - `doctor`
 
 ### JSON Contract Tests
@@ -58,7 +58,7 @@ Current good targets:
 
 - `plan --format json`
 - `doctor --format json`
-- `manifest generate --format json`
+- `manifest --format json`
 
 ## Current Coverage
 

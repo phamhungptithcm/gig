@@ -10,7 +10,18 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { spawnSync } = require("node:child_process");
 
-const packageRoot = path.join(__dirname, "..");
+function resolvePackageRoot(scriptDir) {
+  if (fs.existsSync(path.join(scriptDir, "package.json"))) {
+    return scriptDir;
+  }
+  return path.join(scriptDir, "..");
+}
+
+function resolveVendorDir(scriptDir) {
+  return path.join(scriptDir, "vendor");
+}
+
+const packageRoot = resolvePackageRoot(__dirname);
 const packageJson = require(path.join(packageRoot, "package.json"));
 
 function resolveGitHubRepo(repository) {
@@ -172,7 +183,7 @@ async function install() {
   const assetName = `gig_${versionWithoutV}_${platform}_${arch}.${extension}`;
   const checksumsName = `gig_${versionWithoutV}_checksums.txt`;
   const baseURL = `https://github.com/${repo}/releases/download/${releaseTag}`;
-  const vendorDir = path.join(packageRoot, "npm", "vendor");
+  const vendorDir = resolveVendorDir(__dirname);
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "gig-npm-"));
 
   try {
@@ -233,7 +244,14 @@ async function install() {
   }
 }
 
-install().catch((error) => {
-  console.error(`gig postinstall failed: ${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  install().catch((error) => {
+    console.error(`gig postinstall failed: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  resolvePackageRoot,
+  resolveVendorDir
+};

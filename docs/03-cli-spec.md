@@ -15,10 +15,26 @@ For most teams, `gig` should feel like this:
 ```bash
 gig
 gig login github
-gig inspect ABC-123 --repo github:owner/name
-gig verify --ticket ABC-123 --repo github:owner/name
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig ABC-123 --repo github:owner/name
+gig verify ABC-123 --repo github:owner/name
+gig manifest ABC-123 --repo github:owner/name
 ```
+
+When users run `gig` in a real terminal, the front door should behave like a guided picker:
+
+- default to GitHub-first onboarding
+- let users choose with `↑/↓` and `Enter` instead of typing numbers
+- keep local-folder fallback visible
+- surface saved projects without forcing workarea setup first
+
+The front door also accepts direct palette input such as:
+
+- `ABC-123`
+- `inspect ABC-123`
+- `verify ABC-123`
+- `manifest ABC-123`
+- `repo github:owner/name ABC-123`
+- `login github`
 
 ## Command Groups
 
@@ -28,7 +44,7 @@ gig manifest generate --ticket ABC-123 --repo github:owner/name
 | `gig login` | authenticate to a live provider |
 | `gig inspect` | see the full ticket story |
 | `gig verify` | get a `safe`, `warning`, or `blocked` verdict |
-| `gig manifest generate` | export a release packet |
+| `gig manifest` | export a release packet |
 | `gig workarea` | remember repo scope and defaults for repeat use |
 | `gig plan` | build a read-only promotion plan |
 | `gig snapshot create` | save a repeatable ticket baseline |
@@ -47,7 +63,7 @@ gig
 ```
 
 Use this to open the guided front door.
-In an interactive terminal, `gig` can suggest the next useful action based on your current workarea or recent remote context.
+In an interactive terminal, `gig` should let users pick the next useful action with `↑/↓` and `Enter` based on their current project, saved workareas, or GitHub discovery flow.
 
 ### `gig login`
 
@@ -61,13 +77,24 @@ gig login svn
 
 Use this once per provider before running remote-backed commands.
 
+Provider coverage today:
+
+| Provider | Coverage |
+| --- | --- |
+| GitHub | deep release evidence: PRs, deployments, checks, linked issues, releases |
+| GitLab | deep release evidence: merge requests, deployments, checks, linked issues, releases |
+| Bitbucket | basic release evidence: pull requests, deployments, branching model |
+| Azure DevOps | deep release evidence: pull requests, deployments, checks, linked work items |
+| SVN | audit topology only: branch and trunk discovery |
+
 ### `gig inspect`
 
 ```bash
+gig ABC-123
+gig ABC-123 --repo github:owner/name
 gig inspect ABC-123
-gig inspect ABC-123 --repo github:owner/name
 gig inspect ABC-123 --workarea payments
-gig inspect ABC-123 --path .
+gig ABC-123 --path .
 ```
 
 Use this when you need the full ticket audit:
@@ -80,23 +107,27 @@ Use this when you need the full ticket audit:
 ### `gig verify`
 
 ```bash
-gig verify --ticket ABC-123
-gig verify --ticket ABC-123 --repo github:owner/name
+gig verify ABC-123
+gig verify ABC-123 --repo github:owner/name
 gig verify --ticket-file tickets.txt --repo github:owner/name
 gig verify --release rel-2026-04-09 --path .
 ```
 
 Use this when you need a release decision instead of raw evidence.
 Add `--from` and `--to` only when `gig` cannot infer the promotion path.
+If provider protected branches are ambiguous, `gig` now stops and says it is not sure instead of guessing.
+Use `--envs`, `--from`, and `--to` together when your team topology does not map cleanly to the protected-branch graph.
 
-### `gig manifest generate`
+### `gig manifest`
 
 ```bash
-gig manifest generate --ticket ABC-123
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig manifest ABC-123
+gig manifest ABC-123 --repo github:owner/name
+gig manifest generate ABC-123
 ```
 
 Use this to generate a release packet for QA, release review, or automation.
+The older `gig manifest generate ...` form still works, but `gig manifest ...` is the main command to remember.
 
 ### `gig workarea`
 
@@ -117,7 +148,19 @@ gig update v2026.04.09
 ```
 
 Use this to refresh the installed CLI.
-If your npm install still returns `404`, the first package publish has not completed yet; use the direct installer until it does.
+The direct installer is the canonical path.
+Use npm only when your environment already distributes `gig` that way.
+
+## Release-Day Path
+
+For repeated release work, the main flow should feel like this:
+
+```bash
+gig workarea use payments
+gig verify --release rel-2026-04-09
+gig manifest --release rel-2026-04-09
+gig assist release --release rel-2026-04-09 --audience release-manager
+```
 
 ## Optional AI Layer
 
@@ -137,6 +180,19 @@ gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
 gig assist audit --ticket ABC-123 --repo github:owner/name --audience client
 gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
 ```
+
+### Follow-Up Briefing
+
+```bash
+gig ask "what is still blocked?"
+gig ask "what changed since the last brief?"
+gig assist chat --message "which repo needs the most attention?"
+gig assist resume
+```
+
+`gig ask` continues the most recent saved AI session.
+Before the follow-up question is sent, `gig` rebuilds the deterministic bundle from the current repo or workarea state.
+During that same follow-up thread, DeerFlow can ask the read-only `gig` bridge for fresh `inspect`, `verify`, or `manifest` evidence from the saved current session instead of guessing.
 
 ### Release Briefing
 
@@ -166,7 +222,7 @@ Use these when you need a narrower tool than `inspect` or `verify`:
   see where a ticket is present or behind across environment branches
 - `gig diff --ticket ABC-123 --from dev --to test --path .`
   compare one branch to another for a ticket
-- `gig plan --ticket ABC-123 --repo github:owner/name`
+- `gig plan ABC-123 --repo github:owner/name`
   build a read-only promotion plan
 - `gig snapshot create --ticket ABC-123 --path .`
   save a repeatable audit baseline
@@ -189,6 +245,7 @@ gig resolve start --path .
 - explicit flags win over workarea defaults
 - `gig` auto-detects `gig.yaml`, `gig.yml`, `.gig.yaml`, and `.gig.yml`
 - commands are read-only by default, except for the active conflict resolver
+- set `GIG_DIAGNOSTICS_FILE=/path/to/gig-diagnostics.jsonl` when you want structured auth and topology diagnostics for support or CI
 
 ## Remote Repository Targets
 
@@ -208,8 +265,8 @@ Start with:
 
 1. `gig`
 2. `gig login <provider>`
-3. `gig inspect`
-4. `gig verify`
-5. `gig manifest generate`
+3. `gig <ticket-id>`
+4. `gig verify <ticket-id>`
+5. `gig manifest <ticket-id>`
 
 Reach for the rest only when the main workflow does not answer the question fast enough.

@@ -54,8 +54,10 @@ The current shipped commands are:
 gig assist doctor
 gig assist setup
 gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
+gig ask "what is still blocked?"
 gig assist release --release rel-2026-04-09 --path . --audience release-manager
 gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name --audience release-manager
+gig assist resume
 gig assist resolve --path . --ticket ABC-123 --audience release-manager
 ```
 
@@ -75,15 +77,23 @@ gig assist resolve --path . --ticket ABC-123 --audience release-manager
 
 1. resolves repo scope and branch context using normal `gig` rules
 2. builds a deterministic bundle from inspection, planning, verification, and manifest highlights
-3. sends that bundle to DeerFlow
+3. sends that bundle to DeerFlow together with a read-only follow-up bridge for fresh `gig inspect`, `gig verify`, and `gig manifest` evidence on the same saved session
 4. prints a concise AI briefing tuned for `qa`, `client`, or `release-manager`
+
+`gig ask`:
+
+1. loads the current saved AI session from the last audit, release, or resolve flow
+2. rebuilds the deterministic bundle from the current repo or workarea state
+3. sends the refreshed bundle plus the follow-up question to DeerFlow on the same thread
+4. lets DeerFlow request fresh read-only `gig` evidence through the saved current-session bridge instead of inventing missing facts
+5. prints a direct answer plus recommended next `gig` commands
 
 `gig assist release`:
 
 1. loads saved ticket snapshots from one named release, or captures a live ticket set from local or remote repositories
-2. builds a deterministic release bundle with release-plan rollups and packet data
+2. builds a deterministic release bundle with release-plan rollups, packet data, and aggregated provider-backed PR, linked issue/work item, deployment, release, check, overlap, delta, and hotspot evidence
 3. sends that bundle to DeerFlow
-4. prints a concise AI release briefing for the selected audience
+4. prints a concise AI release briefing for the selected audience together with deterministic executive and operator summaries from the bundle
 
 `gig assist resolve`:
 
@@ -105,13 +115,14 @@ This slice helps with the practical pain points that deterministic JSON alone do
 - people want the same facts explained differently for QA, client review, and release handoff
 - release owners want one release-wide summary across many ticket snapshots or live ticket sets instead of reading each ticket separately
 - developers want help understanding which conflict choice is safest without replacing the deterministic resolver
+- follow-up AI questions need a way to pull fresh deterministic evidence without silently drifting into prompt-only guesses
 
 ## What This Slice Does Not Do
 
 It does not:
 
 - replace `verify`
-- replace `manifest generate`
+- replace `manifest`
 - guess release state without `gig` evidence
 - require DeerFlow for the main remote audit workflow
 - change `gig` into a write-enabled automation tool
@@ -132,14 +143,15 @@ These skills reinforce the main boundary:
 - use AI to explain and prioritize
 - do not let prompts replace branch, ticket, or risk reasoning
 - support both saved-snapshot and live remote release bundle workflows
+- keep the DeerFlow bridge read-only and scoped to the current saved `gig` session
 
 ## Near-Term Direction
 
 After the current slices, the next high-value steps are:
 
-- expand the release-level bundle with richer cross-ticket evidence such as PR, CI, deployment, and issue-tracker context
-- make repeated AI briefs work more naturally through saved workareas so users need fewer scope flags
-- expose `gig` itself as a tool or MCP surface so DeerFlow can request fresh evidence instead of relying only on prompt text
+- finish parity for the remaining Bitbucket gap after shipping deeper GitLab and Azure DevOps checks plus linked work item evidence
+- make saved AI sessions work even more naturally through workarea-aware resume and repo-scoped memory
+- expand the read-only follow-up bridge beyond the current GitHub and current-session slice, then graduate it into a fuller `gig` tool or MCP surface
 - add richer prompt templates inside the project skill pack without moving logic into prompts
 
 ## Product Positioning

@@ -75,9 +75,9 @@ func branchAuditPriority(branch string) int {
 		return 30
 	case lower == "staging" || lower == "stage" || lower == "preprod":
 		return 40
-	case strings.HasPrefix(lower, "release/"):
+	case strings.HasPrefix(lower, "release/") || strings.HasPrefix(lower, "release-") || strings.HasPrefix(lower, "release_") || lower == "rc" || strings.HasPrefix(lower, "rc/") || strings.HasPrefix(lower, "rc-") || strings.HasPrefix(lower, "rc_"):
 		return 45
-	case lower == "main" || lower == "master" || lower == "prod" || lower == "production":
+	case lower == "main" || lower == "master" || lower == "prod" || lower == "production" || lower == "trunk":
 		return 50
 	default:
 		return 35
@@ -95,6 +95,7 @@ func isTransientAuditBranch(branch string) bool {
 		"task/",
 		"spike/",
 		"wip/",
+		"hotfix/",
 		"user/",
 		"users/",
 		"personal/",
