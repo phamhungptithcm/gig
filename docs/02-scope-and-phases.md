@@ -34,7 +34,7 @@ Shipped:
 - config loading
 - environment and branch mapping from config
 - repository or service catalog
-- `gig manifest generate`
+- `gig manifest`
 - `gig doctor`
 - Markdown and JSON output for release review
 

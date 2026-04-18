@@ -79,6 +79,16 @@ type deploymentsPayload struct {
 	Count int              `json:"count"`
 }
 
+type commitStatusesPayload struct {
+	Value []map[string]any `json:"value"`
+	Count int              `json:"count"`
+}
+
+type workItemsPayload struct {
+	Value []map[string]any `json:"value"`
+	Count int              `json:"count"`
+}
+
 func NewAdapter(parser ticket.Parser) *Adapter {
 	return &Adapter{
 		parser:   parser,
@@ -395,6 +405,8 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 	}
 
 	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	checksByID := map[string]scm.CheckEvidence{}
+	issuesByID := map[string]scm.IssueEvidence{}
 	seenBranchPairs := map[string]struct{}{}
 	for _, commit := range query.Commits {
 		for _, branch := range commit.Branches {
@@ -414,6 +426,13 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 			}
 			for _, item := range pullRequests {
 				id := fmt.Sprintf("#%d", item.PullRequestID)
+				linkedIssues, err := a.linkedIssuesForPullRequest(ctx, descriptor, item.PullRequestID)
+				if err != nil {
+					return scm.ProviderEvidence{}, err
+				}
+				for _, issue := range linkedIssues {
+					issuesByID[strings.TrimSpace(issue.ID)] = issue
+				}
 				pullRequestsByID[id] = scm.PullRequestEvidence{
 					ID:           id,
 					Title:        strings.TrimSpace(item.Title),
@@ -422,6 +441,7 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 					TargetBranch: normalizeRefName(item.TargetRefName),
 					URL:          firstNonEmpty(pullRequestWebURL(descriptor, item.PullRequestID), strings.TrimSpace(item.URL)),
 					CommitHash:   firstCommitHashForBranch(query.Commits, branch),
+					LinkedIssues: linkedIssues,
 				}
 			}
 		}
@@ -434,6 +454,15 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 			continue
 		}
 		commitHashes[hash] = struct{}{}
+
+		statuses, err := a.commitStatusesForCommit(ctx, descriptor, hash)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, item := range statuses {
+			id := hash + "|" + item.Context
+			checksByID[id] = item
+		}
 	}
 
 	deployments, err := a.deploymentsForCommits(ctx, descriptor, commitHashes)
@@ -444,6 +473,8 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 	return scm.ProviderEvidence{
 		PullRequests: mapPullRequestEvidence(pullRequestsByID),
 		Deployments:  deployments,
+		Checks:       mapCheckEvidence(checksByID),
+		Issues:       mapIssueEvidence(issuesByID),
 	}, nil
 }
 
@@ -563,6 +594,121 @@ func (a *Adapter) deploymentsForCommits(ctx context.Context, descriptor descript
 	return mapDeploymentEvidence(evidenceByID), nil
 }
 
+func (a *Adapter) commitStatusesForCommit(ctx context.Context, descriptor descriptor, hash string) ([]scm.CheckEvidence, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/commits/%s/statuses?api-version=%s",
+		strings.TrimRight(a.baseURL, "/"),
+		url.PathEscape(descriptor.Organization),
+		url.PathEscape(descriptor.Project),
+		url.PathEscape(descriptor.Repository),
+		url.PathEscape(hash),
+		apiVersion,
+	)
+
+	var payload commitStatusesPayload
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	evidence := make([]scm.CheckEvidence, 0, len(payload.Value))
+	seen := map[string]struct{}{}
+	for _, item := range payload.Value {
+		context := firstNonEmpty(nestedString(item, "context", "name"), nestedString(item, "context", "genre"), nestedString(item, "description"))
+		if context == "" {
+			continue
+		}
+		id := hash + "|" + context
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		evidence = append(evidence, scm.CheckEvidence{
+			Context:    context,
+			State:      firstNonEmpty(nestedString(item, "state"), nestedString(item, "status")),
+			URL:        firstNonEmpty(nestedString(item, "targetUrl"), nestedString(item, "target_url"), nestedString(item, "url")),
+			CommitHash: hash,
+		})
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].Context < evidence[j].Context
+	})
+	return evidence, nil
+}
+
+func (a *Adapter) linkedIssuesForPullRequest(ctx context.Context, descriptor descriptor, pullRequestID int) ([]scm.IssueEvidence, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullRequests/%d/workitems?api-version=%s",
+		strings.TrimRight(a.baseURL, "/"),
+		url.PathEscape(descriptor.Organization),
+		url.PathEscape(descriptor.Project),
+		url.PathEscape(descriptor.Repository),
+		pullRequestID,
+		apiVersion,
+	)
+
+	var references workItemsPayload
+	if err := a.api(ctx, endpoint, &references); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(references.Value))
+	seen := map[string]struct{}{}
+	for _, item := range references.Value {
+		id := strings.TrimSpace(nestedString(item, "id"))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	detailsEndpoint := fmt.Sprintf("%s/%s/%s/_apis/wit/workitems?ids=%s&fields=%s&api-version=%s",
+		strings.TrimRight(a.baseURL, "/"),
+		url.PathEscape(descriptor.Organization),
+		url.PathEscape(descriptor.Project),
+		url.QueryEscape(strings.Join(ids, ",")),
+		url.QueryEscape("System.Title,System.State,System.Tags"),
+		apiVersion,
+	)
+
+	var payload workItemsPayload
+	if err := a.api(ctx, detailsEndpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	issues := make([]scm.IssueEvidence, 0, len(payload.Value))
+	for _, item := range payload.Value {
+		id := strings.TrimSpace(nestedString(item, "id"))
+		if id == "" {
+			continue
+		}
+		issues = append(issues, scm.IssueEvidence{
+			ID:     "#" + id,
+			Title:  strings.TrimSpace(nestedString(item, "fields", "System.Title")),
+			State:  strings.TrimSpace(nestedString(item, "fields", "System.State")),
+			Labels: parseAzureTags(nestedString(item, "fields", "System.Tags")),
+			URL:    firstNonEmpty(nestedString(item, "_links", "html", "href"), nestedString(item, "_links", "web", "href"), workItemWebURL(descriptor, id)),
+		})
+	}
+	sort.SliceStable(issues, func(i, j int) bool {
+		return issues[i].ID < issues[j].ID
+	})
+	return issues, nil
+}
+
 func (a *Adapter) api(ctx context.Context, endpoint string, destination any) error {
 	token, err := a.accessToken(ctx)
 	if err != nil {
@@ -592,6 +738,9 @@ func (a *Adapter) api(ctx context.Context, endpoint string, destination any) err
 		return err
 	}
 
+	if response.StatusCode == http.StatusNotFound {
+		return notFoundError{message: string(body)}
+	}
 	if response.StatusCode >= 400 {
 		message := strings.TrimSpace(string(body))
 		if message == "" {
@@ -705,6 +854,31 @@ func mapDeploymentEvidence(values map[string]scm.DeploymentEvidence) []scm.Deplo
 	return evidence
 }
 
+func mapCheckEvidence(values map[string]scm.CheckEvidence) []scm.CheckEvidence {
+	evidence := make([]scm.CheckEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		if evidence[i].CommitHash == evidence[j].CommitHash {
+			return evidence[i].Context < evidence[j].Context
+		}
+		return evidence[i].CommitHash < evidence[j].CommitHash
+	})
+	return evidence
+}
+
+func mapIssueEvidence(values map[string]scm.IssueEvidence) []scm.IssueEvidence {
+	evidence := make([]scm.IssueEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].ID < evidence[j].ID
+	})
+	return evidence
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
@@ -724,6 +898,28 @@ func firstCommitHashForBranch(commits []scm.Commit, branch string) string {
 		}
 	}
 	return ""
+}
+
+func parseAzureTags(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ";")
+	tags := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		tag := strings.TrimSpace(part)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags
 }
 
 func nestedString(value map[string]any, path ...string) string {
@@ -763,6 +959,25 @@ func releaseBaseURL(baseURL string) string {
 	return strings.TrimRight(baseURL, "/")
 }
 
+func workItemWebURL(descriptor descriptor, workItemID string) string {
+	if strings.HasPrefix(strings.TrimSpace(os.Getenv("GIG_AZURE_DEVOPS_BASE_URL")), "http://") ||
+		strings.HasPrefix(strings.TrimSpace(os.Getenv("GIG_AZURE_DEVOPS_BASE_URL")), "https://") {
+		base := strings.TrimRight(os.Getenv("GIG_AZURE_DEVOPS_BASE_URL"), "/")
+		return fmt.Sprintf("%s/%s/%s/_workitems/edit/%s",
+			base,
+			url.PathEscape(descriptor.Organization),
+			url.PathEscape(descriptor.Project),
+			url.PathEscape(strings.TrimSpace(workItemID)),
+		)
+	}
+
+	return fmt.Sprintf("https://dev.azure.com/%s/%s/_workitems/edit/%s",
+		url.PathEscape(descriptor.Organization),
+		url.PathEscape(descriptor.Project),
+		url.PathEscape(strings.TrimSpace(workItemID)),
+	)
+}
+
 func pullRequestWebURL(descriptor descriptor, pullRequestID int) string {
 	if strings.HasPrefix(strings.TrimSpace(os.Getenv("GIG_AZURE_DEVOPS_BASE_URL")), "http://") ||
 		strings.HasPrefix(strings.TrimSpace(os.Getenv("GIG_AZURE_DEVOPS_BASE_URL")), "https://") {
@@ -789,4 +1004,20 @@ func defaultBaseURL() string {
 		return strings.TrimRight(value, "/")
 	}
 	return "https://dev.azure.com"
+}
+
+type notFoundError struct {
+	message string
+}
+
+func (e notFoundError) Error() string {
+	if strings.TrimSpace(e.message) == "" {
+		return "resource not found"
+	}
+	return strings.TrimSpace(e.message)
+}
+
+func isNotFound(err error) bool {
+	var target notFoundError
+	return errors.As(err, &target)
 }

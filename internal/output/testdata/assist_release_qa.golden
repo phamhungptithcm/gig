@@ -1,0 +1,10 @@
+Release Brief: rel-2026-04-17
+Scope: github:acme/payments
+Promotion: staging -> main
+Audience: qa
+Operator Summary:
+- github:acme/payments: 1 non-green check(s); latest release v1.9.0; new since latest release ABC-123.
+- 1 repository overlap(s) carry multiple release tickets in the same scope.
+Evidence: 2 PR(s); 1 deployment(s); 3 check(s), 1 not green; 1 hotspot(s); 2 linked issue(s); 1 latest release reference(s); 1 overlapping ticket(s); 1 new ticket(s) since latest release
+
+Release still blocked until the build check is green.

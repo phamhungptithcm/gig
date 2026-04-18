@@ -45,7 +45,7 @@ Good warning examples:
 - `gig diff`
 - `gig verify`
 - `gig plan`
-- `gig manifest generate`
+- `gig manifest`
 
 That means ticket search can find SVN revisions, `inspect` can still flag risky files such as `.mpr`, and promotion checks can compare SVN branch lines for the same ticket.
 

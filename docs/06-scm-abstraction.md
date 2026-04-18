@@ -74,7 +74,7 @@ This is enough for:
 - `gig diff`
 - `gig verify`
 - `gig plan`
-- `gig manifest generate`
+- `gig manifest`
 - `gig doctor`
 
 It still does not:

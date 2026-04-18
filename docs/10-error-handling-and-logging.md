@@ -80,29 +80,45 @@ Rules:
 
 ## Structured Logs
 
-Structured logs are planned for later phases.
+`gig` can now write structured diagnostics to a JSONL file when you set:
 
-Suggested fields:
+```bash
+export GIG_DIAGNOSTICS_FILE=/path/to/gig-diagnostics.jsonl
+```
+
+This is opt-in.
+Normal terminal output stays concise unless you enable the diagnostics file.
+
+Current fields:
 
 - timestamp
 - level
 - command
-- path
+- workspace
 - repo
 - scm
 - ticket
 - fromBranch
 - toBranch
+- operation
+- message
 - error
 
 ## Logging Levels
 
-Planned levels:
+Current levels:
 
 - `info`
-- `warn`
+- `warning`
 - `error`
-- `debug`
+
+Typical events today:
+
+- command start and finish
+- provider access checks
+- provider login checks
+- protected-branch topology evaluation
+- promotion-path resolution success or failure
 
 ## Principle
 

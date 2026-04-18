@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	doctorsvc "gig/internal/doctor"
 )
@@ -78,6 +79,26 @@ func RenderDoctor(w io.Writer, report doctorsvc.Report) error {
 			}
 			if repository.ConfigEntry.Kind != "" {
 				if _, err := fmt.Fprintf(w, "  kind: %s\n", repository.ConfigEntry.Kind); err != nil {
+					return err
+				}
+			}
+		}
+		if repository.Capabilities != nil {
+			if _, err := fmt.Fprintf(w, "  provider capabilities: %s\n", repository.Capabilities.Summary()); err != nil {
+				return err
+			}
+		}
+		if repository.Topology != nil {
+			if _, err := fmt.Fprintf(w, "  topology confidence: %s\n", repository.Topology.Confidence); err != nil {
+				return err
+			}
+			if repository.Topology.Summary != "" {
+				if _, err := fmt.Fprintf(w, "  topology summary: %s\n", repository.Topology.Summary); err != nil {
+					return err
+				}
+			}
+			if len(repository.Topology.ProtectedBranches) > 0 {
+				if _, err := fmt.Fprintf(w, "  protected branches: %s\n", strings.Join(repository.Topology.ProtectedBranches, ", ")); err != nil {
 					return err
 				}
 			}
