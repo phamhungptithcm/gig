@@ -3,13 +3,13 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	inspectsvc "gig/internal/inspect"
@@ -176,6 +176,10 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 	if repoSpec == "" && resolvedPath == "" {
 		discoveredRepository, err := a.discoverWorkareaRepository(ctx, strings.TrimSpace(*providerValue), strings.TrimSpace(*organizationValue), strings.TrimSpace(*projectValue))
 		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				fmt.Fprintln(a.stdout, "Workarea setup cancelled.")
+				return 0
+			}
 			fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
 			return 1
 		}
@@ -271,6 +275,10 @@ func (a *App) runWorkareaUse(args []string) int {
 	} else {
 		name, err = a.promptForWorkareaSelection(store)
 		if err != nil {
+			if errors.Is(err, errPickerCancelled) {
+				fmt.Fprintln(a.stdout, "Workarea switch cancelled.")
+				return 0
+			}
 			fmt.Fprintf(a.stderr, "workarea use failed: %v\n", err)
 			return 1
 		}
@@ -458,28 +466,24 @@ func (a *App) resolveDiscoveryProvider(reader *bufio.Reader, providerValue strin
 	}
 
 	providers := sourcecontrol.DiscoverableProviders()
-	fmt.Fprintln(a.stdout, "Select a provider:")
-	for index, provider := range providers {
-		fmt.Fprintf(a.stdout, "  %d. %s\n", index+1, sourcecontrol.ProviderLabel(provider))
+	items := make([]pickerItem, 0, len(providers))
+	for _, provider := range providers {
+		subtitle := "Browse repositories from this provider."
+		if provider == scm.TypeGitHub {
+			subtitle = "Recommended first-run path. gig can list your GitHub repositories after login."
+		}
+		items = append(items, pickerItem{
+			Value:    string(provider),
+			Title:    sourcecontrol.ProviderLabel(provider),
+			Subtitle: subtitle,
+			Keywords: []string{string(provider), sourcecontrol.ProviderLabel(provider)},
+		})
 	}
-	fmt.Fprint(a.stdout, "Choice: ")
-
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
+	selected, err := a.runPicker(reader, "Pick a provider:", items)
+	if err != nil {
 		return "", err
 	}
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return "", fmt.Errorf("a selection is required")
-	}
-	index, err := strconv.Atoi(line)
-	if err != nil {
-		return "", fmt.Errorf("invalid selection %q", line)
-	}
-	if index < 1 || index > len(providers) {
-		return "", fmt.Errorf("selection %d is out of range", index)
-	}
-	return providers[index-1], nil
+	return scm.Type(selected.Value), nil
 }
 
 func (a *App) promptForLine(reader *bufio.Reader, label string) (string, error) {
@@ -707,85 +711,6 @@ func inferWorkareaName(repoSpec, pathValue string) string {
 	}
 
 	return ""
-}
-
-func (a *App) runPicker(reader *bufio.Reader, heading string, items []pickerItem) (pickerItem, error) {
-	if len(items) == 0 {
-		return pickerItem{}, fmt.Errorf("no choices are available")
-	}
-
-	filtered := append([]pickerItem(nil), items...)
-	for {
-		fmt.Fprintln(a.stdout, heading)
-		for index, item := range filtered {
-			badges := make([]string, 0, 2)
-			if item.Current {
-				badges = append(badges, "current")
-			}
-			if item.Recent {
-				badges = append(badges, "recent")
-			}
-			fmt.Fprintf(a.stdout, "  %d. %s", index+1, item.Title)
-			if len(badges) > 0 {
-				fmt.Fprintf(a.stdout, " [%s]", strings.Join(badges, ", "))
-			}
-			if strings.TrimSpace(item.Subtitle) != "" {
-				fmt.Fprintf(a.stdout, "  %s", item.Subtitle)
-			}
-			fmt.Fprintln(a.stdout)
-		}
-		fmt.Fprint(a.stdout, "Choice or filter text ('/' clears): ")
-
-		line, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return pickerItem{}, err
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			return pickerItem{}, fmt.Errorf("a selection is required")
-		}
-		if line == "/" {
-			filtered = append([]pickerItem(nil), items...)
-			continue
-		}
-		index, err := strconv.Atoi(line)
-		if err == nil {
-			if index < 1 || index > len(filtered) {
-				return pickerItem{}, fmt.Errorf("selection %d is out of range", index)
-			}
-			return filtered[index-1], nil
-		}
-
-		next := filterPickerItems(items, line)
-		if len(next) == 0 {
-			fmt.Fprintf(a.stdout, "No matches for %q.\n", line)
-			continue
-		}
-		if len(next) == 1 {
-			return next[0], nil
-		}
-		filtered = next
-	}
-}
-
-func filterPickerItems(items []pickerItem, query string) []pickerItem {
-	query = strings.ToLower(strings.TrimSpace(query))
-	if query == "" {
-		return append([]pickerItem(nil), items...)
-	}
-
-	filtered := make([]pickerItem, 0, len(items))
-	for _, item := range items {
-		fields := []string{item.Title, item.Subtitle, item.Value}
-		fields = append(fields, item.Keywords...)
-		for _, field := range fields {
-			if strings.Contains(strings.ToLower(strings.TrimSpace(field)), query) {
-				filtered = append(filtered, item)
-				break
-			}
-		}
-	}
-	return filtered
 }
 
 func orderedWorkareas(workareas []workarea.Definition, current string) []workarea.Definition {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"gig/internal/diagnostics"
 	"gig/internal/scm"
 	azuredevopsscm "gig/internal/scm/azuredevops"
 	bitbucketscm "gig/internal/scm/bitbucket"
@@ -91,34 +92,67 @@ func EnsureAccess(ctx context.Context, repositories []scm.Repository, stdin io.R
 	}
 
 	for provider, roots := range required {
+		diagnostics.Emit(ctx, "info", "provider.access", "ensuring provider access", diagnostics.Meta{
+			Repo:    strings.Join(roots, ","),
+			SCM:     string(provider),
+			Details: map[string]any{"repositories": append([]string(nil), roots...)},
+		}, nil)
 		switch provider {
 		case scm.TypeRemoteSVN:
 			if err := svnscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx, roots...); err != nil {
+				diagnostics.Emit(ctx, "error", "provider.access", "provider access failed", diagnostics.Meta{
+					Repo: strings.Join(roots, ","),
+					SCM:  string(provider),
+				}, err)
 				return err
 			}
 		default:
 			if err := Login(ctx, provider, stdin, stdout, stderr); err != nil {
+				diagnostics.Emit(ctx, "error", "provider.access", "provider access failed", diagnostics.Meta{
+					Repo: strings.Join(roots, ","),
+					SCM:  string(provider),
+				}, err)
 				return err
 			}
 		}
+		diagnostics.Emit(ctx, "info", "provider.access", "provider access ready", diagnostics.Meta{
+			Repo: strings.Join(roots, ","),
+			SCM:  string(provider),
+		}, nil)
 	}
 
 	return nil
 }
 
 func Login(ctx context.Context, provider scm.Type, stdin io.Reader, stdout, stderr io.Writer) error {
+	diagnostics.Emit(ctx, "info", "provider.login", "provider login check started", diagnostics.Meta{
+		SCM: string(provider),
+	}, nil)
+
+	var err error
 	switch provider {
 	case scm.TypeGitHub:
-		return githubscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
+		err = githubscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
 	case scm.TypeGitLab:
-		return gitlabscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
+		err = gitlabscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
 	case scm.TypeBitbucket:
-		return bitbucketscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
+		err = bitbucketscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
 	case scm.TypeAzureDevOps:
-		return azuredevopsscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
+		err = azuredevopsscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx)
 	case scm.TypeSVN, scm.TypeRemoteSVN:
-		return svnscm.NewSession(stdin, stdout, stderr).Login(ctx)
+		err = svnscm.NewSession(stdin, stdout, stderr).Login(ctx)
 	default:
-		return fmt.Errorf("provider %q is not supported", provider)
+		err = fmt.Errorf("provider %q is not supported", provider)
 	}
+
+	if err != nil {
+		diagnostics.Emit(ctx, "error", "provider.login", "provider login check failed", diagnostics.Meta{
+			SCM: string(provider),
+		}, err)
+		return err
+	}
+	diagnostics.Emit(ctx, "info", "provider.login", "provider login check passed", diagnostics.Meta{
+		SCM: string(provider),
+	}, nil)
+	return nil
 }

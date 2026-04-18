@@ -49,6 +49,10 @@ func (s *Session) Login(ctx context.Context) error {
 	return s.login(ctx)
 }
 
+func (s *Session) Status(ctx context.Context) error {
+	return s.status(ctx)
+}
+
 func (s *Session) status(ctx context.Context) error {
 	_, err := s.runGH(ctx, "auth", "status", "--hostname", "github.com")
 	return err

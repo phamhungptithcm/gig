@@ -150,7 +150,7 @@ func RenderReleasePacketMarkdown(w io.Writer, packet manifestsvc.ReleasePacket) 
 			}
 		}
 
-		if repository.ProviderEvidence != nil && (len(repository.ProviderEvidence.PullRequests) > 0 || len(repository.ProviderEvidence.Deployments) > 0) {
+		if hasProviderEvidence(repository.ProviderEvidence) {
 			if _, err := fmt.Fprintln(w, "Provider evidence:"); err != nil {
 				return err
 			}

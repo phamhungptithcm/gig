@@ -43,11 +43,13 @@ type EnvironmentCheck struct {
 }
 
 type RepositoryResult struct {
-	Repository        scm.Repository     `json:"repository"`
-	ConfigEntry       *config.Repository `json:"configEntry,omitempty"`
-	Verdict           Verdict            `json:"verdict"`
-	Findings          []Finding          `json:"findings,omitempty"`
-	EnvironmentChecks []EnvironmentCheck `json:"environmentChecks,omitempty"`
+	Repository        scm.Repository                    `json:"repository"`
+	ConfigEntry       *config.Repository                `json:"configEntry,omitempty"`
+	Verdict           Verdict                           `json:"verdict"`
+	Capabilities      *sourcecontrol.ProviderCapability `json:"capabilities,omitempty"`
+	Topology          *sourcecontrol.TopologyInference  `json:"topology,omitempty"`
+	Findings          []Finding                         `json:"findings,omitempty"`
+	EnvironmentChecks []EnvironmentCheck                `json:"environmentChecks,omitempty"`
 }
 
 type Summary struct {
@@ -180,6 +182,10 @@ func (s *Service) inspectRepository(ctx context.Context, workspacePath string, r
 		Repository: repository,
 		Verdict:    VerdictOK,
 	}
+	if repository.Type.IsRemote() {
+		capability := sourcecontrol.ProviderCapabilities(repository.Type)
+		result.Capabilities = &capability
+	}
 
 	if entry, ok := loaded.Config.FindRepository(workspacePath, repository.Root, repository.Name); ok {
 		entryCopy := entry
@@ -215,9 +221,21 @@ func (s *Service) inspectRepository(ctx context.Context, workspacePath string, r
 
 	adapter, ok := s.adapters.For(repository.Type)
 	if ok {
-		environments, err := effectiveEnvironments(ctx, adapter, repository.Root, loaded)
+		environments, topology, err := effectiveEnvironments(ctx, adapter, repository.Root, loaded)
 		if err != nil {
 			return RepositoryResult{}, err
+		}
+		result.Topology = topology
+		if topology != nil && topology.Confidence != sourcecontrol.TopologyConfidenceHigh {
+			summary := strings.TrimSpace(topology.Summary)
+			if summary == "" {
+				summary = "Protected branch topology is not clear enough for safe promotion inference."
+			}
+			result.Findings = append(result.Findings, Finding{
+				Severity: VerdictWarning,
+				Code:     "topology-ambiguous",
+				Summary:  summary + " Add explicit environments and branch defaults if this repository participates in release verification.",
+			})
 		}
 		for _, environment := range environments {
 			exists, err := refExists(ctx, adapter, repository.Root, environment.Branch)
@@ -251,21 +269,25 @@ func (s *Service) inspectRepository(ctx context.Context, workspacePath string, r
 	return result, nil
 }
 
-func effectiveEnvironments(ctx context.Context, adapter scm.Adapter, repoRoot string, loaded config.Loaded) ([]config.Environment, error) {
+func effectiveEnvironments(ctx context.Context, adapter scm.Adapter, repoRoot string, loaded config.Loaded) ([]config.Environment, *sourcecontrol.TopologyInference, error) {
 	if loaded.ExplicitEnvironments {
-		return loaded.Config.Environments, nil
+		return loaded.Config.Environments, nil, nil
 	}
 
 	provider, ok := adapter.(scm.ProtectedBranchProvider)
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	protectedBranches, err := provider.ProtectedBranches(ctx, repoRoot)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return toConfigEnvironments(sourcecontrol.InferEnvironments(protectedBranches)), nil
+	topology := sourcecontrol.InferProtectedBranchTopology(protectedBranches)
+	if topology.Confidence != sourcecontrol.TopologyConfidenceHigh {
+		return nil, &topology, nil
+	}
+	return toConfigEnvironments(topology.Environments), &topology, nil
 }
 
 func toConfigEnvironments(environments []inspectsvc.Environment) []config.Environment {

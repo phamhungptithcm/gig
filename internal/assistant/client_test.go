@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	assisttools "gig/internal/assistant/tools"
 	conflictsvc "gig/internal/conflict"
 	"gig/internal/scm"
 )
@@ -267,6 +268,82 @@ func TestDeerFlowClientAnalyzeResolve(t *testing.T) {
 	}
 	if !strings.Contains(runRequestBody, "## QA Conflict Summary") {
 		t.Fatalf("run request = %q, want QA resolve sections", runRequestBody)
+	}
+}
+
+func TestDeerFlowClientAnalyzeFollowUpUsesGigToolBridge(t *testing.T) {
+	t.Parallel()
+
+	runBodies := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/langgraph/threads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"thread_id":"thread-tools-123"}`))
+		case "/api/langgraph/threads/thread-tools-123/runs/stream":
+			body, _ := io.ReadAll(r.Body)
+			runBodies = append(runBodies, string(body))
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: values\n"))
+			if len(runBodies) == 1 {
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"\",\"tool_calls\":[{\"name\":\"gig_verify\",\"args\":{\"focus\":\"summary\"},\"id\":\"tc-1\"}]}]}\n\n"))
+			} else {
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"Biggest risk: one dependency is still missing from main.\"}]}\n\n"))
+			}
+			_, _ = w.Write([]byte("event: end\n"))
+			_, _ = w.Write([]byte("data: {}\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var captured assisttools.VerifyRequest
+	bridge := assisttools.NewBridge(assisttools.Runtime{
+		Verify: func(_ context.Context, request assisttools.VerifyRequest) (any, error) {
+			captured = request
+			return map[string]any{
+				"verdict": "blocked",
+				"reasons": []string{
+					"Dependency XYZ-456 is still missing from main.",
+				},
+			}, nil
+		},
+	})
+
+	client := NewDeerFlowClient(ClientConfig{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+
+	response, err := client.AnalyzeFollowUp(context.Background(), "what is the biggest risk?", PromptOptions{
+		Mode:   ModePro,
+		Bridge: bridge,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeFollowUp() error = %v", err)
+	}
+
+	if captured.Focus != "summary" {
+		t.Fatalf("captured tool request = %#v", captured)
+	}
+	if response.ThreadID != "thread-tools-123" {
+		t.Fatalf("ThreadID = %q, want thread-tools-123", response.ThreadID)
+	}
+	if response.Response != "Biggest risk: one dependency is still missing from main." {
+		t.Fatalf("Response = %q", response.Response)
+	}
+	if len(runBodies) != 2 {
+		t.Fatalf("runBodies = %d, want 2 tool bridge turns", len(runBodies))
+	}
+	if !strings.Contains(runBodies[0], "read-only tool bridge managed by gig") {
+		t.Fatalf("first run body = %q, want bridge instructions", runBodies[0])
+	}
+	if !strings.Contains(runBodies[1], "gig_verify") || !strings.Contains(runBodies[1], "blocked") {
+		t.Fatalf("second run body = %q, want deterministic tool result", runBodies[1])
 	}
 }
 

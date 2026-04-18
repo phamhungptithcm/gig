@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">gig release audit benchmark snapshot</title>
+  <desc id="desc">Terminal-style benchmark card comparing a manual git release audit loop with gig verify, showing 6 commands and 7 steps reduced to 1 command and 1 step.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1440" height="900" rx="24" fill="url(#bg)"/>
+  <rect x="28" y="24" width="1384" height="62" rx="14" fill="#0f172a"/>
+  <circle cx="62" cy="55" r="8" fill="#ef4444"/>
+  <circle cx="90" cy="55" r="8" fill="#f59e0b"/>
+  <circle cx="118" cy="55" r="8" fill="#22c55e"/>
+  <text x="162" y="62" fill="#94a3b8" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">scripts/benchmark-release-audit.sh --runs 5</text>
+
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="22">
+    <text x="54" y="132" fill="#22c55e">$</text>
+    <text x="84" y="132" fill="#f8fafc">./scripts/benchmark-release-audit.sh --runs 5</text>
+
+    <text x="54" y="188" fill="#e2e8f0">gig release-audit benchmark</text>
+    <text x="54" y="224" fill="#94a3b8">ticket:    ABC-123</text>
+    <text x="54" y="258" fill="#94a3b8">runs:      5</text>
+    <text x="54" y="292" fill="#94a3b8">host:      Darwin arm64 / macOS 26.2</text>
+
+    <text x="54" y="360" fill="#f8fafc">Scenario              Avg ms   Commands   Human steps</text>
+    <text x="54" y="398" fill="#cbd5e1">manual git loop       63       6          7</text>
+    <text x="54" y="436" fill="#39d0ff">gig verify            354      1          1</text>
+
+    <text x="54" y="504" fill="#f8fafc">Step reduction:       6.0x fewer commands with gig</text>
+    <text x="54" y="540" fill="#f8fafc">Human steps:          7 manual steps vs 1 gig step</text>
+    <text x="54" y="576" fill="#94a3b8">Elapsed note:         manual was faster on this tiny synthetic run</text>
+
+    <text x="54" y="644" fill="#f8fafc">Why it still matters</text>
+    <text x="54" y="680" fill="#cbd5e1">- one deterministic release verdict instead of repo-by-repo grep + cherry</text>
+    <text x="54" y="716" fill="#cbd5e1">- less context switching when QA follow-up fixes span multiple repos</text>
+    <text x="54" y="752" fill="#cbd5e1">- easier to demo, explain, and justify in README, talks, and CV bullets</text>
+  </g>
+
+  <rect x="40" y="334" width="700" height="122" rx="16" fill="none" stroke="#38bdf8" stroke-width="3"/>
+  <rect x="40" y="484" width="700" height="82" rx="16" fill="none" stroke="#22c55e" stroke-width="3"/>
+
+  <path d="M 752 408 C 870 370, 950 334, 1040 270" fill="none" stroke="#38bdf8" stroke-width="3"/>
+  <rect x="1032" y="176" width="330" height="148" rx="18" fill="#082f49" stroke="#38bdf8" stroke-width="2"/>
+  <text x="1058" y="222" fill="#e0f2fe" font-family="ui-sans-serif, system-ui, sans-serif" font-size="30" font-weight="700">Workflow compression</text>
+  <text x="1058" y="262" fill="#bae6fd" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24">The headline is not raw milliseconds.</text>
+  <text x="1058" y="296" fill="#bae6fd" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24">It is 6 commands and 7 steps</text>
+  <text x="1058" y="330" fill="#bae6fd" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24">compressed into 1 command and 1 step.</text>
+
+  <path d="M 754 520 C 900 520, 992 520, 1068 520" fill="none" stroke="#22c55e" stroke-width="3"/>
+  <rect x="1030" y="448" width="334" height="142" rx="18" fill="#052e16" stroke="#22c55e" stroke-width="2"/>
+  <text x="1056" y="492" fill="#dcfce7" font-family="ui-sans-serif, system-ui, sans-serif" font-size="30" font-weight="700">Showoff, but honest</text>
+  <text x="1056" y="530" fill="#bbf7d0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24">Small local repos may still favor</text>
+  <text x="1056" y="564" fill="#bbf7d0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24">manual shell loops in raw runtime.</text>
+  <text x="1056" y="598" fill="#bbf7d0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24">The differentiator is auditability.</text>
+
+  <rect x="906" y="664" width="458" height="146" rx="18" fill="#3f1d0a" stroke="#f59e0b" stroke-width="2"/>
+  <text x="932" y="708" fill="#fef3c7" font-family="ui-sans-serif, system-ui, sans-serif" font-size="30" font-weight="700">Copy-ready proof point</text>
+  <text x="932" y="746" fill="#fde68a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">Built a release audit CLI that reduced a</text>
+  <text x="932" y="776" fill="#fde68a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">representative 2-repo check from 6 terminal</text>
+  <text x="932" y="806" fill="#fde68a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">commands / 7 manual steps to 1 / 1.</text>
+</svg>
