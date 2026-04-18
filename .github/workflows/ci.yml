@@ -68,6 +68,7 @@ jobs:
         run: |
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
+          node --test npm/install.test.cjs npm/bin/gig.test.cjs
           node --check scripts/prepare-npm-package.cjs
           node --check scripts/npm-publish-state.cjs
           node --test scripts/npm-publish.test.cjs

@@ -139,6 +139,7 @@ jobs:
         run: |
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
+          node --test npm/install.test.cjs npm/bin/gig.test.cjs
           node --check scripts/prepare-npm-package.cjs
           node --check scripts/npm-publish-state.cjs
           bash -n scripts/resolve-npm-publish-mode.sh scripts/verify-npm-publish-auth.sh scripts/publish-npm-package.sh scripts/verify-published-npm-version.sh
