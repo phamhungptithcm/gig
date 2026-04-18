@@ -4,6 +4,10 @@
 
 `gig` is a remote-first release audit CLI that reconciles ticket evidence across repositories, verifies promotion readiness, and generates release-ready output.
 
+The memorable shorthand is:
+
+`gig = googling in git`
+
 ## The Problem
 
 Release teams rarely struggle to find Git history.
@@ -32,14 +36,16 @@ Before a team moves a ticket or release forward, `gig` should answer:
 - remote-first repository inspection for GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
 - `inspect` for the full ticket story
 - `verify` for a `safe`, `warning`, or `blocked` release verdict
-- `manifest generate` for Markdown and JSON release packets
+- `manifest` for Markdown and JSON release packets
 
 ## Why It Wins
 
 - deterministic release reasoning instead of manual repo-by-repo checking
 - zero-config-first activation instead of config-heavy onboarding
+- guided terminal onboarding so first-time users can pick a repo before they learn flags
+- a command-palette front door so users can type `ABC-123` or `verify ABC-123` directly
 - reusable workareas for repeated project context
-- optional AI explanation layered on top of auditable source-control evidence
+- optional AI explanation layered on top of auditable source-control evidence, including resumable follow-up questions through `gig ask`
 
 ## What Ships Today
 
@@ -51,11 +57,11 @@ The current build is already strong at:
 - snapshot and manifest generation
 - reusable workareas
 - local Git and SVN fallback flows
-- a guided terminal front door when users run `gig`
+- a guided terminal front door with arrow-key selection when users run `gig`
 
 ## Installation Note
 
-Use the direct installer until `@phamhungptithcm/gig` completes its first bootstrap publish.
+Use the direct installer until `@hunpeolabs/gig` completes its first bootstrap publish.
 If npm still returns `404`, that publish has not landed yet.
 
 ## Product Boundary

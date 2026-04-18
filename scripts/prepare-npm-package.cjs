@@ -55,12 +55,25 @@ async function main() {
   await fsp.rm(outputDir, { recursive: true, force: true });
   await fsp.mkdir(outputDir, { recursive: true });
 
-  await copyDirectory(path.join(repoRoot, "npm"), path.join(outputDir, "npm"));
+  await copyDirectory(path.join(repoRoot, "npm", "bin"), path.join(outputDir, "bin"));
+  await fsp.copyFile(path.join(repoRoot, "npm", "install.cjs"), path.join(outputDir, "install.cjs"));
   await fsp.copyFile(path.join(repoRoot, "README.md"), path.join(outputDir, "README.md"));
 
   const publishPackage = {
     ...packageTemplate,
-    version: packageVersion
+    version: packageVersion,
+    bin: {
+      gig: "./bin/gig.cjs"
+    },
+    files: [
+      "bin",
+      "install.cjs",
+      "README.md"
+    ],
+    scripts: {
+      ...packageTemplate.scripts,
+      postinstall: "node ./install.cjs"
+    }
   };
 
   await fsp.writeFile(
@@ -68,7 +81,7 @@ async function main() {
     JSON.stringify(publishPackage, null, 2) + "\n"
   );
 
-  if (!fs.existsSync(path.join(outputDir, "npm", "bin", "gig.cjs"))) {
+  if (!fs.existsSync(path.join(outputDir, "bin", "gig.cjs"))) {
     throw new Error("npm wrapper was not copied into the package staging directory");
   }
 

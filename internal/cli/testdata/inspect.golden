@@ -6,7 +6,7 @@ Risks         1 risk signal
 Dependencies  1 declared dependency
 
 Recommended next step
-  - Run gig verify --ticket ABC-123 with the same scope to turn this evidence into a release verdict.
+  - Run gig verify ABC-123 with the same scope to turn this evidence into a release verdict.
 
 Repository a-service
   Scope         <WORKSPACE>/a-service (git)

@@ -1,25 +1,51 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
-  <title id="title">gig front door</title>
-  <desc id="desc">Terminal style preview of gig with no arguments.</desc>
-  <rect width="1200" height="680" rx="18" fill="#0f172a"/>
-  <rect x="24" y="24" width="1152" height="56" rx="12" fill="#111827"/>
-  <circle cx="56" cy="52" r="8" fill="#ef4444"/>
-  <circle cx="84" cy="52" r="8" fill="#f59e0b"/>
-  <circle cx="112" cy="52" r="8" fill="#22c55e"/>
-  <text x="154" y="58" fill="#94a3b8" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">gig</text>
-  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="24">
-    <text x="48" y="124" fill="#22c55e">$</text>
-    <text x="78" y="124" fill="#e2e8f0">gig</text>
-    <text x="48" y="176" fill="#f8fafc">gig</text>
-    <text x="48" y="214" fill="#94a3b8">Remote-first release audit CLI</text>
-    <text x="48" y="272" fill="#f8fafc">No workarea selected yet.</text>
-    <text x="48" y="330" fill="#f8fafc">Start here</text>
-    <text x="72" y="368" fill="#cbd5e1">gig login github</text>
-    <text x="72" y="406" fill="#cbd5e1">gig inspect ABC-123 --repo github:owner/name</text>
-    <text x="72" y="444" fill="#cbd5e1">gig verify --ticket ABC-123 --repo github:owner/name</text>
-    <text x="72" y="482" fill="#cbd5e1">gig remembers successful remote repos automatically</text>
-    <text x="48" y="540" fill="#f8fafc">Optional AI sidecar</text>
-    <text x="72" y="578" fill="#cbd5e1">gig assist doctor</text>
-    <text x="72" y="616" fill="#cbd5e1">gig assist setup</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">gig branded front door</title>
+  <desc id="desc">Terminal-style preview of the gig front door with hero card, startup status, workflow guidance, and command palette.</desc>
+  <rect width="1200" height="760" rx="20" fill="#111215"/>
+  <rect x="20" y="20" width="1160" height="60" rx="14" fill="#191b20"/>
+  <circle cx="54" cy="50" r="8" fill="#ff5f57"/>
+  <circle cx="82" cy="50" r="8" fill="#febc2e"/>
+  <circle cx="110" cy="50" r="8" fill="#28c840"/>
+  <text x="148" y="57" fill="#9097a4" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">gig</text>
+
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="23">
+    <rect x="34" y="112" width="560" height="178" rx="12" fill="none" stroke="#cbd5e1" stroke-width="2" opacity="0.85"/>
+    <text x="58" y="154" fill="#f8fafc">&gt;_ gig  (v2026.04.14)</text>
+    <text x="58" y="196" fill="#39d0ff">googling in git</text>
+    <text x="58" y="232" fill="#a5adba">mode:    guided terminal front door</text>
+    <text x="58" y="264" fill="#a5adba">input:   ticket, command, or Enter for picker</text>
+    <text x="58" y="296" fill="#a5adba">focus:   inspect | verify | manifest</text>
+    <text x="58" y="328" fill="#7d8591">status:  no project selected yet</text>
+
+    <text x="34" y="372" fill="#f8fafc">Startup status</text>
+    <text x="34" y="408" fill="#9097a4">Mode</text>
+    <text x="180" y="408" fill="#e5e7eb">new session</text>
+    <text x="34" y="440" fill="#9097a4">Provider</text>
+    <text x="180" y="440" fill="#e5e7eb">GitHub first-run path</text>
+    <text x="34" y="472" fill="#9097a4">Saved</text>
+    <text x="180" y="472" fill="#e5e7eb">2 project(s)</text>
+
+    <text x="34" y="532" fill="#f8fafc">Start here</text>
+    <text x="62" y="568" fill="#d1d5db">- pick a GitHub repository</text>
+    <text x="62" y="600" fill="#d1d5db">- paste a repository target</text>
+    <text x="62" y="632" fill="#d1d5db">- use the current folder if the repo is already checked out</text>
+
+    <text x="650" y="154" fill="#f8fafc">Ask gig to</text>
+    <text x="678" y="190" fill="#d1d5db">- inspect one ticket</text>
+    <text x="678" y="222" fill="#d1d5db">- verify release readiness</text>
+    <text x="678" y="254" fill="#d1d5db">- generate a release packet</text>
+
+    <text x="650" y="314" fill="#f8fafc">Core workflows</text>
+    <text x="678" y="350" fill="#39d0ff">gig ABC-123 --repo github:owner/name</text>
+    <text x="678" y="382" fill="#39d0ff">gig verify ABC-123 --repo github:owner/name</text>
+    <text x="678" y="414" fill="#39d0ff">gig manifest ABC-123 --repo github:owner/name</text>
+    <text x="678" y="446" fill="#7d8591">These three commands are the main path.</text>
+
+    <text x="650" y="506" fill="#f8fafc">Try one line</text>
+    <rect x="650" y="528" width="486" height="56" rx="10" fill="none" stroke="#cbd5e1" stroke-width="2" opacity="0.85"/>
+    <text x="674" y="564" fill="#39d0ff">ask gig &gt; repo github:owner/name ABC-123</text>
+    <text x="678" y="620" fill="#7d8591">try  ABC-123</text>
+    <text x="678" y="650" fill="#7d8591">try  repo github:owner/name ABC-123</text>
+    <text x="678" y="680" fill="#7d8591">try  login github</text>
   </g>
 </svg>

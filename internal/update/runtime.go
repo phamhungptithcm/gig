@@ -16,7 +16,7 @@ const (
 	ModeScoop    InstallMode = "scoop"
 )
 
-const DefaultNPMPackageName = "@phamhungptithcm/gig"
+const DefaultNPMPackageName = "@hunpeolabs/gig"
 
 func NormalizeVersion(version string) string {
 	normalized := strings.TrimSpace(version)

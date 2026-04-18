@@ -57,6 +57,10 @@ func (s *Session) Login(ctx context.Context) error {
 	return s.login(ctx)
 }
 
+func (s *Session) Status(ctx context.Context) error {
+	return s.status(ctx)
+}
+
 func (s *Session) AccessToken(ctx context.Context) (string, error) {
 	output, err := s.runAzure(ctx, "account", "get-access-token", "--resource", azureDevOpsResourceID, "--query", "accessToken", "--output", "tsv")
 	if err != nil {

@@ -17,7 +17,7 @@ Read these first if you are new:
 
 - `inspect` collects the full ticket story across repositories and branches
 - `verify` returns a `safe`, `warning`, or `blocked` verdict
-- `manifest generate` exports a release packet in Markdown or JSON
+- `manifest` exports a release packet in Markdown or JSON
 
 AI briefings stay optional.
 The source of truth stays inside `gig`.
@@ -27,9 +27,9 @@ The source of truth stays inside `gig`.
 ```bash
 gig
 gig login github
-gig inspect ABC-123 --repo github:owner/name
-gig verify --ticket ABC-123 --repo github:owner/name
-gig manifest generate --ticket ABC-123 --repo github:owner/name
+gig ABC-123 --repo github:owner/name
+gig verify ABC-123 --repo github:owner/name
+gig manifest ABC-123 --repo github:owner/name
 ```
 
 ## Why Teams Reach For It

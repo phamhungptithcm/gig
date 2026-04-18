@@ -20,7 +20,7 @@ Why
   - 1 dependency ticket(s) are still missing from main.
 
 Recommended next step
-  - Run gig plan --ticket ABC-123 with the same scope to review missing commits, dependencies, and manual steps.
+  - Run gig plan ABC-123 with the same scope to review missing commits, dependencies, and manual steps.
 
 Repository a-service
   Scope         <WORKSPACE>/a-service (git)
@@ -53,7 +53,7 @@ Why
   - Target branch already contains the ticket commits from the selected source.
 
 Recommended next step
-  - Run gig manifest generate --ticket XYZ-999 with the same scope to prepare handoff and release notes.
+  - Run gig manifest XYZ-999 with the same scope to prepare handoff and release notes.
 
 Repository b-service
   Scope         <WORKSPACE>/b-service (git)

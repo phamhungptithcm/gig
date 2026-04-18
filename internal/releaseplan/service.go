@@ -39,6 +39,7 @@ type RepositoryPlan struct {
 	Verdict               plansvc.Verdict         `json:"verdict"`
 	CommitsToInclude      int                     `json:"commitsToInclude"`
 	RiskSignals           []inspectsvc.RiskSignal `json:"riskSignals,omitempty"`
+	ProviderEvidence      *scm.ProviderEvidence   `json:"providerEvidence,omitempty"`
 	DependencyResolutions []depsvc.Resolution     `json:"dependencyResolutions,omitempty"`
 	ManualSteps           []plansvc.Action        `json:"manualSteps,omitempty"`
 	Actions               []plansvc.Action        `json:"actions,omitempty"`
@@ -117,6 +118,7 @@ func Build(releaseID, workspacePath, snapshotDir string, snapshots []snapshotsvc
 					Verdict:               repositoryPlan.Verdict,
 					CommitsToInclude:      len(repositoryPlan.Compare.MissingCommits),
 					RiskSignals:           cloneRiskSignals(repositoryPlan.RiskSignals),
+					ProviderEvidence:      cloneProviderEvidence(repositoryPlan.ProviderEvidence),
 					DependencyResolutions: cloneDependencyResolutions(repositoryPlan.DependencyResolutions),
 					ManualSteps:           prefixActions(snapshot.TicketID, repositoryPlan.ManualSteps),
 					Actions:               prefixActions(snapshot.TicketID, repositoryPlan.Actions),
@@ -133,6 +135,7 @@ func Build(releaseID, workspacePath, snapshotDir string, snapshots []snapshotsvc
 			aggregate.Verdict = maxVerdict(aggregate.Verdict, repositoryPlan.Verdict)
 			aggregate.CommitsToInclude += len(repositoryPlan.Compare.MissingCommits)
 			aggregate.RiskSignals = mergeRiskSignals(aggregate.RiskSignals, repositoryPlan.RiskSignals)
+			aggregate.ProviderEvidence = mergeProviderEvidence(aggregate.ProviderEvidence, repositoryPlan.ProviderEvidence)
 			aggregate.DependencyResolutions = mergeDependencyResolutions(aggregate.DependencyResolutions, repositoryPlan.DependencyResolutions)
 			aggregate.ManualSteps = mergeActions(aggregate.ManualSteps, prefixActions(snapshot.TicketID, repositoryPlan.ManualSteps))
 			aggregate.Actions = mergeActions(aggregate.Actions, prefixActions(snapshot.TicketID, repositoryPlan.Actions))
@@ -252,6 +255,23 @@ func cloneDependencyResolutions(resolutions []depsvc.Resolution) []depsvc.Resolu
 	return cloned
 }
 
+func cloneProviderEvidence(evidence *scm.ProviderEvidence) *scm.ProviderEvidence {
+	if evidence == nil || evidence.IsZero() {
+		return nil
+	}
+	cloned := &scm.ProviderEvidence{
+		PullRequests: append([]scm.PullRequestEvidence(nil), evidence.PullRequests...),
+		Deployments:  append([]scm.DeploymentEvidence(nil), evidence.Deployments...),
+		Checks:       append([]scm.CheckEvidence(nil), evidence.Checks...),
+		Issues:       append([]scm.IssueEvidence(nil), evidence.Issues...),
+		Releases:     append([]scm.ReleaseEvidence(nil), evidence.Releases...),
+	}
+	for index := range cloned.PullRequests {
+		cloned.PullRequests[index].LinkedIssues = append([]scm.IssueEvidence(nil), cloned.PullRequests[index].LinkedIssues...)
+	}
+	return scm.NormalizeProviderEvidence(cloned)
+}
+
 func prefixActions(ticketID string, actions []plansvc.Action) []plansvc.Action {
 	if len(actions) == 0 {
 		return nil
@@ -320,6 +340,23 @@ func mergeDependencyResolutions(existing, incoming []depsvc.Resolution) []depsvc
 	return existing
 }
 
+func mergeProviderEvidence(existing, incoming *scm.ProviderEvidence) *scm.ProviderEvidence {
+	if existing == nil {
+		return cloneProviderEvidence(incoming)
+	}
+	if incoming == nil {
+		return cloneProviderEvidence(existing)
+	}
+	merged := &scm.ProviderEvidence{
+		PullRequests: mergePullRequestEvidence(existing.PullRequests, incoming.PullRequests),
+		Deployments:  mergeDeploymentEvidence(existing.Deployments, incoming.Deployments),
+		Checks:       mergeCheckEvidence(existing.Checks, incoming.Checks),
+		Issues:       mergeIssueEvidence(existing.Issues, incoming.Issues),
+		Releases:     mergeReleaseEvidence(existing.Releases, incoming.Releases),
+	}
+	return scm.NormalizeProviderEvidence(merged)
+}
+
 func mergeActions(existing, incoming []plansvc.Action) []plansvc.Action {
 	for _, action := range incoming {
 		found := false
@@ -342,6 +379,101 @@ func mergeActions(existing, incoming []plansvc.Action) []plansvc.Action {
 func mergeStrings(existing, incoming []string) []string {
 	existing = append(existing, incoming...)
 	return dedupeStrings(existing)
+}
+
+func mergePullRequestEvidence(existing, incoming []scm.PullRequestEvidence) []scm.PullRequestEvidence {
+	merged := append([]scm.PullRequestEvidence(nil), existing...)
+	seen := make(map[string]int, len(existing))
+	for index, item := range existing {
+		seen[strings.TrimSpace(item.ID)+"|"+strings.TrimSpace(item.CommitHash)] = index
+	}
+	for _, item := range incoming {
+		key := strings.TrimSpace(item.ID) + "|" + strings.TrimSpace(item.CommitHash)
+		if index, ok := seen[key]; ok {
+			merged[index].LinkedIssues = mergeIssueEvidence(merged[index].LinkedIssues, item.LinkedIssues)
+			continue
+		}
+		seen[key] = len(merged)
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+func mergeDeploymentEvidence(existing, incoming []scm.DeploymentEvidence) []scm.DeploymentEvidence {
+	merged := append([]scm.DeploymentEvidence(nil), existing...)
+	seen := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		seen[strings.TrimSpace(item.ID)+"|"+strings.TrimSpace(item.CommitHash)] = struct{}{}
+	}
+	for _, item := range incoming {
+		key := strings.TrimSpace(item.ID) + "|" + strings.TrimSpace(item.CommitHash)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+func mergeCheckEvidence(existing, incoming []scm.CheckEvidence) []scm.CheckEvidence {
+	merged := append([]scm.CheckEvidence(nil), existing...)
+	seen := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		seen[strings.TrimSpace(item.Context)+"|"+strings.TrimSpace(item.CommitHash)] = struct{}{}
+	}
+	for _, item := range incoming {
+		key := strings.TrimSpace(item.Context) + "|" + strings.TrimSpace(item.CommitHash)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+func mergeIssueEvidence(existing, incoming []scm.IssueEvidence) []scm.IssueEvidence {
+	merged := append([]scm.IssueEvidence(nil), existing...)
+	seen := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		seen[strings.TrimSpace(item.ID)] = struct{}{}
+	}
+	for _, item := range incoming {
+		key := strings.TrimSpace(item.ID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, item)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].ID < merged[j].ID
+	})
+	return merged
+}
+
+func mergeReleaseEvidence(existing, incoming []scm.ReleaseEvidence) []scm.ReleaseEvidence {
+	merged := append([]scm.ReleaseEvidence(nil), existing...)
+	seen := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		seen[strings.TrimSpace(item.ID)] = struct{}{}
+	}
+	for _, item := range incoming {
+		key := strings.TrimSpace(item.ID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, item)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].PublishedAt == merged[j].PublishedAt {
+			return merged[i].Tag < merged[j].Tag
+		}
+		return merged[i].PublishedAt > merged[j].PublishedAt
+	})
+	return merged
 }
 
 func dedupeStrings(values []string) []string {
