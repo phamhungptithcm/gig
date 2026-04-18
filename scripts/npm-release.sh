@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-package_name="${GIG_NPM_PACKAGE:-@phamhungptithcm/gig}"
+package_name="${GIG_NPM_PACKAGE:-@hunpeolabs/gig}"
 github_repo="${GIG_GITHUB_REPO:-phamhungptithcm/gig}"
 workflow_file="${GIG_NPM_WORKFLOW_FILE:-release.yml}"
 environment_name="${GIG_NPM_ENVIRONMENT:-npm-release}"
@@ -181,7 +181,7 @@ publish_first() {
   local release_tag="${1}"
   require_npm_login
   prepare_package "${release_tag}"
-  npm publish "${repo_root}/dist/npm-package" --access public
+  "${repo_root}/scripts/publish-npm-package.sh" "${repo_root}/dist/npm-package"
 }
 
 configure_trust() {

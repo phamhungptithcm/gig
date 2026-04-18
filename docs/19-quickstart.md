@@ -15,10 +15,10 @@ curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/in
 gig version
 ```
 
-If `@phamhungptithcm/gig` is already available in your environment, this also works:
+If `@hunpeolabs/gig` is already available in your environment, this also works:
 
 ```bash
-npm install -g @phamhungptithcm/gig
+npm install -g @hunpeolabs/gig
 gig version
 ```
 

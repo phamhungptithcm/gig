@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-package_name="${1:-${GIG_NPM_PACKAGE:-@phamhungptithcm/gig}}"
+package_name="${1:-${GIG_NPM_PACKAGE:-@hunpeolabs/gig}}"
 registry_url="${NPM_REGISTRY_URL:-https://registry.npmjs.org/}"
 trusted_publishing="${NPM_TRUSTED_PUBLISHING:-}"
 publish_token="${NPM_PUBLISH_TOKEN:-}"
@@ -50,6 +50,7 @@ if [ "${require_mode}" = "true" ] && [ "${mode}" = "none" ]; then
   echo "Reason: ${reason}" >&2
   echo "Configure one of these release paths:" >&2
   echo "  1. Set repository secret NPM_PUBLISH_TOKEN for the first publish or token fallback." >&2
+  echo "     The token must be an npm automation token or a granular token with bypass 2FA enabled." >&2
   echo "  2. After the package exists, configure npm trusted publishing and set NPM_TRUSTED_PUBLISHING=true." >&2
   exit 1
 fi

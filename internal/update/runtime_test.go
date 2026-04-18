@@ -83,7 +83,7 @@ func TestDetectInstallMode(t *testing.T) {
 		},
 		{
 			name:    "detect npm node_modules path",
-			path:    "/usr/local/lib/node_modules/@phamhungptithcm/gig/npm/vendor/gig",
+			path:    "/usr/local/lib/node_modules/@hunpeolabs/gig/npm/vendor/gig",
 			expects: ModeNPM,
 		},
 		{
