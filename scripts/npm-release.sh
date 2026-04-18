@@ -196,8 +196,8 @@ print_next_steps() {
 Next steps:
 1. For fully automated releases, set repository secret:
    gh secret set NPM_PUBLISH_TOKEN --repo ${github_repo}
-2. After the package exists, set GitHub repository variable:
-   gh variable set NPM_TRUSTED_PUBLISHING --repo ${github_repo} --body true
+2. After the package exists, configure npm trusted publishing:
+   npm trust github ${package_name} --repo ${github_repo} --file ${workflow_file} --env ${environment_name}
 3. Run the Release workflow on main.
 4. After CI has run on main and staging, sync required checks:
    ./scripts/sync-required-checks.sh ${github_repo}
