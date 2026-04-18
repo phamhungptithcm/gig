@@ -121,7 +121,7 @@ func RenderPromotionPlan(w io.Writer, promotionPlan plansvc.PromotionPlan) error
 				}
 			}
 		}
-		if repositoryPlan.ProviderEvidence != nil && (len(repositoryPlan.ProviderEvidence.PullRequests) > 0 || len(repositoryPlan.ProviderEvidence.Deployments) > 0) {
+		if hasProviderEvidence(repositoryPlan.ProviderEvidence) {
 			if err := ui.NestedSection("Provider evidence"); err != nil {
 				return err
 			}
@@ -275,7 +275,7 @@ func RenderVerification(w io.Writer, verification plansvc.Verification) error {
 				}
 			}
 		}
-		if repositoryVerification.ProviderEvidence != nil && (len(repositoryVerification.ProviderEvidence.PullRequests) > 0 || len(repositoryVerification.ProviderEvidence.Deployments) > 0) {
+		if hasProviderEvidence(repositoryVerification.ProviderEvidence) {
 			if err := ui.NestedSection("Provider evidence"); err != nil {
 				return err
 			}

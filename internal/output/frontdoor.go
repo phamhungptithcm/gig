@@ -9,13 +9,19 @@ import (
 )
 
 type FrontDoorState struct {
-	Current    *workarea.Definition  `json:"current,omitempty"`
-	Workareas  []workarea.Definition `json:"workareas,omitempty"`
-	Version    string                `json:"version,omitempty"`
-	HeroStatus string                `json:"heroStatus,omitempty"`
-	StatusRows []KeyValue            `json:"statusRows,omitempty"`
-	Prompt     string                `json:"prompt,omitempty"`
-	Examples   []string              `json:"examples,omitempty"`
+	Current                 *workarea.Definition  `json:"current,omitempty"`
+	Workareas               []workarea.Definition `json:"workareas,omitempty"`
+	Version                 string                `json:"version,omitempty"`
+	HeroStatus              string                `json:"heroStatus,omitempty"`
+	StatusRows              []KeyValue            `json:"statusRows,omitempty"`
+	ProviderCoverage        []KeyValue            `json:"providerCoverage,omitempty"`
+	ResumeTitle             string                `json:"resumeTitle,omitempty"`
+	ResumeSummary           string                `json:"resumeSummary,omitempty"`
+	ResumeScope             string                `json:"resumeScope,omitempty"`
+	ResumeQuestion          string                `json:"resumeQuestion,omitempty"`
+	ResumeSuggestedQuestion string                `json:"resumeSuggestedQuestion,omitempty"`
+	Prompt                  string                `json:"prompt,omitempty"`
+	Examples                []string              `json:"examples,omitempty"`
 }
 
 func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
@@ -32,6 +38,33 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			return err
 		}
 		if err := ui.Rows(state.StatusRows...); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+	}
+	if state.ResumeSummary != "" {
+		if err := ui.Section(blankAsDefault(state.ResumeTitle, "Resume AI context")); err != nil {
+			return err
+		}
+		if err := ui.Bullets(state.ResumeSummary); err != nil {
+			return err
+		}
+		if strings.TrimSpace(state.ResumeScope) != "" {
+			if err := ui.Note("Scope: " + strings.TrimSpace(state.ResumeScope)); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(state.ResumeQuestion) != "" {
+			if err := ui.Note("Last question: " + strings.TrimSpace(state.ResumeQuestion)); err != nil {
+				return err
+			}
+		}
+		if err := ui.Commands(
+			fmt.Sprintf("gig ask %q", blankAsDefault(state.ResumeSuggestedQuestion, "what is still blocked?")),
+			"gig resume",
+		); err != nil {
 			return err
 		}
 		if err := ui.Blank(); err != nil {
@@ -73,6 +106,21 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			"gig ABC-123",
 			"gig verify ABC-123",
 			"gig manifest ABC-123",
+			"gig ask \"what changed since the last brief?\"",
+		); err != nil {
+			return err
+		}
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Release day path"); err != nil {
+			return err
+		}
+		if err := ui.Commands(
+			"gig workarea use payments",
+			"gig verify --release rel-YYYY-MM-DD",
+			"gig manifest --release rel-YYYY-MM-DD",
+			"gig assist release --release rel-YYYY-MM-DD --audience release-manager",
 		); err != nil {
 			return err
 		}
@@ -143,6 +191,7 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			"gig ABC-123 --repo github:owner/name",
 			"gig verify ABC-123 --repo github:owner/name",
 			"gig manifest ABC-123 --repo github:owner/name",
+			"gig ask \"what is still blocked?\"",
 		); err != nil {
 			return err
 		}
@@ -184,6 +233,18 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 			if err := ui.Commands("gig workarea use"); err != nil {
 				return err
 			}
+		}
+	}
+
+	if len(state.ProviderCoverage) > 0 {
+		if err := ui.Blank(); err != nil {
+			return err
+		}
+		if err := ui.Section("Provider coverage"); err != nil {
+			return err
+		}
+		if err := ui.Rows(state.ProviderCoverage...); err != nil {
+			return err
 		}
 	}
 

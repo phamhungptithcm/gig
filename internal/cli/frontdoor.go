@@ -12,6 +12,7 @@ import (
 	"gig/internal/buildinfo"
 	"gig/internal/output"
 	"gig/internal/scm"
+	sessionstore "gig/internal/session"
 	"gig/internal/sourcecontrol"
 	"gig/internal/workarea"
 
@@ -38,14 +39,15 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 		current = &definition
 	}
 
-	state := a.buildFrontDoorState(ctx, current, workareas)
+	assistSession, hasAssistSession, _ := a.currentAssistSessionForWorkarea(current)
+	state := a.buildFrontDoorState(ctx, current, workareas, assistSession, hasAssistSession)
 	if err := output.RenderFrontDoor(a.stdout, state); err != nil {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
 	if a.frontDoorPromptEnabled() {
 		reader := bufio.NewReader(a.stdin)
-		exitCode, err := a.runFrontDoorPalette(ctx, reader, store, current, workareas)
+		exitCode, err := a.runFrontDoorPalette(ctx, reader, store, current, workareas, hasAssistSession)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "front door failed: %v\n", err)
 			return 1
@@ -73,11 +75,20 @@ func (a *App) frontDoorPromptEnabled() bool {
 	return false
 }
 
-func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definition, workareas []workarea.Definition) output.FrontDoorState {
+func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definition, workareas []workarea.Definition, assistSession sessionstore.Session, hasAssistSession bool) output.FrontDoorState {
 	state := output.FrontDoorState{
-		Current:   current,
-		Workareas: workareas,
-		Version:   buildinfo.Version,
+		Current:          current,
+		Workareas:        workareas,
+		Version:          buildinfo.Version,
+		ProviderCoverage: frontDoorProviderCoverageRows(),
+	}
+	if hasAssistSession {
+		state.ResumeTitle = sessionstore.ResumeTitle(assistSession.Kind)
+		state.ResumeSummary = assistSession.Summary
+		state.ResumeScope = sessionstore.ResumeScopeLabel(assistSession)
+		state.ResumeQuestion = assistSession.LastQuestion
+		state.ResumeSuggestedQuestion = sessionstore.ResumeQuestion(assistSession.Kind)
+		state.StatusRows = append(state.StatusRows, output.KeyValue{Label: "Assist", Value: strings.ToLower(sessionstore.ResumeTitle(assistSession.Kind)) + " ready"})
 	}
 
 	if current != nil {
@@ -130,12 +141,31 @@ func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definit
 			}
 		}
 	}
+	if hasAssistSession {
+		state.Prompt = frontDoorResumePrompt(assistSession)
+		state.Examples = prependFrontDoorExamples(state.Examples,
+			frontDoorResumeExample(assistSession),
+			"resume",
+		)
+	}
 
 	if len(workareas) > 0 {
 		state.StatusRows = append(state.StatusRows, output.KeyValue{Label: "Saved", Value: fmt.Sprintf("%d project(s)", len(workareas))})
 	}
 
 	return state
+}
+
+func frontDoorProviderCoverageRows() []output.KeyValue {
+	capabilities := sourcecontrol.OrderedProviderCapabilities()
+	rows := make([]output.KeyValue, 0, len(capabilities))
+	for _, capability := range capabilities {
+		rows = append(rows, output.KeyValue{
+			Label: capability.Label,
+			Value: capability.Summary(),
+		})
+	}
+	return rows
 }
 
 func (a *App) frontDoorProviderStatus(ctx context.Context, provider scm.Type) sourcecontrol.ProviderStatus {
@@ -183,6 +213,8 @@ const (
 	frontDoorActionDiscoverOtherProvider frontDoorAction = "discover-other-provider"
 	frontDoorActionSavedWorkarea         frontDoorAction = "saved-workarea"
 	frontDoorActionSwitchWorkarea        frontDoorAction = "switch-workarea"
+	frontDoorActionAsk                   frontDoorAction = "ask"
+	frontDoorActionResume                frontDoorAction = "resume"
 )
 
 type frontDoorCommand struct {
@@ -190,9 +222,10 @@ type frontDoorCommand struct {
 	TicketID   string
 	RepoTarget string
 	Provider   string
+	Message    string
 }
 
-func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, store *workarea.Store, current *workarea.Definition, workareas []workarea.Definition) (int, error) {
+func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, store *workarea.Store, current *workarea.Definition, workareas []workarea.Definition, hasAssistSession bool) (int, error) {
 	fmt.Fprintln(a.stdout)
 	fmt.Fprint(a.stdout, "ask gig > ")
 
@@ -201,7 +234,7 @@ func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, sto
 		return -1, err
 	}
 
-	command, err := parseFrontDoorCommand(line, current != nil, len(workareas) > 0)
+	command, err := parseFrontDoorCommand(line, current != nil, len(workareas) > 0, hasAssistSession)
 	if err != nil {
 		return -1, err
 	}
@@ -214,6 +247,10 @@ func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, sto
 		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, "")
 	case frontDoorActionLogin:
 		return a.runLogin(ctx, []string{command.Provider}), nil
+	case frontDoorActionResume:
+		return a.runAssistResume(nil), nil
+	case frontDoorActionAsk:
+		return a.runAsk(ctx, []string{command.Message}), nil
 	case frontDoorActionDiscoverGitHub, frontDoorActionEnterTarget, frontDoorActionUseCurrentFolder, frontDoorActionDiscoverOtherProvider, frontDoorActionSavedWorkarea:
 		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, command.TicketID, command.Action)
 	case frontDoorActionSwitchWorkarea:
@@ -508,7 +545,7 @@ func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction
 	}
 }
 
-func parseFrontDoorCommand(line string, hasCurrent, hasSaved bool) (frontDoorCommand, error) {
+func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (frontDoorCommand, error) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
 		return frontDoorCommand{Action: frontDoorActionPicker}, nil
@@ -553,6 +590,10 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved bool) (frontDoorCom
 			return frontDoorCommand{Action: frontDoorActionUseCurrentFolder}, nil
 		case "switch", "project", "workarea":
 			return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
+		case "resume":
+			if hasAssist {
+				return frontDoorCommand{Action: frontDoorActionResume}, nil
+			}
 		}
 	}
 
@@ -588,6 +629,17 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved bool) (frontDoorCom
 			provider = strings.TrimSpace(tokens[1])
 		}
 		return frontDoorCommand{Action: frontDoorActionLogin, Provider: provider}, nil
+	case "ask":
+		message := strings.TrimSpace(strings.Join(tokens[1:], " "))
+		if message == "" {
+			message = "what changed since the last brief?"
+		}
+		return frontDoorCommand{Action: frontDoorActionAsk, Message: message}, nil
+	case "resume":
+		if hasAssist {
+			return frontDoorCommand{Action: frontDoorActionResume}, nil
+		}
+		return frontDoorCommand{}, fmt.Errorf("no saved assist session is ready yet")
 	case "repo", "target":
 		if repoTarget == "" {
 			return frontDoorCommand{}, fmt.Errorf("type a repository target such as github:owner/name")
@@ -597,6 +649,10 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved bool) (frontDoorCom
 		return frontDoorCommand{Action: frontDoorActionUseCurrentFolder, TicketID: frontDoorTicketArg(tokens[1:])}, nil
 	case "switch", "project", "workarea":
 		return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
+	}
+
+	if hasAssist && !looksLikeTicketID(tokens[0]) {
+		return frontDoorCommand{Action: frontDoorActionAsk, Message: trimmed}, nil
 	}
 
 	return frontDoorCommand{Action: frontDoorActionInspect, TicketID: tokens[0], RepoTarget: repoTarget}, nil
@@ -612,4 +668,38 @@ func frontDoorTicketArg(tokens []string) string {
 		return ""
 	}
 	return tokens[0]
+}
+
+func frontDoorResumePrompt(session sessionstore.Session) string {
+	return "ask gig > " + frontDoorResumeExample(session)
+}
+
+func frontDoorResumeExample(session sessionstore.Session) string {
+	return sessionstore.ResumeQuestion(session.Kind)
+}
+
+func prependFrontDoorExamples(examples []string, values ...string) []string {
+	seen := make(map[string]struct{}, len(examples)+len(values))
+	combined := make([]string, 0, len(examples)+len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		combined = append(combined, value)
+	}
+	for _, value := range examples {
+		key := strings.ToLower(strings.TrimSpace(value))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		combined = append(combined, value)
+	}
+	return combined
 }

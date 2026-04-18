@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gig/internal/scm"
@@ -53,6 +55,7 @@ type commitPayload struct {
 type pullRequestPayload struct {
 	Number   int    `json:"number"`
 	Title    string `json:"title"`
+	Body     string `json:"body"`
 	State    string `json:"state"`
 	HTMLURL  string `json:"html_url"`
 	MergedAt string `json:"merged_at"`
@@ -76,6 +79,39 @@ type deploymentStatusPayload struct {
 	State       string `json:"state"`
 	Environment string `json:"environment"`
 	LogURL      string `json:"log_url"`
+}
+
+type commitStatusResponse struct {
+	Statuses []commitStatusPayload `json:"statuses"`
+}
+
+type commitStatusPayload struct {
+	State     string `json:"state"`
+	Context   string `json:"context"`
+	TargetURL string `json:"target_url"`
+}
+
+type issuePayload struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	State   string `json:"state"`
+	HTMLURL string `json:"html_url"`
+	Labels  []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
+	PullRequest *struct{} `json:"pull_request,omitempty"`
+}
+
+type releasePayload struct {
+	ID          int    `json:"id"`
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	Body        string `json:"body"`
+	HTMLURL     string `json:"html_url"`
+	Target      string `json:"target_commitish"`
+	PublishedAt string `json:"published_at"`
+	Draft       bool   `json:"draft"`
+	Prerelease  bool   `json:"prerelease"`
 }
 
 func NewAdapter(parser ticket.Parser) *Adapter {
@@ -361,6 +397,17 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 
 	pullRequestsByID := map[string]scm.PullRequestEvidence{}
 	deploymentsByID := map[string]scm.DeploymentEvidence{}
+	checksByID := map[string]scm.CheckEvidence{}
+	issuesByID := map[string]scm.IssueEvidence{}
+	releasesByID := map[string]scm.ReleaseEvidence{}
+
+	latestRelease, err := a.latestRelease(ctx, owner, name)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	if latestRelease != nil {
+		releasesByID[strings.TrimSpace(latestRelease.ID)] = *latestRelease
+	}
 	for _, commit := range query.Commits {
 		hash := strings.TrimSpace(commit.Hash)
 		if hash == "" {
@@ -377,6 +424,13 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 			if strings.TrimSpace(item.MergedAt) != "" {
 				state = "merged"
 			}
+			linkedIssues, err := a.linkedIssuesForPullRequest(ctx, owner, name, item)
+			if err != nil {
+				return scm.ProviderEvidence{}, err
+			}
+			for _, issue := range linkedIssues {
+				issuesByID[strings.TrimSpace(issue.ID)] = issue
+			}
 			pullRequestsByID[id] = scm.PullRequestEvidence{
 				ID:           id,
 				Title:        strings.TrimSpace(item.Title),
@@ -385,6 +439,7 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 				TargetBranch: strings.TrimSpace(item.Base.Ref),
 				URL:          strings.TrimSpace(item.HTMLURL),
 				CommitHash:   hash,
+				LinkedIssues: linkedIssues,
 			}
 		}
 
@@ -408,11 +463,32 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 				CommitHash:  firstNonEmpty(strings.TrimSpace(item.SHA), hash),
 			}
 		}
+
+		statuses, err := a.commitStatusesForCommit(ctx, owner, name, hash)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, item := range statuses {
+			context := strings.TrimSpace(item.Context)
+			if context == "" {
+				continue
+			}
+			id := hash + "|" + context
+			checksByID[id] = scm.CheckEvidence{
+				Context:    context,
+				State:      strings.TrimSpace(item.State),
+				URL:        strings.TrimSpace(item.TargetURL),
+				CommitHash: hash,
+			}
+		}
 	}
 
 	return scm.ProviderEvidence{
 		PullRequests: mapPullRequestEvidence(pullRequestsByID),
 		Deployments:  mapDeploymentEvidence(deploymentsByID),
+		Checks:       mapCheckEvidence(checksByID),
+		Issues:       mapIssueEvidence(issuesByID),
+		Releases:     mapReleaseEvidence(releasesByID),
 	}, nil
 }
 
@@ -538,6 +614,99 @@ func (a *Adapter) deploymentStatus(ctx context.Context, owner, name string, depl
 	return payload[0], nil
 }
 
+func (a *Adapter) commitStatusesForCommit(ctx context.Context, owner, name, hash string) ([]commitStatusPayload, error) {
+	var payload commitStatusResponse
+	endpoint := fmt.Sprintf("repos/%s/%s/commits/%s/status", owner, name, url.PathEscape(hash))
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return payload.Statuses, nil
+}
+
+func (a *Adapter) issue(ctx context.Context, owner, name string, number int) (issuePayload, error) {
+	var payload issuePayload
+	endpoint := fmt.Sprintf("repos/%s/%s/issues/%d", owner, name, number)
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return issuePayload{}, nil
+		}
+		return issuePayload{}, err
+	}
+	return payload, nil
+}
+
+func (a *Adapter) latestRelease(ctx context.Context, owner, name string) (*scm.ReleaseEvidence, error) {
+	var payload []releasePayload
+	endpoint := fmt.Sprintf("repos/%s/%s/releases?per_page=1&page=1", owner, name)
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(payload) == 0 {
+		return nil, nil
+	}
+
+	release := payload[0]
+	id := strings.TrimSpace(release.TagName)
+	if id == "" {
+		id = fmt.Sprintf("%d", release.ID)
+	}
+
+	return &scm.ReleaseEvidence{
+		ID:          id,
+		Tag:         strings.TrimSpace(release.TagName),
+		Name:        strings.TrimSpace(release.Name),
+		State:       releaseState(release),
+		Target:      strings.TrimSpace(release.Target),
+		URL:         strings.TrimSpace(release.HTMLURL),
+		PublishedAt: strings.TrimSpace(release.PublishedAt),
+		TicketIDs:   a.parser.FindAll(strings.TrimSpace(release.Name) + "\n" + strings.TrimSpace(release.Body)),
+	}, nil
+}
+
+func (a *Adapter) linkedIssuesForPullRequest(ctx context.Context, owner, name string, pullRequest pullRequestPayload) ([]scm.IssueEvidence, error) {
+	numbers := issueNumbersFromText(strings.TrimSpace(pullRequest.Title) + "\n" + strings.TrimSpace(pullRequest.Body))
+	if len(numbers) == 0 {
+		return nil, nil
+	}
+
+	issues := make([]scm.IssueEvidence, 0, len(numbers))
+	for _, number := range numbers {
+		payload, err := a.issue(ctx, owner, name, number)
+		if err != nil {
+			return nil, err
+		}
+		if payload.Number == 0 || payload.PullRequest != nil {
+			continue
+		}
+		labels := make([]string, 0, len(payload.Labels))
+		for _, label := range payload.Labels {
+			name := strings.TrimSpace(label.Name)
+			if name == "" {
+				continue
+			}
+			labels = append(labels, name)
+		}
+		sort.Strings(labels)
+		issues = append(issues, scm.IssueEvidence{
+			ID:     fmt.Sprintf("#%d", payload.Number),
+			Title:  strings.TrimSpace(payload.Title),
+			State:  strings.TrimSpace(payload.State),
+			Labels: labels,
+			URL:    strings.TrimSpace(payload.HTMLURL),
+		})
+	}
+	sort.SliceStable(issues, func(i, j int) bool {
+		return issues[i].ID < issues[j].ID
+	})
+	return issues, nil
+}
+
 func (a *Adapter) api(ctx context.Context, endpoint string, destination any) error {
 	output, err := a.runGH(ctx, "api", "-H", "Accept: application/vnd.github+json", endpoint)
 	if err != nil {
@@ -654,6 +823,72 @@ func mapDeploymentEvidence(values map[string]scm.DeploymentEvidence) []scm.Deplo
 	return evidence
 }
 
+func mapCheckEvidence(values map[string]scm.CheckEvidence) []scm.CheckEvidence {
+	evidence := make([]scm.CheckEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		if evidence[i].CommitHash == evidence[j].CommitHash {
+			return evidence[i].Context < evidence[j].Context
+		}
+		return evidence[i].CommitHash < evidence[j].CommitHash
+	})
+	return evidence
+}
+
+func mapIssueEvidence(values map[string]scm.IssueEvidence) []scm.IssueEvidence {
+	evidence := make([]scm.IssueEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		return evidence[i].ID < evidence[j].ID
+	})
+	return evidence
+}
+
+func mapReleaseEvidence(values map[string]scm.ReleaseEvidence) []scm.ReleaseEvidence {
+	evidence := make([]scm.ReleaseEvidence, 0, len(values))
+	for _, item := range values {
+		evidence = append(evidence, item)
+	}
+	sort.SliceStable(evidence, func(i, j int) bool {
+		if evidence[i].PublishedAt == evidence[j].PublishedAt {
+			return evidence[i].Tag < evidence[j].Tag
+		}
+		return evidence[i].PublishedAt > evidence[j].PublishedAt
+	})
+	return evidence
+}
+
+var issueNumberPattern = regexp.MustCompile(`#(\d+)`)
+
+func issueNumbersFromText(text string) []int {
+	matches := issueNumberPattern.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := map[int]struct{}{}
+	numbers := make([]int, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		number, err := strconv.Atoi(strings.TrimSpace(match[1]))
+		if err != nil || number <= 0 {
+			continue
+		}
+		if _, ok := seen[number]; ok {
+			continue
+		}
+		seen[number] = struct{}{}
+		numbers = append(numbers, number)
+	}
+	sort.Ints(numbers)
+	return numbers
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
@@ -662,6 +897,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func releaseState(release releasePayload) string {
+	switch {
+	case release.Draft:
+		return "draft"
+	case release.Prerelease:
+		return "prerelease"
+	default:
+		return "published"
+	}
 }
 
 func isNotFound(err error) bool {

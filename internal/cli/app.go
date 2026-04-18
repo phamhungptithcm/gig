@@ -9,15 +9,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	assistsvc "gig/internal/assistant"
 	"gig/internal/buildinfo"
 	"gig/internal/config"
 	conflictsvc "gig/internal/conflict"
+	"gig/internal/diagnostics"
 	diffsvc "gig/internal/diff"
 	doctorsvc "gig/internal/doctor"
 	inspectsvc "gig/internal/inspect"
@@ -36,7 +35,6 @@ import (
 	snapshotsvc "gig/internal/snapshot"
 	"gig/internal/sourcecontrol"
 	ticketsvc "gig/internal/ticket"
-	updatesvc "gig/internal/update"
 )
 
 const usageExitCode = 2
@@ -68,54 +66,81 @@ func NewAppWithIO(stdin io.Reader, stdout, stderr io.Writer) (*App, error) {
 }
 
 func (a *App) Run(ctx context.Context, args []string) int {
-	if len(args) == 0 {
-		return a.runFrontDoor(ctx)
+	logger := diagnostics.NewFromEnv(os.LookupEnv)
+	if logger != nil {
+		ctx = diagnostics.WithLogger(ctx, logger)
 	}
+	commandName := "frontdoor"
+	if len(args) == 0 {
+		diagnostics.Emit(ctx, "info", "command.start", "command started", diagnostics.Meta{Command: commandName}, nil)
+		exitCode := a.runFrontDoor(ctx)
+		diagnostics.Emit(ctx, "info", "command.finish", "command finished", diagnostics.Meta{
+			Command: commandName,
+			Details: map[string]any{"exitCode": exitCode},
+		}, nil)
+		return exitCode
+	}
+	commandName = strings.TrimSpace(args[0])
+	diagnostics.Emit(ctx, "info", "command.start", "command started", diagnostics.Meta{
+		Command: commandName,
+		Details: map[string]any{"args": append([]string(nil), args[1:]...)},
+	}, nil)
 
+	var exitCode int
 	switch args[0] {
 	case "scan":
-		return a.runScan(ctx, args[1:])
+		exitCode = a.runScan(ctx, args[1:])
 	case "find":
-		return a.runFind(ctx, args[1:])
+		exitCode = a.runFind(ctx, args[1:])
 	case "diff":
-		return a.runDiff(ctx, args[1:])
+		exitCode = a.runDiff(ctx, args[1:])
 	case "inspect":
-		return a.runInspect(ctx, args[1:])
+		exitCode = a.runInspect(ctx, args[1:])
 	case "env":
-		return a.runEnv(ctx, args[1:])
+		exitCode = a.runEnv(ctx, args[1:])
 	case "plan":
-		return a.runPlan(ctx, args[1:])
+		exitCode = a.runPlan(ctx, args[1:])
 	case "verify":
-		return a.runVerify(ctx, args[1:])
+		exitCode = a.runVerify(ctx, args[1:])
 	case "manifest":
-		return a.runManifest(ctx, args[1:])
+		exitCode = a.runManifest(ctx, args[1:])
 	case "snapshot":
-		return a.runSnapshot(ctx, args[1:])
+		exitCode = a.runSnapshot(ctx, args[1:])
 	case "assist":
-		return a.runAssist(ctx, args[1:])
+		exitCode = a.runAssist(ctx, args[1:])
+	case "ask":
+		exitCode = a.runAsk(ctx, args[1:])
+	case "resume":
+		exitCode = a.runAssistResume(args[1:])
 	case "workarea", "project":
-		return a.runWorkarea(ctx, args[1:])
+		exitCode = a.runWorkarea(ctx, args[1:])
 	case "login":
-		return a.runLogin(ctx, args[1:])
+		exitCode = a.runLogin(ctx, args[1:])
 	case "doctor":
-		return a.runDoctor(ctx, args[1:])
+		exitCode = a.runDoctor(ctx, args[1:])
 	case "resolve":
-		return a.runResolve(ctx, args[1:])
+		exitCode = a.runResolve(ctx, args[1:])
 	case "update":
-		return a.runUpdate(ctx, args[1:])
+		exitCode = a.runUpdate(ctx, args[1:])
 	case "version", "-v", "--version":
-		return a.runVersion()
+		exitCode = a.runVersion()
 	case "help", "-h", "--help":
 		a.printRootUsage()
-		return 0
+		exitCode = 0
 	default:
 		if looksLikeTicketID(args[0]) {
-			return a.runInspect(ctx, args)
+			exitCode = a.runInspect(ctx, args)
+			break
 		}
 		fmt.Fprintf(a.stderr, "unknown command %q\n\n", args[0])
 		a.printRootUsage()
-		return usageExitCode
+		exitCode = usageExitCode
 	}
+	diagnostics.Emit(ctx, "info", "command.finish", "command finished", diagnostics.Meta{
+		Command: commandName,
+		Details: map[string]any{"exitCode": exitCode},
+	}, nil)
+	return exitCode
 }
 
 func (a *App) runScan(ctx context.Context, args []string) int {
@@ -1133,10 +1158,14 @@ func (a *App) runAssist(ctx context.Context, args []string) int {
 		return a.runAssistDoctor(ctx, args[1:])
 	case "audit":
 		return a.runAssistAudit(ctx, args[1:])
+	case "chat", "ask":
+		return a.runAssistChat(ctx, args[1:])
 	case "release":
 		return a.runAssistRelease(ctx, args[1:])
 	case "resolve":
 		return a.runAssistResolve(ctx, args[1:])
+	case "resume":
+		return a.runAssistResume(args[1:])
 	case "setup":
 		return a.runAssistSetup(ctx, args[1:])
 	default:
@@ -1239,7 +1268,7 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 		commandTarget = fmt.Sprintf("--repo %s", strings.TrimSpace(scope.RepoSpec))
 	}
 
-	result, err := runtime.assistant.Audit(ctx, assistsvc.AuditRequest{
+	request := assistsvc.AuditRequest{
 		WorkspacePath: scope.WorkspacePath,
 		ScopeLabel:    scopeLabel,
 		CommandTarget: commandTarget,
@@ -1250,7 +1279,8 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 		Environments:  environments,
 		Repositories:  repositories,
 		LoadedConfig:  runtime.loaded,
-	}, assistsvc.ExecuteOptions{
+	}
+	result, err := runtime.assistant.Audit(ctx, request, assistsvc.ExecuteOptions{
 		BaseURL:  *deerflowURL,
 		Mode:     runMode,
 		Audience: selectedAudience,
@@ -1259,6 +1289,7 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
 		return 1
 	}
+	a.persistAuditSession(scope, request, result, runMode, selectedAudience)
 
 	switch outputFormat {
 	case outputFormatHuman:
@@ -1408,7 +1439,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 		}
 	}
 
-	result, err := runtime.assistant.Release(ctx, assistsvc.ReleaseRequest{
+	request := assistsvc.ReleaseRequest{
 		WorkspacePath: scope.WorkspacePath,
 		ScopeLabel:    scopeLabel,
 		CommandTarget: commandTarget,
@@ -1420,7 +1451,8 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 		Environments:  environments,
 		Repositories:  repositories,
 		LoadedConfig:  runtime.loaded,
-	}, assistsvc.ExecuteOptions{
+	}
+	result, err := runtime.assistant.Release(ctx, request, assistsvc.ExecuteOptions{
 		BaseURL:  *deerflowURL,
 		Mode:     runMode,
 		Audience: selectedAudience,
@@ -1429,6 +1461,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
 		return 1
 	}
+	a.persistReleaseSession(scope, request, result, runMode, selectedAudience)
 
 	switch outputFormat {
 	case outputFormatHuman:
@@ -1762,13 +1795,14 @@ func (a *App) runAssistResolve(ctx context.Context, args []string) int {
 		}
 	}
 
-	result, err := runtime.assistant.Resolve(ctx, assistsvc.ResolveRequest{
+	request := assistsvc.ResolveRequest{
 		WorkspacePath: resolvedPath,
 		ScopeLabel:    resolvedPath,
 		CommandTarget: fmt.Sprintf("--path %s", shellSingleQuote(resolvedPath)),
 		ConfigPath:    strings.TrimSpace(*configPath),
 		TicketID:      strings.TrimSpace(*ticketID),
-	}, assistsvc.ExecuteOptions{
+	}
+	result, err := runtime.assistant.Resolve(ctx, request, assistsvc.ExecuteOptions{
 		BaseURL:  *deerflowURL,
 		Mode:     runMode,
 		Audience: selectedAudience,
@@ -1781,6 +1815,7 @@ func (a *App) runAssistResolve(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "assist resolve failed: %v\n", err)
 		return 1
 	}
+	a.persistResolveSession(request.ScopeLabel, request.WorkspacePath, request.ConfigPath, request.TicketID, result, runMode, selectedAudience)
 
 	switch outputFormat {
 	case outputFormatHuman:
@@ -1945,507 +1980,6 @@ func (a *App) runResolveStart(ctx context.Context, args []string) int {
 	}
 
 	return 0
-}
-
-func (a *App) runUpdate(ctx context.Context, args []string) int {
-	if hasHelpFlag(args) {
-		a.printUpdateUsage()
-		return 0
-	}
-
-	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	versionFlag := fs.String("version", "latest", "Install the latest release or a specific tag")
-	repoFlag := fs.String("repo", "", "GitHub repo that hosts gig releases")
-	installDirFlag := fs.String("install-dir", "", "Override the install directory for a direct install")
-
-	if err := fs.Parse(args); err != nil {
-		a.printUpdateUsage()
-		return usageExitCode
-	}
-	if fs.NArg() > 1 {
-		fmt.Fprintln(a.stderr, "update accepts at most one positional <version> argument")
-		a.printUpdateUsage()
-		return usageExitCode
-	}
-
-	version := updatesvc.NormalizeVersion(*versionFlag)
-	if fs.NArg() == 1 {
-		if version != "latest" {
-			fmt.Fprintln(a.stderr, "update accepts either --version or a positional <version>, not both")
-			a.printUpdateUsage()
-			return usageExitCode
-		}
-		version = updatesvc.NormalizeVersion(fs.Arg(0))
-	}
-
-	repoName := strings.TrimSpace(*repoFlag)
-	if repoName == "" {
-		repoName = strings.TrimSpace(os.Getenv("GIG_REPO"))
-	}
-	if repoName == "" {
-		repoName = "phamhungptithcm/gig"
-	}
-
-	executablePath, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	resolvedExecutablePath := executablePath
-	if linkedPath, linkErr := filepath.EvalSymlinks(executablePath); linkErr == nil {
-		resolvedExecutablePath = linkedPath
-	}
-
-	installDir := strings.TrimSpace(*installDirFlag)
-	installMode := updatesvc.DetectInstallMode(resolvedExecutablePath, os.LookupEnv)
-	if installDir != "" {
-		installMode = updatesvc.ModeDirect
-	} else {
-		installDir = filepath.Dir(resolvedExecutablePath)
-	}
-
-	switch installMode {
-	case updatesvc.ModeNPM:
-		fmt.Fprintf(a.stdout, "Detected an npm-managed install at %s\n", resolvedExecutablePath)
-		return a.runNPMUpdate(ctx, updatesvc.ResolveNPMPackageName(os.LookupEnv), version)
-	case updatesvc.ModeHomebrew:
-		fmt.Fprintf(a.stderr, "update failed: Homebrew installs are no longer published for gig. Reinstall with `npm install -g %s` or use the direct installer.\n", updatesvc.DefaultNPMPackageName)
-		return 1
-	case updatesvc.ModeScoop:
-		fmt.Fprintf(a.stderr, "update failed: Scoop installs are no longer published for gig. Reinstall with `npm install -g %s` or use the direct installer.\n", updatesvc.DefaultNPMPackageName)
-		return 1
-	default:
-		if runtime.GOOS == "windows" {
-			return a.runWindowsInstallerUpdate(ctx, repoName, version, installDir)
-		}
-		return a.runPOSIXInstallerUpdate(ctx, repoName, version, installDir)
-	}
-}
-
-func (a *App) runNPMUpdate(ctx context.Context, packageName, releaseVersion string) int {
-	npmVersion, err := updatesvc.NormalizeNPMVersion(releaseVersion)
-	if err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	spec := packageName + "@latest"
-	if npmVersion != "latest" {
-		spec = packageName + "@" + npmVersion
-	}
-
-	if runtime.GOOS == "windows" {
-		return a.runWindowsNPMUpdate(ctx, spec)
-	}
-
-	return a.runExternalCommand(ctx, "npm", []string{"install", "-g", spec})
-}
-
-func (a *App) runExternalCommand(ctx context.Context, name string, args []string) int {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = a.stdout
-	cmd.Stderr = a.stderr
-
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	return 0
-}
-
-func (a *App) runPOSIXInstallerUpdate(ctx context.Context, repoName, version, installDir string) int {
-	installerURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/scripts/install.sh", repoName)
-	command := fmt.Sprintf(
-		"if command -v curl >/dev/null 2>&1; then curl -fsSL %s | sh; elif command -v wget >/dev/null 2>&1; then wget -qO- %s | sh; else echo 'curl or wget is required to update gig.' >&2; exit 1; fi",
-		shellSingleQuote(installerURL),
-		shellSingleQuote(installerURL),
-	)
-
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = a.stdout
-	cmd.Stderr = a.stderr
-	cmd.Env = append(os.Environ(),
-		"GIG_REPO="+repoName,
-		"GIG_VERSION="+version,
-		"GIG_INSTALL_DIR="+installDir,
-	)
-
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	return 0
-}
-
-func (a *App) runWindowsInstallerUpdate(ctx context.Context, repoName, version, installDir string) int {
-	installerURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/scripts/install.ps1", repoName)
-
-	scriptFile, err := os.CreateTemp("", "gig-update-*.ps1")
-	if err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	scriptBody := fmt.Sprintf(`$ErrorActionPreference = "Stop"
-$installer = [ScriptBlock]::Create((Invoke-RestMethod -Uri '%s'))
-& $installer -Repo '%s' -Version '%s' -InstallDir '%s' -WaitForPid %d
-Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
-`,
-		powerShellSingleQuote(installerURL),
-		powerShellSingleQuote(repoName),
-		powerShellSingleQuote(version),
-		powerShellSingleQuote(installDir),
-		os.Getpid(),
-	)
-
-	if _, err := scriptFile.WriteString(scriptBody); err != nil {
-		scriptFile.Close()
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-	if err := scriptFile.Close(); err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	command := fmt.Sprintf(
-		"Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','%s')",
-		powerShellSingleQuote(scriptFile.Name()),
-	)
-
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = a.stdout
-	cmd.Stderr = a.stderr
-
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	fmt.Fprintln(a.stdout, "gig update started in the background.")
-	fmt.Fprintln(a.stdout, "Open a new terminal in a few seconds, then run: gig version")
-	return 0
-}
-
-func (a *App) runWindowsNPMUpdate(ctx context.Context, packageSpec string) int {
-	scriptFile, err := os.CreateTemp("", "gig-update-npm-*.ps1")
-	if err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	scriptBody := fmt.Sprintf(`$ErrorActionPreference = "Stop"
-for ($attempt = 0; $attempt -lt 240; $attempt++) {
-	if (-not (Get-Process -Id %d -ErrorAction SilentlyContinue)) {
-		break
-	}
-	Start-Sleep -Milliseconds 500
-}
-npm.cmd install -g '%s'
-Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
-`,
-		os.Getpid(),
-		powerShellSingleQuote(packageSpec),
-	)
-
-	if _, err := scriptFile.WriteString(scriptBody); err != nil {
-		scriptFile.Close()
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-	if err := scriptFile.Close(); err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	command := fmt.Sprintf(
-		"Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','%s')",
-		powerShellSingleQuote(scriptFile.Name()),
-	)
-
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = a.stdout
-	cmd.Stderr = a.stderr
-
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(a.stderr, "update failed: %v\n", err)
-		return 1
-	}
-
-	fmt.Fprintln(a.stdout, "gig update started in the background.")
-	fmt.Fprintln(a.stdout, "Open a new terminal in a few seconds, then run: gig version")
-	return 0
-}
-
-func shellSingleQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-func powerShellSingleQuote(value string) string {
-	return strings.ReplaceAll(value, "'", "''")
-}
-func (a *App) printRootUsage() {
-	printHelpHeading(a.stderr, "gig", "Remote-first release audit CLI")
-	printHelpUsage(a.stderr, "gig [ticket-id | command] [flags]")
-	printHelpBullets(a.stderr, "First-time users",
-		"Run `gig` in a real terminal to open the guided picker.",
-		"Start with GitHub unless your repository lives elsewhere.",
-		"Learn `inspect`, `verify`, and `manifest` first.",
-	)
-	printHelpCommands(a.stderr, "Start here",
-		"gig",
-		"gig login github",
-		"gig ABC-123 --repo github:owner/name",
-	)
-	printHelpCommands(a.stderr, "Core workflows",
-		"gig ABC-123",
-		"gig verify ABC-123",
-		"gig manifest ABC-123",
-		"gig ABC-123 --path .",
-	)
-	printHelpRows(a.stderr, "Commands",
-		helpRow{Label: "workarea", Value: "Remember a project so later commands stay short"},
-		helpRow{Label: "login", Value: "Authenticate to a live provider such as GitHub"},
-		helpRow{Label: "inspect", Value: "Show the full ticket picture across repositories"},
-		helpRow{Label: "verify", Value: "Return safe, warning, or blocked for the next move"},
-		helpRow{Label: "manifest", Value: "Generate a release packet for QA and release review"},
-		helpRow{Label: "plan", Value: "Build a read-only promotion plan when you need more detail"},
-		helpRow{Label: "scan", Value: "Find repositories under a local path"},
-		helpRow{Label: "find", Value: "List raw commits for one ticket"},
-		helpRow{Label: "env status", Value: "Show where a ticket is present or behind"},
-		helpRow{Label: "diff", Value: "Compare one branch to another for a ticket"},
-		helpRow{Label: "snapshot", Value: "Save a repeatable ticket baseline for audit and re-check"},
-		helpRow{Label: "assist", Value: "Add an optional AI briefing on top of gig evidence"},
-		helpRow{Label: "doctor", Value: "Check inferred topology, overrides, and repo health"},
-		helpRow{Label: "resolve", Value: "Inspect or resolve active Git merge conflicts"},
-		helpRow{Label: "update", Value: "Install the latest release or a specific version"},
-		helpRow{Label: "version", Value: "Show the installed version"},
-	)
-	a.printCurrentWorkareaHint()
-	printHelpCommands(a.stderr, "More help", "gig <command> --help")
-}
-
-func (a *App) printLoginUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig login <provider>")
-	fmt.Fprintln(a.stderr, "Start with: github")
-	fmt.Fprintln(a.stderr, "Other providers: gitlab, bitbucket, azure-devops, svn")
-}
-
-func (a *App) printScanUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig scan --path .")
-}
-
-func (a *App) printFindUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig find <ticket-id> [--workarea name] [--path . | --repo <provider-target>]")
-}
-
-func (a *App) printDiffUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
-}
-
-func (a *App) printInspectUsage() {
-	printHelpHeading(a.stderr, "gig inspect", "Show the full ticket story across repositories.")
-	printHelpUsage(a.stderr, "gig inspect <ticket-id> [--workarea name] [--path . | --repo <provider-target>]")
-	printHelpCommands(a.stderr, "Start here",
-		"gig inspect ABC-123",
-		"gig ABC-123 --repo github:owner/name",
-		"gig inspect ABC-123 --workarea payments",
-	)
-	printHelpRows(a.stderr, "Common flags",
-		helpRow{Label: "--repo", Value: "Inspect a live remote repository without cloning first"},
-		helpRow{Label: "--workarea", Value: "Reuse a remembered project and its inferred defaults"},
-		helpRow{Label: "--path", Value: "Use local workspace mode when remote access is not enough"},
-		helpRow{Label: "--config", Value: "Optional override file when inference needs help"},
-	)
-	printHelpCommands(a.stderr, "Next commands",
-		"gig verify ABC-123",
-		"gig plan ABC-123",
-		"gig manifest ABC-123",
-	)
-}
-
-func (a *App) printEnvUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--envs dev=dev,test=test,prod=main]")
-}
-
-func (a *App) printEnvStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig env status <ticket-id> [--workarea name] [--path . | --repo <provider-target>] [--envs dev=dev,test=test,prod=main]")
-}
-
-func (a *App) printPlanUsage() {
-	printHelpHeading(a.stderr, "gig plan", "Build a read-only promotion plan for one ticket or a saved release.")
-	printHelpUsage(a.stderr,
-		"gig plan ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
-		"gig plan --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
-		"gig plan --release rel-2026-04-09 --path . [--format human|json]",
-	)
-	printHelpCommands(a.stderr, "Start here",
-		"gig plan ABC-123",
-		"gig plan ABC-123 --repo github:owner/name",
-		"gig plan --release rel-2026-04-09 --path .",
-	)
-	printHelpRows(a.stderr, "Common flags",
-		helpRow{Label: "--repo", Value: "Plan directly against a live remote repository"},
-		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
-		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
-		helpRow{Label: "--envs", Value: "Override environment mapping only when needed"},
-		helpRow{Label: "--format", Value: "Use json for automation or human for terminal review"},
-	)
-	printHelpCommands(a.stderr, "Next commands",
-		"gig verify ABC-123",
-		"gig manifest ABC-123",
-	)
-}
-
-func (a *App) printVerifyUsage() {
-	printHelpHeading(a.stderr, "gig verify", "Turn ticket evidence into a safe, warning, or blocked release verdict.")
-	printHelpUsage(a.stderr,
-		"gig verify ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
-		"gig verify --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
-		"gig verify --release rel-2026-04-09 --path .",
-	)
-	printHelpCommands(a.stderr, "Start here",
-		"gig verify ABC-123",
-		"gig verify ABC-123 --repo github:owner/name",
-		"gig verify --release rel-2026-04-09 --path .",
-	)
-	printHelpRows(a.stderr, "Common flags",
-		helpRow{Label: "--repo", Value: "Verify directly against a live remote repository"},
-		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
-		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
-		helpRow{Label: "--format", Value: "Add json output for automation"},
-	)
-	printHelpCommands(a.stderr, "Next commands",
-		"gig plan ABC-123",
-		"gig manifest ABC-123",
-	)
-}
-
-func (a *App) printManifestUsage() {
-	printHelpHeading(a.stderr, "gig manifest", "Generate a release packet for QA, client, and release review.")
-	printHelpUsage(a.stderr,
-		"gig manifest ABC-123 [--repo github:owner/name | --workarea payments | --path .]",
-		"gig manifest --ticket-file tickets.txt [--repo github:owner/name | --workarea payments | --path .]",
-		"gig manifest --release rel-2026-04-09 --path .",
-	)
-	printHelpCommands(a.stderr, "Start here",
-		"gig manifest ABC-123",
-		"gig manifest ABC-123 --repo github:owner/name",
-		"gig manifest --release rel-2026-04-09 --path .",
-	)
-	printHelpRows(a.stderr, "Common flags",
-		helpRow{Label: "--repo", Value: "Generate a packet directly from a live remote repository"},
-		helpRow{Label: "--workarea", Value: "Reuse remembered repo scope and branch defaults"},
-		helpRow{Label: "--format", Value: "Keep markdown for handoff or use json for tooling"},
-		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
-		helpRow{Label: "Alias", Value: "`gig manifest generate ...` still works for existing scripts"},
-	)
-	printHelpCommands(a.stderr, "Next commands",
-		"gig assist audit --ticket ABC-123 --audience release-manager",
-		"gig assist release --release rel-2026-04-09 --path .",
-	)
-}
-
-func (a *App) printManifestGenerateUsage() {
-	a.printManifestUsage()
-}
-
-func (a *App) printSnapshotUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
-}
-
-func (a *App) printSnapshotCreateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig snapshot create --ticket <ticket-id> [--workarea name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--output snapshot.json]")
-}
-
-func (a *App) printAssistUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig assist doctor [--path .] [--url http://localhost:2026] [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig assist setup [--path .] [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig assist audit --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
-	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 [--path . | --ticket-file tickets.txt --repo github:owner/name]")
-	fmt.Fprintln(a.stderr, "  gig assist resolve --path . [--ticket ABC-123]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Common flags:")
-	fmt.Fprintln(a.stderr, "  --audience qa|client|release-manager   --mode flash|standard|pro|ultra")
-	fmt.Fprintln(a.stderr, "  --url http://localhost:2026            --format human|json")
-}
-
-func (a *App) printAssistDoctorUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig assist doctor [--path .] [--url http://localhost:2026] [--format human|json]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Checks whether the bundled DeerFlow sidecar is configured, startable, and reachable.")
-}
-
-func (a *App) printAssistSetupUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig assist setup [--path .] [--format human|json]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Bootstraps the bundled deer-flow sidecar config and prints the next start command.")
-	fmt.Fprintln(a.stderr, "Run gig assist doctor first if you want a readiness check without writing files.")
-}
-
-func (a *App) printAssistAuditUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig assist audit --ticket ABC-123 [--repo github:owner/name | --workarea payments | --path .]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Tips:")
-	fmt.Fprintln(a.stderr, "  use the current workarea when no --repo or --path is set")
-	fmt.Fprintln(a.stderr, "  add --audience qa|client|release-manager")
-	fmt.Fprintln(a.stderr, "  add --url http://localhost:2026 when DeerFlow is not on the default local port")
-}
-
-func (a *App) printAssistReleaseUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 --path .")
-	fmt.Fprintln(a.stderr, "  gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Tips:")
-	fmt.Fprintln(a.stderr, "  use --path when the release already has saved snapshots")
-	fmt.Fprintln(a.stderr, "  use --ticket or --ticket-file with --repo for a live remote bundle")
-}
-
-func (a *App) printAssistResolveUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig assist resolve --path . [--ticket ABC-123]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Tips:")
-	fmt.Fprintln(a.stderr, "  use this only after Git has already stopped on a conflict")
-	fmt.Fprintln(a.stderr, "  use gig resolve start when you are ready to apply a choice")
-}
-
-func (a *App) printDoctorUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig doctor --path . [--format human|json]")
-	fmt.Fprintln(a.stderr)
-	fmt.Fprintln(a.stderr, "Tips:")
-	fmt.Fprintln(a.stderr, "  gig uses provider metadata, inferred branch topology, and built-in defaults when no override file is present")
-	fmt.Fprintln(a.stderr, "  add --config only when your team needs explicit branch or repository metadata overrides")
-}
-
-func (a *App) printResolveUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig resolve status --path . [--ticket ABC-123] [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig resolve start --path . [--ticket ABC-123]")
-}
-
-func (a *App) printResolveStatusUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig resolve status --path . [--ticket ABC-123] [--format human|json]")
-}
-
-func (a *App) printResolveStartUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig resolve start --path . [--ticket ABC-123]")
-}
-
-func (a *App) printUpdateUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig update [<version>] [--version vYYYY.MM.DD] [--install-dir /path/to/bin] [--repo owner/name]")
 }
 
 func hasHelpFlag(args []string) bool {
@@ -2673,93 +2207,6 @@ func (a *App) resolveCommandRepositories(ctx context.Context, workspacePath, rep
 
 func (a *App) ensureSourceControlAccess(ctx context.Context, repositories []scm.Repository) error {
 	return sourcecontrol.EnsureAccess(ctx, repositories, a.stdin, a.stdout, a.stderr)
-}
-
-func resolveOperationContext(ctx context.Context, runtime commandRuntime, repositories []scm.Repository, envSpec, fromBranch, toBranch string) ([]inspectsvc.Environment, string, string, error) {
-	environments, err := resolveOperationEnvironments(ctx, runtime, repositories, envSpec)
-	if err != nil {
-		return nil, "", "", err
-	}
-
-	fromBranch = strings.TrimSpace(fromBranch)
-	toBranch = strings.TrimSpace(toBranch)
-	if fromBranch != "" && toBranch != "" {
-		return environments, fromBranch, toBranch, nil
-	}
-
-	if !containsRemoteRepositories(repositories) {
-		return nil, "", "", fmt.Errorf("both --from and --to branches are required")
-	}
-
-	inferredFrom, inferredTo, err := sourcecontrol.InferPromotionBranches(environments, fromBranch, toBranch)
-	if err != nil {
-		return nil, "", "", err
-	}
-
-	return environments, inferredFrom, inferredTo, nil
-}
-
-func resolveOperationEnvironments(ctx context.Context, runtime commandRuntime, repositories []scm.Repository, spec string) ([]inspectsvc.Environment, error) {
-	if strings.TrimSpace(spec) != "" {
-		return parseEnvironmentSpec(spec)
-	}
-
-	if runtime.loaded.ExplicitEnvironments || !containsRemoteRepositories(repositories) {
-		return resolveEnvironments("", runtime.loaded)
-	}
-
-	protectedBranches, err := protectedBranchesForRepositories(ctx, runtime, repositories)
-	if err != nil {
-		return nil, err
-	}
-	if len(protectedBranches) == 0 {
-		return resolveEnvironments("", runtime.loaded)
-	}
-
-	environments := sourcecontrol.InferEnvironments(protectedBranches)
-	if len(environments) == 0 {
-		return nil, fmt.Errorf("unable to infer protected branch topology for the selected remote repository")
-	}
-
-	return environments, nil
-}
-
-func protectedBranchesForRepositories(ctx context.Context, runtime commandRuntime, repositories []scm.Repository) ([]string, error) {
-	branches := make([]string, 0)
-	seen := map[string]struct{}{}
-
-	for _, repository := range repositories {
-		adapter, ok := runtime.adapters.For(repository.Type)
-		if !ok {
-			continue
-		}
-		provider, ok := adapter.(scm.ProtectedBranchProvider)
-		if !ok {
-			continue
-		}
-		protectedBranches, err := provider.ProtectedBranches(ctx, repository.Root)
-		if err != nil {
-			return nil, err
-		}
-		for _, branch := range protectedBranches {
-			if _, ok := seen[branch]; ok {
-				continue
-			}
-			seen[branch] = struct{}{}
-			branches = append(branches, branch)
-		}
-	}
-
-	return branches, nil
-}
-
-func containsRemoteRepositories(repositories []scm.Repository) bool {
-	for _, repository := range repositories {
-		if repository.Type.IsRemote() {
-			return true
-		}
-	}
-	return false
 }
 
 type commandRuntime struct {

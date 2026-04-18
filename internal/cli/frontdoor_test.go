@@ -8,6 +8,7 @@ func TestParseFrontDoorCommand(t *testing.T) {
 		line       string
 		hasCurrent bool
 		hasSaved   bool
+		hasAssist  bool
 		want       frontDoorCommand
 	}{
 		{
@@ -41,6 +42,24 @@ func TestParseFrontDoorCommand(t *testing.T) {
 			want: frontDoorCommand{Action: frontDoorActionLogin, Provider: "github"},
 		},
 		{
+			name:      "ask explicit question",
+			line:      "ask what is still blocked?",
+			hasAssist: true,
+			want:      frontDoorCommand{Action: frontDoorActionAsk, Message: "what is still blocked?"},
+		},
+		{
+			name:      "natural language becomes ask when assist is ready",
+			line:      "what changed since yesterday?",
+			hasAssist: true,
+			want:      frontDoorCommand{Action: frontDoorActionAsk, Message: "what changed since yesterday?"},
+		},
+		{
+			name:      "resume shortcut opens saved assist session",
+			line:      "resume",
+			hasAssist: true,
+			want:      frontDoorCommand{Action: frontDoorActionResume},
+		},
+		{
 			name: "numeric fallback without current project",
 			line: "2",
 			want: frontDoorCommand{Action: frontDoorActionEnterTarget},
@@ -55,7 +74,7 @@ func TestParseFrontDoorCommand(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := parseFrontDoorCommand(test.line, test.hasCurrent, test.hasSaved)
+			got, err := parseFrontDoorCommand(test.line, test.hasCurrent, test.hasSaved, test.hasAssist)
 			if err != nil {
 				t.Fatalf("parseFrontDoorCommand() error = %v", err)
 			}

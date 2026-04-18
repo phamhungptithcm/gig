@@ -1,0 +1,10 @@
+Release Brief: rel-2026-04-17
+Scope: github:acme/payments
+Promotion: staging -> main
+Audience: client
+Executive Summary:
+- Verdict blocked across 2 ticket(s): 1 blocked, 1 warning, 0 safe.
+- 1 linked issue(s) add delivery context for this release.
+Evidence: 2 PR(s); 1 deployment(s); 3 check(s), 1 not green; 1 hotspot(s); 2 linked issue(s); 1 latest release reference(s); 1 overlapping ticket(s); 1 new ticket(s) since latest release
+
+Release still blocked until the build check is green.

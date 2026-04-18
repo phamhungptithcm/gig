@@ -107,7 +107,7 @@ func RenderInspect(w io.Writer, ticketID, basePath string, scannedRepoCount int,
 				}
 			}
 		}
-		if result.ProviderEvidence != nil && (len(result.ProviderEvidence.PullRequests) > 0 || len(result.ProviderEvidence.Deployments) > 0) {
+		if hasProviderEvidence(result.ProviderEvidence) {
 			if err := ui.NestedSection("Provider evidence"); err != nil {
 				return err
 			}

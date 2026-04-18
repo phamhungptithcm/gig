@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"gig/internal/output"
+	"gig/internal/sourcecontrol"
 )
 
 type helpRow struct {
@@ -68,4 +69,16 @@ func printUsageFailure(w io.Writer, command, summary string, examples ...string)
 	_ = ui.Section("Try next")
 	_ = ui.Commands(examples...)
 	_ = ui.Blank()
+}
+
+func providerCoverageHelpRows() []helpRow {
+	capabilities := sourcecontrol.OrderedProviderCapabilities()
+	rows := make([]helpRow, 0, len(capabilities))
+	for _, capability := range capabilities {
+		rows = append(rows, helpRow{
+			Label: capability.Label,
+			Value: capability.Summary(),
+		})
+	}
+	return rows
 }

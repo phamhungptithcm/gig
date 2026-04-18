@@ -77,6 +77,16 @@ gig login svn
 
 Use this once per provider before running remote-backed commands.
 
+Provider coverage today:
+
+| Provider | Coverage |
+| --- | --- |
+| GitHub | deep release evidence: PRs, deployments, checks, linked issues, releases |
+| GitLab | deep release evidence: merge requests, deployments, checks, linked issues, releases |
+| Bitbucket | basic release evidence: pull requests, deployments, branching model |
+| Azure DevOps | deep release evidence: pull requests, deployments, checks, linked work items |
+| SVN | audit topology only: branch and trunk discovery |
+
 ### `gig inspect`
 
 ```bash
@@ -105,6 +115,8 @@ gig verify --release rel-2026-04-09 --path .
 
 Use this when you need a release decision instead of raw evidence.
 Add `--from` and `--to` only when `gig` cannot infer the promotion path.
+If provider protected branches are ambiguous, `gig` now stops and says it is not sure instead of guessing.
+Use `--envs`, `--from`, and `--to` together when your team topology does not map cleanly to the protected-branch graph.
 
 ### `gig manifest`
 
@@ -136,7 +148,19 @@ gig update v2026.04.09
 ```
 
 Use this to refresh the installed CLI.
-If your npm install still returns `404`, the first package publish has not completed yet; use the direct installer until it does.
+The direct installer is the canonical path.
+Use npm only when your environment already distributes `gig` that way.
+
+## Release-Day Path
+
+For repeated release work, the main flow should feel like this:
+
+```bash
+gig workarea use payments
+gig verify --release rel-2026-04-09
+gig manifest --release rel-2026-04-09
+gig assist release --release rel-2026-04-09 --audience release-manager
+```
 
 ## Optional AI Layer
 
@@ -156,6 +180,19 @@ gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
 gig assist audit --ticket ABC-123 --repo github:owner/name --audience client
 gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
 ```
+
+### Follow-Up Briefing
+
+```bash
+gig ask "what is still blocked?"
+gig ask "what changed since the last brief?"
+gig assist chat --message "which repo needs the most attention?"
+gig assist resume
+```
+
+`gig ask` continues the most recent saved AI session.
+Before the follow-up question is sent, `gig` rebuilds the deterministic bundle from the current repo or workarea state.
+During that same follow-up thread, DeerFlow can ask the read-only `gig` bridge for fresh `inspect`, `verify`, or `manifest` evidence from the saved current session instead of guessing.
 
 ### Release Briefing
 
@@ -208,6 +245,7 @@ gig resolve start --path .
 - explicit flags win over workarea defaults
 - `gig` auto-detects `gig.yaml`, `gig.yml`, `.gig.yaml`, and `.gig.yml`
 - commands are read-only by default, except for the active conflict resolver
+- set `GIG_DIAGNOSTICS_FILE=/path/to/gig-diagnostics.jsonl` when you want structured auth and topology diagnostics for support or CI
 
 ## Remote Repository Targets
 

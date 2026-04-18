@@ -10,11 +10,14 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	assisttools "gig/internal/assistant/tools"
 )
 
 const (
 	defaultDeerFlowURL = "http://localhost:2026"
 	leadAgentID        = "lead_agent"
+	maxToolRoundTrips  = 3
 )
 
 type RunMode string
@@ -36,6 +39,13 @@ type ClientConfig struct {
 type AnalyzeOptions struct {
 	Mode     RunMode
 	Audience Audience
+	Bridge   *assisttools.Bridge
+}
+
+type PromptOptions struct {
+	ThreadID string
+	Mode     RunMode
+	Bridge   *assisttools.Bridge
 }
 
 type AnalysisResponse struct {
@@ -86,81 +96,91 @@ func defaultRunMode(mode RunMode) RunMode {
 }
 
 func (c *DeerFlowClient) AnalyzeAudit(ctx context.Context, bundle AuditBundle, options AnalyzeOptions) (AnalysisResponse, error) {
-	if err := c.checkHealth(ctx); err != nil {
-		return AnalysisResponse{}, err
-	}
-
-	threadID, err := c.createThread(ctx)
-	if err != nil {
-		return AnalysisResponse{}, err
-	}
-
 	prompt, err := buildAuditPrompt(bundle, defaultAudience(options.Audience))
 	if err != nil {
 		return AnalysisResponse{}, err
 	}
-
-	responseText, err := c.streamAuditRun(ctx, threadID, prompt, defaultRunMode(options.Mode))
-	if err != nil {
-		return AnalysisResponse{}, err
-	}
-
-	return AnalysisResponse{
-		ThreadID: threadID,
-		Response: responseText,
-	}, nil
+	return c.analyzePrompt(ctx, prompt, PromptOptions{Mode: options.Mode, Bridge: options.Bridge})
 }
 
 func (c *DeerFlowClient) AnalyzeRelease(ctx context.Context, bundle ReleaseBundle, options AnalyzeOptions) (AnalysisResponse, error) {
-	if err := c.checkHealth(ctx); err != nil {
-		return AnalysisResponse{}, err
-	}
-
-	threadID, err := c.createThread(ctx)
-	if err != nil {
-		return AnalysisResponse{}, err
-	}
-
 	prompt, err := buildReleasePrompt(bundle, defaultAudience(options.Audience))
 	if err != nil {
 		return AnalysisResponse{}, err
 	}
-
-	responseText, err := c.streamAuditRun(ctx, threadID, prompt, defaultRunMode(options.Mode))
-	if err != nil {
-		return AnalysisResponse{}, err
-	}
-
-	return AnalysisResponse{
-		ThreadID: threadID,
-		Response: responseText,
-	}, nil
+	return c.analyzePrompt(ctx, prompt, PromptOptions{Mode: options.Mode, Bridge: options.Bridge})
 }
 
 func (c *DeerFlowClient) AnalyzeResolve(ctx context.Context, bundle ResolveBundle, options AnalyzeOptions) (AnalysisResponse, error) {
-	if err := c.checkHealth(ctx); err != nil {
-		return AnalysisResponse{}, err
-	}
-
-	threadID, err := c.createThread(ctx)
-	if err != nil {
-		return AnalysisResponse{}, err
-	}
-
 	prompt, err := buildResolvePrompt(bundle, defaultAudience(options.Audience))
 	if err != nil {
 		return AnalysisResponse{}, err
 	}
+	return c.analyzePrompt(ctx, prompt, PromptOptions{Mode: options.Mode, Bridge: options.Bridge})
+}
 
-	responseText, err := c.streamAuditRun(ctx, threadID, prompt, defaultRunMode(options.Mode))
-	if err != nil {
+func (c *DeerFlowClient) AnalyzeFollowUp(ctx context.Context, prompt string, options PromptOptions) (AnalysisResponse, error) {
+	return c.analyzePrompt(ctx, prompt, options)
+}
+
+func (c *DeerFlowClient) analyzePrompt(ctx context.Context, prompt string, options PromptOptions) (AnalysisResponse, error) {
+	if err := c.checkHealth(ctx); err != nil {
 		return AnalysisResponse{}, err
+	}
+
+	threadID := strings.TrimSpace(options.ThreadID)
+	var err error
+	if threadID == "" {
+		threadID, err = c.createThread(ctx)
+		if err != nil {
+			return AnalysisResponse{}, err
+		}
+	}
+
+	bridge := options.Bridge
+	if instructions := bridgeInstructions(bridge); instructions != "" {
+		prompt = strings.TrimSpace(prompt) + "\n\n" + instructions
+	}
+
+	nextPrompt := prompt
+	for roundTrip := 0; roundTrip <= maxToolRoundTrips; roundTrip++ {
+		run, err := c.streamAuditRun(ctx, threadID, nextPrompt, defaultRunMode(options.Mode))
+		if err != nil {
+			return AnalysisResponse{}, err
+		}
+		if run.ToolCall != nil {
+			if bridge == nil {
+				return AnalysisResponse{}, fmt.Errorf("deerflow requested %q but no gig follow-up bridge is available", run.ToolCall.Name)
+			}
+			if roundTrip == maxToolRoundTrips {
+				return AnalysisResponse{}, fmt.Errorf("deerflow requested more than %d gig follow-up tool round(s)", maxToolRoundTrips)
+			}
+
+			result, err := bridge.Execute(ctx, *run.ToolCall)
+			if err != nil {
+				nextPrompt = assisttools.FormatErrorMessage(*run.ToolCall, err)
+				continue
+			}
+
+			nextPrompt, err = assisttools.FormatResultMessage(result)
+			if err != nil {
+				return AnalysisResponse{}, fmt.Errorf("format gig tool result: %w", err)
+			}
+			continue
+		}
+		if strings.TrimSpace(run.Response) == "" {
+			return AnalysisResponse{}, fmt.Errorf("deerflow returned no assistant response")
+		}
+
+		return AnalysisResponse{
+			ThreadID: threadID,
+			Response: run.Response,
+		}, nil
 	}
 
 	return AnalysisResponse{
 		ThreadID: threadID,
-		Response: responseText,
-	}, nil
+	}, fmt.Errorf("deerflow returned no assistant response")
 }
 
 func (c *DeerFlowClient) checkHealth(ctx context.Context) error {
@@ -216,7 +236,12 @@ func (c *DeerFlowClient) createThread(ctx context.Context) (string, error) {
 	return strings.TrimSpace(payload.ThreadID), nil
 }
 
-func (c *DeerFlowClient) streamAuditRun(ctx context.Context, threadID, prompt string, mode RunMode) (string, error) {
+type streamRunResult struct {
+	Response string
+	ToolCall *assisttools.Call
+}
+
+func (c *DeerFlowClient) streamAuditRun(ctx context.Context, threadID, prompt string, mode RunMode) (streamRunResult, error) {
 	body := map[string]any{
 		"assistant_id": leadAgentID,
 		"input": map[string]any{
@@ -242,33 +267,33 @@ func (c *DeerFlowClient) streamAuditRun(ctx context.Context, threadID, prompt st
 
 	req, err := c.newJSONRequest(ctx, http.MethodPost, c.langGraphURL+"/threads/"+threadID+"/runs/stream", body)
 	if err != nil {
-		return "", err
+		return streamRunResult{}, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("stream deerflow audit run: %w", err)
+		return streamRunResult{}, fmt.Errorf("stream deerflow audit run: %w", err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read deerflow audit stream: %w", err)
+		return streamRunResult{}, fmt.Errorf("read deerflow audit stream: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("deerflow audit run failed: %s", formatHTTPError(resp.StatusCode, raw))
+		return streamRunResult{}, fmt.Errorf("deerflow audit run failed: %s", formatHTTPError(resp.StatusCode, raw))
 	}
 
 	events := parseSSE(string(raw))
-	if response := extractResponseFromEvents(events); strings.TrimSpace(response) != "" {
-		return response, nil
+	if run := extractRunResultFromEvents(events); run.ToolCall != nil || strings.TrimSpace(run.Response) != "" {
+		return run, nil
 	}
 
 	if errorMessage := extractErrorFromEvents(events); errorMessage != "" {
-		return "", fmt.Errorf("deerflow returned an error: %s", errorMessage)
+		return streamRunResult{}, fmt.Errorf("deerflow returned an error: %s", errorMessage)
 	}
 
-	return "", fmt.Errorf("deerflow returned no assistant response")
+	return streamRunResult{}, fmt.Errorf("deerflow returned no assistant response")
 }
 
 func (c *DeerFlowClient) newJSONRequest(ctx context.Context, method, url string, body any) (*http.Request, error) {
@@ -365,7 +390,14 @@ func parseSSE(raw string) []sseEvent {
 	return events
 }
 
-func extractResponseFromEvents(events []sseEvent) string {
+func bridgeInstructions(bridge *assisttools.Bridge) string {
+	if bridge == nil {
+		return ""
+	}
+	return strings.TrimSpace(bridge.Instructions())
+}
+
+func extractRunResultFromEvents(events []sseEvent) streamRunResult {
 	for i := len(events) - 1; i >= 0; i-- {
 		if events[i].Type != "values" {
 			continue
@@ -378,12 +410,15 @@ func extractResponseFromEvents(events []sseEvent) string {
 			continue
 		}
 
+		if call, ok := extractToolCall(payload.Messages); ok {
+			return streamRunResult{ToolCall: &call}
+		}
 		if response := extractResponseText(payload.Messages); response != "" {
-			return response
+			return streamRunResult{Response: response}
 		}
 	}
 
-	return ""
+	return streamRunResult{}
 }
 
 func extractErrorFromEvents(events []sseEvent) string {
@@ -415,6 +450,53 @@ func extractResponseText(messages []map[string]any) string {
 	}
 
 	return ""
+}
+
+func extractToolCall(messages []map[string]any) (assisttools.Call, bool) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if messageType, _ := message["type"].(string); messageType != "ai" {
+			continue
+		}
+
+		if call, ok := extractStructuredToolCall(message["tool_calls"]); ok {
+			return call, true
+		}
+
+		if text := extractContentText(message["content"]); text != "" {
+			call, ok, err := assisttools.ParseCall(text)
+			if err == nil && ok {
+				return call, true
+			}
+		}
+	}
+
+	return assisttools.Call{}, false
+}
+
+func extractStructuredToolCall(raw any) (assisttools.Call, bool) {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return assisttools.Call{}, false
+	}
+
+	first, ok := items[0].(map[string]any)
+	if !ok {
+		return assisttools.Call{}, false
+	}
+
+	name, _ := first["name"].(string)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return assisttools.Call{}, false
+	}
+
+	args, _ := first["args"].(map[string]any)
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	return assisttools.Call{Name: name, Arguments: args}, true
 }
 
 func extractContentText(content any) string {
@@ -491,6 +573,7 @@ Use only the facts in the JSON bundle below.
 Do not invent repositories, commits, branch state, deployments, approvals, release readiness, or ticket outcomes.
 Preserve the deterministic severity of the release plan and any blocked or warning tickets.
 Call out cross-ticket patterns only when the bundle actually supports them.
+Use evidenceSummary, repositoryEvidence, ticketOverlap, executiveSummary, operatorSummary, and hotspots when the bundle provides concrete GitHub pull request, issue, deployment, release, or check context.
 
 Tailor the summary to this audience:
 %s
@@ -534,6 +617,46 @@ JSON bundle:
 
 %s
 `, audience, audienceGuidance(audience, "resolve"), audienceSections(audience, "resolve"), string(payload)), nil
+}
+
+func buildAuditFollowUpPrompt(bundle AuditBundle, audience Audience, question string) (string, error) {
+	return buildFollowUpPrompt("ticket-level audit", bundle, audience, question)
+}
+
+func buildReleaseFollowUpPrompt(bundle ReleaseBundle, audience Audience, question string) (string, error) {
+	return buildFollowUpPrompt("release-level audit", bundle, audience, question)
+}
+
+func buildResolveFollowUpPrompt(bundle ResolveBundle, audience Audience, question string) (string, error) {
+	return buildFollowUpPrompt("conflict-resolution", bundle, audience, question)
+}
+
+func buildFollowUpPrompt(scope string, bundle any, audience Audience, question string) (string, error) {
+	payload, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(`You are continuing an existing gig %s conversation for the %s audience.
+
+Use only the facts in the refreshed JSON bundle below.
+Answer the follow-up question directly.
+Do not repeat the full brief unless the question explicitly asks for it.
+If the question asks for information the bundle does not prove, say that the evidence is not present.
+When recommending next steps, prefer real gig commands that match the current bundle hints.
+
+Return concise markdown with these sections:
+## Answer
+## Evidence Gaps
+## Recommended Next gig Commands
+
+Follow-up question:
+%s
+
+Refreshed JSON bundle:
+
+%s
+`, scope, audience, strings.TrimSpace(question), string(payload)), nil
 }
 
 func audienceGuidance(audience Audience, scope string) string {

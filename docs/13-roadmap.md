@@ -12,10 +12,12 @@ The current codebase already delivers:
 - release verification and risk hints
 - Markdown and JSON release packets
 - remote inspection for GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
+- high-confidence protected-branch inference with explicit fallback when topology is ambiguous
 - local Git and SVN fallback flows
 - reusable workareas
 - a guided `gig` front door
-- optional DeerFlow-backed ticket, release, and conflict briefings
+- optional DeerFlow-backed ticket, release, and conflict briefings with saved follow-up sessions and richer release evidence
+- structured diagnostics for auth and topology support traces
 
 ## What Comes Next
 
@@ -34,6 +36,7 @@ Priority:
 - improve cross-branch and cross-repo ticket evidence
 - strengthen follow-up fix detection
 - make `safe`, `warning`, and `blocked` verdicts easier to trust at a glance
+- raise more providers from basic release evidence to deep release evidence
 
 ### 3. Better Workarea And Console UX
 
@@ -49,6 +52,7 @@ Priority:
 
 - richer release packets and JSON contracts
 - stronger audit bundles for QA, release, and client-facing stakeholders
+- keep deep release evidence strong across GitHub, GitLab, and Azure DevOps while closing the remaining Bitbucket parity gap
 - optional AI explanations that stay grounded in deterministic evidence
 
 ### 5. Controlled Expansion

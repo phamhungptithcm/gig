@@ -45,7 +45,7 @@ Before a team moves a ticket or release forward, `gig` should answer:
 - guided terminal onboarding so first-time users can pick a repo before they learn flags
 - a command-palette front door so users can type `ABC-123` or `verify ABC-123` directly
 - reusable workareas for repeated project context
-- optional AI explanation layered on top of auditable source-control evidence
+- optional AI explanation layered on top of auditable source-control evidence, including resumable follow-up questions through `gig ask`
 
 ## What Ships Today
 

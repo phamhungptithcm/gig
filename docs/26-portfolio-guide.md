@@ -15,6 +15,7 @@ Choose the version that best fits your target role.
 ### Product And Platform Engineering Angle
 
 - Built a remote-first release audit CLI that inspects GitHub, GitLab, Bitbucket, Azure DevOps, and SVN repositories directly, reducing release verification from manual repo-by-repo review to one deterministic workflow.
+- Built a release audit workflow that reduced a representative 2-repo check from 6 terminal commands / 7 manual steps to 1 command / 1 step, while keeping the output deterministic and auditable.
 
 ### Developer Tooling Angle
 
@@ -58,6 +59,11 @@ Do these consistently:
 - a 45 to 60 second terminal clip
 - one screenshot each for inspect, verify, and AI brief
 - a short architecture or product narrative in the docs site
+- one benchmark snapshot that shows workflow compression honestly, not just raw millisecond claims
+
+Recommended benchmark asset:
+
+- `docs/assets/release-audit-benchmark.svg` for README embeds, portfolio case studies, and social previews
 
 ## Suggested Portfolio Stack
 

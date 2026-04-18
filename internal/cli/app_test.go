@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"gig/internal/cli"
+	sessionstore "gig/internal/session"
 	"gig/internal/workarea"
 )
 
@@ -375,6 +376,9 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if !strings.Contains(stdout, "gig assist setup") {
 		t.Fatalf("stdout = %q, want DeerFlow setup suggestion", stdout)
 	}
+	if strings.Contains(stdout, "Resume last") {
+		t.Fatalf("stdout = %q, want no resume section without saved assist session", stdout)
+	}
 }
 
 func TestAppFrontDoorQuickStartInspectsRepoTarget(t *testing.T) {
@@ -441,6 +445,115 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
 		t.Fatalf("stdout = %q, want interactive action hint", stdout)
+	}
+	if strings.Contains(stdout, "Resume last") {
+		t.Fatalf("stdout = %q, want no resume section without saved assist session", stdout)
+	}
+}
+
+func TestAppFrontDoorShowsScopedResumeSession(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	if _, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "workarea", "add", "payments", "--repo", "github:acme/payments", "--use"); exitCode != 0 {
+		t.Fatalf("seed payments workarea exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if _, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "workarea", "add", "billing", "--repo", "github:acme/billing"); exitCode != 0 {
+		t.Fatalf("seed billing workarea exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	sessionPath := filepath.Join(filepath.Dir(workareaFile), "assist-sessions.json")
+	store := sessionstore.NewStoreAt(sessionPath)
+	if _, err := store.SaveCurrent(sessionstore.Session{
+		Kind:         sessionstore.KindAudit,
+		ScopeLabel:   "github:acme/payments",
+		WorkareaName: "payments",
+		RepoTarget:   "github:acme/payments",
+		TicketID:     "ABC-123",
+		ThreadID:     "thread-payments",
+		Summary:      "Audit ABC-123 on github:acme/payments",
+	}); err != nil {
+		t.Fatalf("SaveCurrent(payments) error = %v", err)
+	}
+	if _, err := store.SaveCurrent(sessionstore.Session{
+		Kind:         sessionstore.KindRelease,
+		ScopeLabel:   "github:acme/billing",
+		WorkareaName: "billing",
+		RepoTarget:   "github:acme/billing",
+		ReleaseID:    "rel-2026-04-14",
+		ThreadID:     "thread-billing",
+		Summary:      "Release rel-2026-04-14 on github:acme/billing",
+	}); err != nil {
+		t.Fatalf("SaveCurrent(billing) error = %v", err)
+	}
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Resume last audit") {
+		t.Fatalf("stdout = %q, want scoped resume heading", stdout)
+	}
+	if !strings.Contains(stdout, "Audit ABC-123 on github:acme/payments") {
+		t.Fatalf("stdout = %q, want payments resume summary", stdout)
+	}
+	if !strings.Contains(stdout, "Scope: workarea payments") {
+		t.Fatalf("stdout = %q, want workarea resume scope", stdout)
+	}
+	if !strings.Contains(stdout, "gig resume") || !strings.Contains(stdout, "ask gig > what is still blocked?") {
+		t.Fatalf("stdout = %q, want resume-first commands and prompt", stdout)
+	}
+	if strings.Contains(stdout, "Release rel-2026-04-14 on github:acme/billing") {
+		t.Fatalf("stdout = %q, want current workarea session instead of global current session", stdout)
+	}
+}
+
+func TestAppResumeUsesCurrentWorkareaSession(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	if _, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "workarea", "add", "payments", "--repo", "github:acme/payments", "--use"); exitCode != 0 {
+		t.Fatalf("seed payments workarea exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if _, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "workarea", "add", "billing", "--repo", "github:acme/billing"); exitCode != 0 {
+		t.Fatalf("seed billing workarea exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	sessionPath := filepath.Join(filepath.Dir(workareaFile), "assist-sessions.json")
+	store := sessionstore.NewStoreAt(sessionPath)
+	if _, err := store.SaveCurrent(sessionstore.Session{
+		Kind:         sessionstore.KindAudit,
+		ScopeLabel:   "github:acme/payments",
+		WorkareaName: "payments",
+		RepoTarget:   "github:acme/payments",
+		TicketID:     "ABC-123",
+		ThreadID:     "thread-payments",
+		Summary:      "Audit ABC-123 on github:acme/payments",
+	}); err != nil {
+		t.Fatalf("SaveCurrent(payments) error = %v", err)
+	}
+	if _, err := store.SaveCurrent(sessionstore.Session{
+		Kind:         sessionstore.KindAudit,
+		ScopeLabel:   "github:acme/billing",
+		WorkareaName: "billing",
+		RepoTarget:   "github:acme/billing",
+		TicketID:     "BILL-42",
+		ThreadID:     "thread-billing",
+		Summary:      "Audit BILL-42 on github:acme/billing",
+	}); err != nil {
+		t.Fatalf("SaveCurrent(billing) error = %v", err)
+	}
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "resume")
+	if exitCode != 0 {
+		t.Fatalf("resume exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Resume last audit: Audit ABC-123 on github:acme/payments") {
+		t.Fatalf("stdout = %q, want current workarea resume summary", stdout)
+	}
+	if !strings.Contains(stdout, "Scope: workarea payments") {
+		t.Fatalf("stdout = %q, want payments workarea scope", stdout)
+	}
+	if strings.Contains(stdout, "BILL-42") {
+		t.Fatalf("stdout = %q, want current workarea session instead of global current", stdout)
 	}
 }
 
@@ -1005,6 +1118,9 @@ func TestAppAssistReleaseLocalPath(t *testing.T) {
 	if !strings.Contains(stdout, "Audience: release-manager") {
 		t.Fatalf("stdout = %q, want release-manager audience", stdout)
 	}
+	if !strings.Contains(stdout, "Executive Summary:") || !strings.Contains(stdout, "Operator Summary:") {
+		t.Fatalf("stdout = %q, want deterministic release summaries", stdout)
+	}
 	if strings.Contains(stdout, "Thread:") || strings.Contains(stdout, "Mode:") {
 		t.Fatalf("stdout = %q, want polished human output without debug metadata", stdout)
 	}
@@ -1019,6 +1135,9 @@ func TestAppAssistReleaseLocalPath(t *testing.T) {
 	}
 	if !strings.Contains(runRequestBody, "## Release Overview") {
 		t.Fatalf("run request = %q, want release-manager sections", runRequestBody)
+	}
+	if !strings.Contains(runRequestBody, "executiveSummary") || !strings.Contains(runRequestBody, "operatorSummary") {
+		t.Fatalf("run request = %q, want enriched deterministic summaries", runRequestBody)
 	}
 }
 
@@ -1171,6 +1290,9 @@ func TestAppAssistReleaseRemoteTicketFile(t *testing.T) {
 	if !strings.Contains(stdout, "Scope: github:acme/payments") {
 		t.Fatalf("stdout = %q, want remote scope", stdout)
 	}
+	if !strings.Contains(stdout, "Executive Summary:") || !strings.Contains(stdout, "Operator Summary:") {
+		t.Fatalf("stdout = %q, want deterministic release summaries", stdout)
+	}
 	if !strings.Contains(stdout, "Remote release review is ready, but XYZ-999 is still missing from main.") {
 		t.Fatalf("stdout = %q, want assistant response", stdout)
 	}
@@ -1182,6 +1304,169 @@ func TestAppAssistReleaseRemoteTicketFile(t *testing.T) {
 	}
 	if !strings.Contains(runRequestBody, "github:acme/payments") {
 		t.Fatalf("run request = %q, want remote scope label", runRequestBody)
+	}
+	if !strings.Contains(runRequestBody, "evidenceSummary") || !strings.Contains(runRequestBody, "hotspots") {
+		t.Fatalf("run request = %q, want enriched release evidence summary", runRequestBody)
+	}
+	if !strings.Contains(runRequestBody, "repositoryEvidence") || !strings.Contains(runRequestBody, "executiveSummary") || !strings.Contains(runRequestBody, "operatorSummary") {
+		t.Fatalf("run request = %q, want enriched GitHub evidence fields", runRequestBody)
+	}
+}
+
+func TestAppAskUsesSavedAssistSession(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	var runCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/langgraph/threads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"thread_id":"thread-follow-up-123"}`))
+		case "/api/langgraph/threads/thread-follow-up-123/runs/stream":
+			runCount++
+			body, _ := io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: values\n"))
+			switch runCount {
+			case 1:
+				if !strings.Contains(string(body), "ABC-123") {
+					t.Fatalf("first run body = %q, want ticket id", string(body))
+				}
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"Initial brief: one dependency is still missing.\"}]}\n\n"))
+			default:
+				if !strings.Contains(string(body), "what is the biggest risk?") {
+					t.Fatalf("follow-up body = %q, want follow-up question", string(body))
+				}
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"Biggest risk: the missing dependency still blocks main.\"}]}\n\n"))
+			}
+			_, _ = w.Write([]byte("event: end\n"))
+			_, _ = w.Write([]byte("data: {}\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(
+		t,
+		"",
+		workareaFile,
+		"assist",
+		"audit",
+		"--ticket", "ABC-123",
+		"--from", "test",
+		"--to", "main",
+		"--path", workspace,
+		"--envs", "dev=dev,test=test,prod=main",
+		"--url", server.URL,
+	)
+	if exitCode != 0 {
+		t.Fatalf("assist audit exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Initial brief: one dependency is still missing.") {
+		t.Fatalf("stdout = %q, want initial assistant response", stdout)
+	}
+
+	stdout, stderr, exitCode = runAppWithInputAndWorkareaFile(
+		t,
+		"",
+		workareaFile,
+		"ask",
+		"what is the biggest risk?",
+		"--url", server.URL,
+	)
+	if exitCode != 0 {
+		t.Fatalf("ask exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Follow-up: what is the biggest risk?") {
+		t.Fatalf("stdout = %q, want follow-up heading", stdout)
+	}
+	if !strings.Contains(stdout, "Biggest risk: the missing dependency still blocks main.") {
+		t.Fatalf("stdout = %q, want follow-up response", stdout)
+	}
+}
+
+func TestAppAskUsesGigFollowUpToolBridge(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	var runCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/langgraph/threads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"thread_id":"thread-tool-bridge-123"}`))
+		case "/api/langgraph/threads/thread-tool-bridge-123/runs/stream":
+			runCount++
+			body, _ := io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: values\n"))
+			switch runCount {
+			case 1:
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"Initial brief: promotion is blocked until the dependency lands.\"}]}\n\n"))
+			case 2:
+				if !strings.Contains(string(body), "read-only tool bridge managed by gig") {
+					t.Fatalf("follow-up bridge body = %q, want tool bridge instructions", string(body))
+				}
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"\",\"tool_calls\":[{\"name\":\"gig_verify\",\"args\":{\"focus\":\"summary\"},\"id\":\"tc-follow-up\"}]}]}\n\n"))
+			default:
+				if !strings.Contains(string(body), "gig_verify") || !strings.Contains(string(body), "blocked") {
+					t.Fatalf("tool-result body = %q, want deterministic verification payload", string(body))
+				}
+				_, _ = w.Write([]byte("data: {\"messages\":[{\"type\":\"ai\",\"content\":\"Biggest risk: the dependency is still missing from main.\"}]}\n\n"))
+			}
+			_, _ = w.Write([]byte("event: end\n"))
+			_, _ = w.Write([]byte("data: {}\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	if stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(
+		t,
+		"",
+		workareaFile,
+		"assist",
+		"audit",
+		"--ticket", "ABC-123",
+		"--from", "test",
+		"--to", "main",
+		"--path", workspace,
+		"--envs", "dev=dev,test=test,prod=main",
+		"--url", server.URL,
+	); exitCode != 0 {
+		t.Fatalf("assist audit exit code = %d, stderr = %q, stdout = %q", exitCode, stderr, stdout)
+	}
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(
+		t,
+		"",
+		workareaFile,
+		"assist",
+		"chat",
+		"--message", "biggest risk la gi",
+		"--url", server.URL,
+	)
+	if exitCode != 0 {
+		t.Fatalf("assist chat exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Follow-up: biggest risk la gi") {
+		t.Fatalf("stdout = %q, want follow-up heading", stdout)
+	}
+	if !strings.Contains(stdout, "Biggest risk: the dependency is still missing from main.") {
+		t.Fatalf("stdout = %q, want bridged follow-up answer", stdout)
 	}
 }
 
@@ -1555,6 +1840,27 @@ func TestAppVerifyRemoteGitHubInfersProtectedBranches(t *testing.T) {
 	}
 }
 
+func TestAppVerifyRemoteGitHubRejectsAmbiguousProtectedBranches(t *testing.T) {
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1": `[{"name":"release/2026.04","protected":true},{"name":"rc/2026.04","protected":true},{"name":"main","protected":true}]`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--repo", "github:acme/payments")
+	if exitCode != 2 {
+		t.Fatalf("verify remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "gig is not sure about the protected branch topology") {
+		t.Fatalf("stderr = %q, want explicit topology warning", stderr)
+	}
+	if !strings.Contains(stderr, "Pass --envs and explicit --from/--to") {
+		t.Fatalf("stderr = %q, want fallback guidance", stderr)
+	}
+}
+
 func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
 
@@ -1688,14 +1994,16 @@ func TestAppFrontDoorPaletteRepoCommandInspects(t *testing.T) {
 func TestAppInspectRemoteGitLabAutoLogin(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "glab-auth-state")
 	glabDir := installFakeGitLabCLI(t, map[string]string{
-		"projects/acme%2Fplatform%2Fpayments":                                                          `{"default_branch":"main"}`,
-		"projects/acme%2Fplatform%2Fpayments/repository/branches?per_page=100&page=1":                  `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=staging&per_page=100&page=1":  `[{"id":"abc123456789","message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=main&per_page=100&page=1":     `[]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789":                          `{"id":"abc123456789","message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/diff?per_page=100&page=1": `[{"new_path":"db/migrations/001_add_column.sql"}]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/merge_requests":           `[{"iid":42,"title":"ABC-123 payments release","state":"merged","web_url":"https://gitlab.com/acme/platform/payments/-/merge_requests/42","source_branch":"staging","target_branch":"main","merged_at":"2026-04-10T01:02:03Z"}]`,
-		"projects/acme%2Fplatform%2Fpayments/deployments?per_page=100&page=1":                          `[{"id":1001,"iid":1,"ref":"main","sha":"abc123456789","status":"success","environment":{"name":"production","external_url":"https://deploy.example.com/gitlab/1001"}}]`,
+		"projects/acme%2Fplatform%2Fpayments":                                                              `{"default_branch":"main"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches?per_page=100&page=1":                      `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=staging&per_page=100&page=1":      `[{"id":"abc123456789","message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=main&per_page=100&page=1":         `[]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789":                              `{"id":"abc123456789","message":"ABC-123 fix payments\n\nDepends-On: XYZ-456"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/diff?per_page=100&page=1":     `[{"new_path":"db/migrations/001_add_column.sql"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/merge_requests":               `[{"iid":42,"title":"ABC-123 payments release","state":"merged","web_url":"https://gitlab.com/acme/platform/payments/-/merge_requests/42","source_branch":"staging","target_branch":"main","merged_at":"2026-04-10T01:02:03Z"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/statuses?per_page=100&page=1": `[]`,
+		"projects/acme%2Fplatform%2Fpayments/deployments?per_page=100&page=1":                              `[{"id":1001,"iid":1,"ref":"main","sha":"abc123456789","status":"success","environment":{"name":"production","external_url":"https://deploy.example.com/gitlab/1001"}}]`,
+		"projects/acme%2Fplatform%2Fpayments/releases?per_page=1&page=1":                                   `[]`,
 	})
 	t.Setenv("PATH", glabDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FAKE_GLAB_STATE", stateFile)
@@ -1722,16 +2030,18 @@ func TestAppInspectRemoteGitLabAutoLogin(t *testing.T) {
 
 func TestAppVerifyRemoteGitLabInfersProtectedBranches(t *testing.T) {
 	glabDir := installFakeGitLabCLI(t, map[string]string{
-		"projects/acme%2Fplatform%2Fpayments":                                                          `{"default_branch":"main"}`,
-		"projects/acme%2Fplatform%2Fpayments/repository/branches?per_page=100&page=1":                  `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/branches/staging":                              `{"name":"staging","protected":true}`,
-		"projects/acme%2Fplatform%2Fpayments/repository/branches/main":                                 `{"name":"main","protected":true}`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=staging&per_page=100&page=1":  `[{"id":"abc123456789","message":"ABC-123 fix payments"}]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=main&per_page=100&page=1":     `[]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789":                          `{"id":"abc123456789","message":"ABC-123 fix payments"}`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/diff?per_page=100&page=1": `[{"new_path":"service/app.txt"}]`,
-		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/merge_requests":           `[{"iid":42,"title":"ABC-123 payments release","state":"merged","web_url":"https://gitlab.com/acme/platform/payments/-/merge_requests/42","source_branch":"staging","target_branch":"main","merged_at":"2026-04-10T01:02:03Z"}]`,
-		"projects/acme%2Fplatform%2Fpayments/deployments?per_page=100&page=1":                          `[{"id":1001,"iid":1,"ref":"main","sha":"abc123456789","status":"success","environment":{"name":"production","external_url":"https://deploy.example.com/gitlab/1001"}}]`,
+		"projects/acme%2Fplatform%2Fpayments":                                                              `{"default_branch":"main"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches?per_page=100&page=1":                      `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches/staging":                                  `{"name":"staging","protected":true}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/branches/main":                                     `{"name":"main","protected":true}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=staging&per_page=100&page=1":      `[{"id":"abc123456789","message":"ABC-123 fix payments"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits?ref_name=main&per_page=100&page=1":         `[]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789":                              `{"id":"abc123456789","message":"ABC-123 fix payments"}`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/diff?per_page=100&page=1":     `[{"new_path":"service/app.txt"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/merge_requests":               `[{"iid":42,"title":"ABC-123 payments release","state":"merged","web_url":"https://gitlab.com/acme/platform/payments/-/merge_requests/42","source_branch":"staging","target_branch":"main","merged_at":"2026-04-10T01:02:03Z"}]`,
+		"projects/acme%2Fplatform%2Fpayments/repository/commits/abc123456789/statuses?per_page=100&page=1": `[]`,
+		"projects/acme%2Fplatform%2Fpayments/deployments?per_page=100&page=1":                              `[{"id":1001,"iid":1,"ref":"main","sha":"abc123456789","status":"success","environment":{"name":"production","external_url":"https://deploy.example.com/gitlab/1001"}}]`,
+		"projects/acme%2Fplatform%2Fpayments/releases?per_page=1&page=1":                                   `[]`,
 	})
 	t.Setenv("PATH", glabDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -1770,6 +2080,12 @@ func TestAppInspectRemoteAzureDevOpsAutoLogin(t *testing.T) {
 		case "/acme/Payments/_apis/git/repositories/release-audit/pullrequests?searchCriteria.sourceRefName=refs%2Fheads%2Fstaging&searchCriteria.status=all&$top=100&api-version=7.1":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"count":1,"value":[{"pullRequestId":42,"title":"ABC-123 payments release","status":"completed","sourceRefName":"refs/heads/staging","targetRefName":"refs/heads/main","url":"https://dev.azure.com/acme/Payments/_apis/git/repositories/release-audit/pullRequests/42"}]}`))
+		case "/acme/Payments/_apis/git/repositories/release-audit/pullRequests/42/workitems?api-version=7.1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
+		case "/acme/Payments/_apis/git/repositories/release-audit/commits/abc123456789/statuses?api-version=7.1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
 		case "/acme/Payments/_apis/release/deployments?$top=100&api-version=7.1":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"count":1,"value":[{"id":1001,"deploymentStatus":"succeeded","releaseEnvironment":{"name":"production"},"_links":{"web":{"href":"https://dev.azure.com/acme/Payments/_releaseProgress?releaseId=1&environmentId=1"}},"release":{"name":"Release-1","artifacts":[{"definitionReference":{"version":{"name":"abc123456789"}}}]}}]}`))
@@ -1835,6 +2151,12 @@ func TestAppVerifyRemoteAzureDevOpsInfersProtectedBranches(t *testing.T) {
 		case "/acme/Payments/_apis/git/repositories/release-audit/pullrequests?searchCriteria.sourceRefName=refs%2Fheads%2Fstaging&searchCriteria.status=all&$top=100&api-version=7.1":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"count":1,"value":[{"pullRequestId":42,"title":"ABC-123 payments release","status":"completed","sourceRefName":"refs/heads/staging","targetRefName":"refs/heads/main","url":"https://dev.azure.com/acme/Payments/_apis/git/repositories/release-audit/pullRequests/42"}]}`))
+		case "/acme/Payments/_apis/git/repositories/release-audit/pullRequests/42/workitems?api-version=7.1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
+		case "/acme/Payments/_apis/git/repositories/release-audit/commits/abc123456789/statuses?api-version=7.1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
 		case "/acme/Payments/_apis/release/deployments?$top=100&api-version=7.1":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"count":1,"value":[{"id":1001,"deploymentStatus":"succeeded","releaseEnvironment":{"name":"production"},"_links":{"web":{"href":"https://dev.azure.com/acme/Payments/_releaseProgress?releaseId=1&environmentId=1"}},"release":{"name":"Release-1","artifacts":[{"definitionReference":{"version":{"name":"abc123456789"}}}]}}]}`))
@@ -2239,6 +2561,12 @@ func TestAppRootHelpReturnsZero(t *testing.T) {
 	if !strings.Contains(stderr, "update      Install the latest release or a specific version") {
 		t.Fatalf("--help stderr = %q, want update command summary", stderr)
 	}
+	if !strings.Contains(stderr, "GitHub") || !strings.Contains(stderr, "deep release evidence: PRs, deployments, checks, linked issues, releases") {
+		t.Fatalf("--help stderr = %q, want provider coverage summary", stderr)
+	}
+	if !strings.Contains(stderr, "SVN") || !strings.Contains(stderr, "audit topology only: branch and trunk discovery") {
+		t.Fatalf("--help stderr = %q, want SVN provider coverage summary", stderr)
+	}
 }
 
 func TestAppVersionReturnsBuildInfo(t *testing.T) {
@@ -2404,6 +2732,16 @@ func installFakeGitHubCLI(t *testing.T, endpoints map[string]string) string {
 		script.WriteString("    exit 0\n")
 		script.WriteString("  fi\n")
 	}
+	script.WriteString("  case \"$endpoint\" in\n")
+	script.WriteString("    repos/*/releases\\?per_page=1\\&page=1)\n")
+	script.WriteString("      printf '%s\\n' '[]'\n")
+	script.WriteString("      exit 0\n")
+	script.WriteString("      ;;\n")
+	script.WriteString("    repos/*/commits/*/status)\n")
+	script.WriteString("      printf '%s\\n' '{\"statuses\":[]}'\n")
+	script.WriteString("      exit 0\n")
+	script.WriteString("      ;;\n")
+	script.WriteString("  esac\n")
 	script.WriteString("  echo \"unexpected endpoint: $endpoint\" >&2\n")
 	script.WriteString("  exit 1\n")
 	script.WriteString("fi\n")
