@@ -41,7 +41,7 @@ If neither trusted publishing nor a token fallback is configured, the release wo
 npm publication supports two modes:
 
 1. `trusted`
-   steady-state publish through GitHub Actions OIDC after the package already exists on npm
+   steady-state publish through GitHub Actions OIDC after npm trusted publishing is configured on the package
 2. `token`
    bootstrap or fallback publish through repository secret `NPM_PUBLISH_TOKEN`
 
@@ -54,7 +54,6 @@ The safer steady-state setup is:
 5. set workflow filename `release.yml`
 6. set environment name `npm-release`
 7. optionally require approvals on the GitHub environment `npm-release`
-8. set repository variable `NPM_TRUSTED_PUBLISHING=true` after npm trusted publishing is configured and ready
 
 The npm package scope and the GitHub repository owner are different here:
 
@@ -68,7 +67,9 @@ Bootstrap note:
 - `NPM_PUBLISH_TOKEN` must come from an npm identity that can publish to `@hunpeolabs/gig`
 - if the token path is used, prefer an npm automation token or a granular token with bypass 2FA enabled
 - after the package exists, configure trusted publishing on npm, verify one GitHub Actions publish, then remove the token fallback if you no longer want it
-- if you leave `NPM_PUBLISH_TOKEN` configured, the workflow can still use it as an emergency fallback when trusted publishing is not enabled
+- the release workflow now checks npm trusted publisher config directly from the package metadata instead of relying on a GitHub repo variable
+- if you leave `NPM_PUBLISH_TOKEN` configured, the workflow only falls back to it when no matching trusted publisher is configured
+- when the token path is chosen for an existing package, verification now checks that the token user actually has read-write collaborator access before the publish step runs
 
 Recovery note:
 
@@ -83,7 +84,6 @@ If you want the shortest path with the least memory burden, use these commands f
 ```bash
 ./scripts/npm-release.sh prepare
 ./scripts/npm-release.sh bootstrap
-gh variable set NPM_TRUSTED_PUBLISHING --repo phamhungptithcm/gig --body true
 ```
 
 If you prefer `make`:
@@ -109,6 +109,7 @@ Important setup details:
 - automatic provenance on npm requires a public package published from a public repository
 - the first publish can now be done through GitHub Actions by setting repository secret `NPM_PUBLISH_TOKEN`
 - `package.json` repository metadata must continue to match `https://github.com/phamhungptithcm/gig.git`
+- when npm trusted publishing is configured for `phamhungptithcm/gig`, the release workflow prefers it automatically even if `NPM_PUBLISH_TOKEN` is still set
 - after the first successful trusted publish, switch the npm package to `Require two-factor authentication and disallow tokens`
 
 After trusted publishing works, revoke old npm automation tokens and disallow token-based publishing for the package.
