@@ -22,13 +22,15 @@ year="${BASH_REMATCH[1]}"
 month="${BASH_REMATCH[2]}"
 day="${BASH_REMATCH[3]}"
 expected_version="${year}.$((10#${month})).$((10#${day}))"
+package_ref="${package_name}@${expected_version}"
 
 attempt=1
 last_error=""
 while [ "${attempt}" -le "${max_attempts}" ]; do
   err_file="$(mktemp)"
-  if published_version="$(npm view "${package_name}" version --registry="${registry_url}" 2>"${err_file}")"; then
+  if published_version="$(npm view "${package_ref}" version --registry="${registry_url}" 2>"${err_file}")"; then
     rm -f "${err_file}"
+    published_version="$(printf '%s\n' "${published_version}" | tail -n 1 | tr -d '\r')"
     if [ "${published_version}" = "${expected_version}" ]; then
       echo "Published ${package_name}@${published_version}"
       exit 0
@@ -43,7 +45,7 @@ while [ "${attempt}" -le "${max_attempts}" ]; do
 
   if printf '%s' "${last_error}" | grep -qiE 'E404|Not found|could not be found'; then
     if [ "${attempt}" -lt "${max_attempts}" ]; then
-      echo "Package ${package_name} is not visible on npm yet. Retrying (${attempt}/${max_attempts})..." >&2
+      echo "Package ${package_ref} is not visible on npm yet. Retrying (${attempt}/${max_attempts})..." >&2
       sleep "${sleep_seconds}"
       attempt=$((attempt + 1))
       continue

@@ -79,8 +79,8 @@ jobs:
             release_exists="true"
           fi
 
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${requested_tag}" ] && [ "${release_exists}" != "true" ]; then
-            echo "workflow_dispatch release_tag only supports retrying an existing GitHub release." >&2
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${requested_tag}" ] && [ "${release_exists}" != "true" ] && [ "${npm_version_exists}" != "true" ]; then
+            echo "workflow_dispatch release_tag only supports retrying an existing GitHub release or backfilling a missing GitHub release after npm publish." >&2
             exit 1
           fi
 
@@ -139,7 +139,7 @@ jobs:
         run: |
           node --check npm/bin/gig.cjs
           node --check npm/install.cjs
-          node --test npm/install.test.cjs npm/bin/gig.test.cjs
+          node --test npm/install.test.cjs npm/bin/gig.test.cjs scripts/verify-published-npm-version.test.cjs
           node --check scripts/prepare-npm-package.cjs
           bash -n scripts/resolve-npm-publish-mode.sh scripts/verify-npm-publish-auth.sh scripts/publish-npm-package.sh scripts/verify-published-npm-version.sh
           node scripts/prepare-npm-package.cjs "${{ needs.metadata.outputs.next_tag }}" dist/npm-package
