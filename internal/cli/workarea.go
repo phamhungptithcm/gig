@@ -20,13 +20,15 @@ import (
 )
 
 type commandScope struct {
-	Workarea        *workarea.Definition
-	WorkspacePath   string
-	ConfigPath      string
-	RepoSpec        string
-	RepoInherited   bool
-	PathInherited   bool
-	ConfigInherited bool
+	Workarea                 *workarea.Definition
+	WorkspacePath            string
+	ConfigPath               string
+	RepoSpec                 string
+	RepoInherited            bool
+	RepoInferredFromCheckout bool
+	CheckoutBranch           string
+	PathInherited            bool
+	ConfigInherited          bool
 }
 
 type commandDefaults struct {
@@ -61,7 +63,7 @@ func (a *App) runWorkarea(ctx context.Context, args []string) int {
 	case "show", "current":
 		return a.runWorkareaShow(args[1:])
 	default:
-		fmt.Fprintf(a.stderr, "unknown workarea subcommand %q\n\n", args[0])
+		fmt.Fprintf(a.stderr, "unknown project subcommand %q\n\n", args[0])
 		a.printWorkareaUsage()
 		return usageExitCode
 	}
@@ -73,33 +75,34 @@ func (a *App) runWorkareaList(args []string) int {
 		return 0
 	}
 
-	fs := flag.NewFlagSet("workarea list", flag.ContinueOnError)
+	fs := flag.NewFlagSet("project list", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
 	if err := fs.Parse(args); err != nil {
 		a.printWorkareaListUsage()
 		return usageExitCode
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(a.stderr, "workarea list does not accept positional arguments")
+		fmt.Fprintln(a.stderr, "project list does not accept positional arguments")
 		a.printWorkareaListUsage()
 		return usageExitCode
 	}
 
-	selectedFormat, err := parseOutputFormat(*format)
+	selectedFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea list failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project list failed: %v\n", err)
 		return usageExitCode
 	}
 
 	store, err := workarea.NewStore()
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea list failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project list failed: %v\n", err)
 		return 1
 	}
 	workareas, current, err := store.List()
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea list failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project list failed: %v\n", err)
 		return 1
 	}
 	workareas = orderedWorkareas(workareas, current)
@@ -116,7 +119,7 @@ func (a *App) runWorkareaList(args []string) int {
 			Current   string                `json:"current,omitempty"`
 			Workareas []workarea.Definition `json:"workareas"`
 		}{
-			Command:   "workarea list",
+			Command:   "project list",
 			Current:   current,
 			Workareas: workareas,
 		}); err != nil {
@@ -131,7 +134,7 @@ func (a *App) runWorkareaList(args []string) int {
 func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-from", "--from", "-to", "--to", "-envs", "--envs", "-provider", "--provider", "-org", "--org", "-project", "--project")
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 		a.printWorkareaAddUsage()
 		return usageExitCode
 	}
@@ -142,10 +145,10 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	fs := flag.NewFlagSet("workarea add", flag.ContinueOnError)
+	fs := flag.NewFlagSet("project add", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
-	path := fs.String("path", "", "Local workspace path for this workarea")
+	path := fs.String("path", "", "Local workspace path for this project")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name")
 	providerValue := fs.String("provider", "", "Provider to discover from when --repo is omitted")
@@ -154,14 +157,14 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 	fromBranch := fs.String("from", "", "Default source branch")
 	toBranch := fs.String("to", "", "Default target branch")
 	envsSpec := fs.String("envs", "", "Default environments, for example dev=dev,test=test,prod=main")
-	useNow := fs.Bool("use", false, "Make this the current workarea after saving")
+	useNow := fs.Bool("use", false, "Make this the current project after saving")
 
 	if err := fs.Parse(args); err != nil {
 		a.printWorkareaAddUsage()
 		return usageExitCode
 	}
 	if fs.NArg() > 1 {
-		fmt.Fprintln(a.stderr, "workarea add accepts at most one <name> argument")
+		fmt.Fprintln(a.stderr, "project add accepts at most one <name> argument")
 		a.printWorkareaAddUsage()
 		return usageExitCode
 	}
@@ -177,10 +180,10 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 		discoveredRepository, err := a.discoverWorkareaRepository(ctx, strings.TrimSpace(*providerValue), strings.TrimSpace(*organizationValue), strings.TrimSpace(*projectValue))
 		if err != nil {
 			if errors.Is(err, errPickerCancelled) {
-				fmt.Fprintln(a.stdout, "Workarea setup cancelled.")
+				fmt.Fprintln(a.stdout, "Project setup cancelled.")
 				return 0
 			}
-			fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 			return 1
 		}
 		repoSpec = discoveredRepository.Root
@@ -191,14 +194,14 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 	if resolvedPath != "" {
 		resolvedPath, err = normalizeCLIPath(resolvedPath)
 		if err != nil {
-			fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 			return 1
 		}
 	}
 	if strings.TrimSpace(*configPath) != "" {
 		*configPath, err = normalizeCLIPath(*configPath)
 		if err != nil {
-			fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 			return 1
 		}
 	}
@@ -206,20 +209,20 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 		name = inferWorkareaName(repoSpec, resolvedPath)
 	}
 	if name == "" {
-		fmt.Fprintln(a.stderr, "workarea add failed: a workarea name is required")
+		fmt.Fprintln(a.stderr, "project add failed: a project name is required")
 		a.printWorkareaAddUsage()
 		return usageExitCode
 	}
 	if repoSpec != "" {
 		if _, err := sourcecontrol.ParseRepositoryTargets(repoSpec); err != nil {
-			fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 			return usageExitCode
 		}
 	}
 
 	store, err := workarea.NewStore()
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 		return 1
 	}
 
@@ -233,7 +236,7 @@ func (a *App) runWorkareaAdd(ctx context.Context, args []string) int {
 		EnvironmentSpec: strings.TrimSpace(*envsSpec),
 	}, *useNow)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea add failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project add failed: %v\n", err)
 		return 1
 	}
 
@@ -258,14 +261,14 @@ func (a *App) runWorkareaUse(args []string) int {
 		return 0
 	}
 	if len(args) > 1 {
-		fmt.Fprintln(a.stderr, "workarea use accepts at most one <name> argument")
+		fmt.Fprintln(a.stderr, "project use accepts at most one <name> argument")
 		a.printWorkareaUseUsage()
 		return usageExitCode
 	}
 
 	store, err := workarea.NewStore()
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea use failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project use failed: %v\n", err)
 		return 1
 	}
 
@@ -276,17 +279,17 @@ func (a *App) runWorkareaUse(args []string) int {
 		name, err = a.promptForWorkareaSelection(store)
 		if err != nil {
 			if errors.Is(err, errPickerCancelled) {
-				fmt.Fprintln(a.stdout, "Workarea switch cancelled.")
+				fmt.Fprintln(a.stdout, "Project switch cancelled.")
 				return 0
 			}
-			fmt.Fprintf(a.stderr, "workarea use failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project use failed: %v\n", err)
 			return 1
 		}
 	}
 
 	selected, err := store.Use(name)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea use failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project use failed: %v\n", err)
 		return 1
 	}
 	if err := output.RenderWorkareaDetail(a.stdout, selected, store.ScopePath(selected), true); err != nil {
@@ -305,14 +308,14 @@ func (a *App) runWorkareaShow(args []string) int {
 		return 0
 	}
 	if len(args) > 1 {
-		fmt.Fprintln(a.stderr, "workarea show accepts at most one <name> argument")
+		fmt.Fprintln(a.stderr, "project show accepts at most one <name> argument")
 		a.printWorkareaShowUsage()
 		return usageExitCode
 	}
 
 	store, err := workarea.NewStore()
 	if err != nil {
-		fmt.Fprintf(a.stderr, "workarea show failed: %v\n", err)
+		fmt.Fprintf(a.stderr, "project show failed: %v\n", err)
 		return 1
 	}
 
@@ -324,27 +327,27 @@ func (a *App) runWorkareaShow(args []string) int {
 	if len(args) == 1 {
 		selected, ok, err = store.Get(args[0])
 		if err != nil {
-			fmt.Fprintf(a.stderr, "workarea show failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project show failed: %v\n", err)
 			return 1
 		}
 		if !ok {
-			fmt.Fprintf(a.stderr, "workarea show failed: workarea %q was not found\n", strings.TrimSpace(args[0]))
+			fmt.Fprintf(a.stderr, "project show failed: project %q was not found\n", strings.TrimSpace(args[0]))
 			return 1
 		}
 		current, currentOK, err := store.Current()
 		if err != nil {
-			fmt.Fprintf(a.stderr, "workarea show failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project show failed: %v\n", err)
 			return 1
 		}
 		isCurrent = currentOK && strings.EqualFold(current.Name, selected.Name)
 	} else {
 		selected, ok, err = store.Current()
 		if err != nil {
-			fmt.Fprintf(a.stderr, "workarea show failed: %v\n", err)
+			fmt.Fprintf(a.stderr, "project show failed: %v\n", err)
 			return 1
 		}
 		if !ok {
-			fmt.Fprintln(a.stderr, "workarea show failed: no current workarea is selected")
+			fmt.Fprintln(a.stderr, "project show failed: no current project is selected")
 			return 1
 		}
 		isCurrent = true
@@ -367,7 +370,7 @@ func (a *App) promptForWorkareaSelectionWithReader(reader *bufio.Reader, store *
 		return "", err
 	}
 	if len(workareas) == 0 {
-		return "", fmt.Errorf("no workareas saved yet")
+		return "", fmt.Errorf("no projects saved yet")
 	}
 	ordered := orderedWorkareas(workareas, current)
 	items := make([]pickerItem, 0, len(ordered))
@@ -386,7 +389,7 @@ func (a *App) promptForWorkareaSelectionWithReader(reader *bufio.Reader, store *
 		})
 	}
 
-	selected, err := a.runPicker(reader, "Select a workarea:", items)
+	selected, err := a.runPicker(reader, "Select a project:", items)
 	if err != nil {
 		return "", err
 	}
@@ -499,26 +502,33 @@ func (a *App) promptForLine(reader *bufio.Reader, label string) (string, error) 
 	return line, nil
 }
 
-func (a *App) resolveCommandScope(pathValue, configValue, repoValue, workareaName string, pathExplicit, configExplicit, repoExplicit bool) (commandScope, error) {
+func (a *App) resolveCommandScope(ctx context.Context, pathValue, configValue, repoValue, workareaName string, pathExplicit, configExplicit, repoExplicit bool) (commandScope, error) {
 	store, err := workarea.NewStore()
 	if err != nil {
 		return commandScope{}, err
 	}
 
 	var selected *workarea.Definition
+	var checkoutRemote scm.Repository
+	var checkoutLocal scm.Repository
+	checkoutRemoteOK := false
+
 	if name := strings.TrimSpace(workareaName); name != "" {
 		definition, ok, err := store.Get(name)
 		if err != nil {
 			return commandScope{}, err
 		}
 		if !ok {
-			return commandScope{}, fmt.Errorf("workarea %q was not found", name)
+			return commandScope{}, fmt.Errorf("project %q was not found", name)
 		}
 		if touched, err := store.Use(definition.Name); err == nil {
 			definition = touched
 		}
 		selected = &definition
 	} else if !pathExplicit && !repoExplicit {
+		checkoutRemote, checkoutLocal, checkoutRemoteOK = a.inferRemoteRepositoryFromCurrentCheckout(ctx)
+	}
+	if selected == nil && !checkoutRemoteOK && strings.TrimSpace(workareaName) == "" && !pathExplicit && !repoExplicit {
 		definition, ok, err := store.Current()
 		if err != nil {
 			return commandScope{}, err
@@ -533,6 +543,13 @@ func (a *App) resolveCommandScope(pathValue, configValue, repoValue, workareaNam
 
 	repoSpec := strings.TrimSpace(repoValue)
 	repoInherited := false
+	repoInferredFromCheckout := false
+	checkoutBranch := ""
+	if repoSpec == "" && checkoutRemoteOK {
+		repoSpec = checkoutRemote.Root
+		repoInferredFromCheckout = true
+		checkoutBranch = strings.TrimSpace(checkoutRemote.CurrentBranch)
+	}
 	if selected != nil && !repoExplicit && !pathExplicit && repoSpec == "" {
 		repoSpec = selected.RepoTarget
 		repoInherited = repoSpec != ""
@@ -556,6 +573,8 @@ func (a *App) resolveCommandScope(pathValue, configValue, repoValue, workareaNam
 	switch {
 	case pathExplicit:
 		workspacePath, err = normalizeCLIPath(pathValue)
+	case checkoutRemoteOK && strings.TrimSpace(checkoutLocal.Root) != "":
+		workspacePath = checkoutLocal.Root
 	case selected != nil && strings.TrimSpace(selected.Path) != "":
 		workspacePath, err = normalizeCLIPath(selected.Path)
 		pathInherited = true
@@ -571,13 +590,15 @@ func (a *App) resolveCommandScope(pathValue, configValue, repoValue, workareaNam
 	}
 
 	return commandScope{
-		Workarea:        selected,
-		WorkspacePath:   workspacePath,
-		ConfigPath:      configPath,
-		RepoSpec:        repoSpec,
-		RepoInherited:   repoInherited,
-		PathInherited:   pathInherited,
-		ConfigInherited: configInherited,
+		Workarea:                 selected,
+		WorkspacePath:            workspacePath,
+		ConfigPath:               configPath,
+		RepoSpec:                 repoSpec,
+		RepoInherited:            repoInherited,
+		RepoInferredFromCheckout: repoInferredFromCheckout,
+		CheckoutBranch:           checkoutBranch,
+		PathInherited:            pathInherited,
+		ConfigInherited:          configInherited,
 	}, nil
 }
 
@@ -600,6 +621,25 @@ func resolveCommandDefaults(selected *workarea.Definition, envSpec, fromBranch, 
 		defaults.ToBranch = selected.ToBranch
 	}
 	return defaults
+}
+
+func applyScopePromotionDefaults(scope commandScope, defaults commandDefaults) commandDefaults {
+	if defaults.FromBranch == "" && scope.RepoInferredFromCheckout && isLikelyPromotionSourceBranch(scope.CheckoutBranch) {
+		defaults.FromBranch = strings.TrimSpace(scope.CheckoutBranch)
+	}
+	return defaults
+}
+
+func isLikelyPromotionSourceBranch(branch string) bool {
+	branch = strings.ToLower(strings.TrimSpace(branch))
+	switch branch {
+	case "dev", "develop", "development", "integration", "test", "qa", "uat", "staging", "stage", "preprod", "pre-prod":
+		return true
+	case "", "head", "main", "master", "prod", "production", "trunk":
+		return false
+	default:
+		return strings.HasPrefix(branch, "release/") || strings.HasPrefix(branch, "rc/")
+	}
 }
 
 func (a *App) rememberProjectMemory(scope commandScope, defaults commandDefaults, runtime commandRuntime, repositories []scm.Repository, environments []inspectsvc.Environment, fromBranch, toBranch string) {
@@ -657,6 +697,18 @@ func (a *App) rememberProjectMemory(scope commandScope, defaults commandDefaults
 }
 
 func (a *App) announceWorkareaSelection(scope commandScope, defaults commandDefaults) {
+	if scope.Workarea == nil && scope.RepoInferredFromCheckout {
+		message := fmt.Sprintf("Using current checkout remote %s", scope.RepoSpec)
+		if branch := strings.TrimSpace(scope.CheckoutBranch); branch != "" {
+			message += fmt.Sprintf(" on %s", branch)
+		}
+		if defaults.FromBranch != "" || defaults.ToBranch != "" {
+			message += fmt.Sprintf(", %s -> %s", blankIfEmpty(defaults.FromBranch, "auto"), blankIfEmpty(defaults.ToBranch, "auto"))
+		}
+		fmt.Fprintln(a.stderr, message)
+		return
+	}
+
 	if scope.Workarea == nil {
 		return
 	}
@@ -666,7 +718,7 @@ func (a *App) announceWorkareaSelection(scope commandScope, defaults commandDefa
 		target = scope.WorkspacePath
 	}
 
-	message := fmt.Sprintf("Using workarea %s (%s)", scope.Workarea.Name, target)
+	message := fmt.Sprintf("Using project %s (%s)", scope.Workarea.Name, target)
 	if defaults.FromBranch != "" || defaults.ToBranch != "" {
 		message += fmt.Sprintf(", %s -> %s", blankIfEmpty(defaults.FromBranch, "auto"), blankIfEmpty(defaults.ToBranch, "auto"))
 	}
@@ -789,26 +841,31 @@ func flagProvided(fs *flag.FlagSet, name string) bool {
 
 func (a *App) printWorkareaUsage() {
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig workarea list [--format human|json]")
-	fmt.Fprintln(a.stderr, "  gig workarea add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--project name] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
-	fmt.Fprintln(a.stderr, "  gig workarea use [<name>]")
-	fmt.Fprintln(a.stderr, "  gig workarea show [<name>]")
+	fmt.Fprintln(a.stderr, "  gig project list [--format human|json] [--json]")
+	fmt.Fprintln(a.stderr, "  gig project add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
+	fmt.Fprintln(a.stderr, "  gig project use [<name>]")
+	fmt.Fprintln(a.stderr, "  gig project show [<name>]")
+	fmt.Fprintln(a.stderr, "Alias: gig workarea ...")
 }
 
 func (a *App) printWorkareaListUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig workarea list [--format human|json]")
+	fmt.Fprintln(a.stderr, "Usage: gig project list [--format human|json] [--json]")
+	fmt.Fprintln(a.stderr, "Alias: gig workarea list ...")
 }
 
 func (a *App) printWorkareaAddUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig workarea add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--project name] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
+	fmt.Fprintln(a.stderr, "Usage: gig project add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
+	fmt.Fprintln(a.stderr, "Alias: gig workarea add ...")
 }
 
 func (a *App) printWorkareaUseUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig workarea use [<name>]")
+	fmt.Fprintln(a.stderr, "Usage: gig project use [<name>]")
+	fmt.Fprintln(a.stderr, "Alias: gig workarea use ...")
 }
 
 func (a *App) printWorkareaShowUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig workarea show [<name>]")
+	fmt.Fprintln(a.stderr, "Usage: gig project show [<name>]")
+	fmt.Fprintln(a.stderr, "Alias: gig workarea show ...")
 }
 
 func (a *App) printCurrentWorkareaHint() {
@@ -827,5 +884,5 @@ func (a *App) printCurrentWorkareaHint() {
 	}
 
 	fmt.Fprintln(a.stderr)
-	fmt.Fprintf(a.stderr, "Current workarea: %s (%s)\n", current.Name, target)
+	fmt.Fprintf(a.stderr, "Current project: %s (%s)\n", current.Name, target)
 }

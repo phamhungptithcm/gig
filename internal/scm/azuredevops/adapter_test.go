@@ -198,6 +198,48 @@ func TestAdapterProviderEvidenceIncludesLinkedWorkItems(t *testing.T) {
 	}
 }
 
+func TestAdapterTicketEvidenceFindsPullRequestWithoutCommits(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := NewAdapter(parser)
+	adapter.run = fakeAzureRunner(map[string]string{
+		"account show": `{}`,
+		"account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken --output tsv": "token-123",
+	})
+	adapter.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path + "?" + request.URL.RawQuery {
+		case "/acme/Payments/_apis/git/repositories/release-audit/pullrequests?searchCriteria.status=all&$top=100&api-version=7.1":
+			return jsonResponse(`{"count":1,"value":[{"pullRequestId":42,"title":"ABC-123 release","status":"active","sourceRefName":"refs/heads/feature/abc-123","targetRefName":"refs/heads/main"}]}`), nil
+		case "/acme/Payments/_apis/git/repositories/release-audit/pullRequests/42/workitems?api-version=7.1":
+			return jsonResponse(`{"count":1,"value":[{"id":"77"}]}`), nil
+		case "/acme/Payments/_apis/wit/workitems?ids=77&fields=System.Title%2CSystem.State%2CSystem.Tags&api-version=7.1":
+			return jsonResponse(`{"count":1,"value":[{"id":77,"fields":{"System.Title":"Prod validation","System.State":"Active","System.Tags":"release"}}]}`), nil
+		default:
+			t.Fatalf("unexpected request %s?%s", request.URL.Path, request.URL.RawQuery)
+			return nil, nil
+		}
+	})}
+
+	evidence, err := adapter.TicketEvidence(context.Background(), "azure-devops:acme/Payments/release-audit", "ABC-123")
+	if err != nil {
+		t.Fatalf("TicketEvidence() error = %v", err)
+	}
+	if len(evidence.PullRequests) != 1 {
+		t.Fatalf("len(PullRequests) = %d, want 1", len(evidence.PullRequests))
+	}
+	if evidence.PullRequests[0].ID != "#42" || evidence.PullRequests[0].SourceBranch != "feature/abc-123" {
+		t.Fatalf("PullRequests[0] = %#v, want PR #42", evidence.PullRequests[0])
+	}
+	if len(evidence.Issues) != 1 || evidence.Issues[0].ID != "#77" {
+		t.Fatalf("Issues = %#v, want linked work item #77", evidence.Issues)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

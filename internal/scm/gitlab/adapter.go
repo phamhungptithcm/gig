@@ -14,6 +14,7 @@ import (
 
 	"gig/internal/scm"
 	"gig/internal/ticket"
+	"gig/internal/toolcheck"
 )
 
 const defaultCommitPageLimit = 20
@@ -229,25 +230,12 @@ func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query sc
 		return scm.CompareResult{}, err
 	}
 
-	targetByHash := make(map[string]struct{}, len(targetCommits))
-	for _, commit := range targetCommits {
-		targetByHash[commit.Hash] = struct{}{}
-	}
-
-	missingCommits := make([]scm.Commit, 0, len(sourceCommits))
-	for _, commit := range sourceCommits {
-		if _, ok := targetByHash[commit.Hash]; ok {
-			continue
-		}
-		missingCommits = append(missingCommits, commit)
-	}
-
 	return scm.CompareResult{
 		FromBranch:     query.FromBranch,
 		ToBranch:       query.ToBranch,
 		SourceCommits:  sourceCommits,
 		TargetCommits:  targetCommits,
-		MissingCommits: missingCommits,
+		MissingCommits: scm.MissingCommitsByEvidence(sourceCommits, targetCommits),
 	}, nil
 }
 
@@ -491,6 +479,51 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 	}, nil
 }
 
+func (a *Adapter) TicketEvidence(ctx context.Context, repoRoot, ticketID string) (scm.ProviderEvidence, error) {
+	if err := a.parser.Validate(ticketID); err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	projectPath, err := parseProjectPath(repoRoot)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	issuesByID := map[string]scm.IssueEvidence{}
+	mergeRequests, err := a.mergeRequestsForTicket(ctx, projectPath, ticketID)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	for _, item := range mergeRequests {
+		id := fmt.Sprintf("!%d", item.IID)
+		state := strings.TrimSpace(item.State)
+		if strings.TrimSpace(item.MergedAt) != "" {
+			state = "merged"
+		}
+		linkedIssues, err := a.linkedIssuesForMergeRequest(ctx, projectPath, item)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, issue := range linkedIssues {
+			issuesByID[strings.TrimSpace(issue.ID)] = issue
+		}
+		pullRequestsByID[id] = scm.PullRequestEvidence{
+			ID:           id,
+			Title:        strings.TrimSpace(item.Title),
+			State:        state,
+			SourceBranch: strings.TrimSpace(item.SourceBranch),
+			TargetBranch: strings.TrimSpace(item.TargetBranch),
+			URL:          strings.TrimSpace(item.WebURL),
+			LinkedIssues: linkedIssues,
+		}
+	}
+
+	return scm.ProviderEvidence{
+		PullRequests: mapPullRequestEvidence(pullRequestsByID),
+		Issues:       mapIssueEvidence(issuesByID),
+	}, nil
+}
+
 func (a *Adapter) searchBranchCommits(ctx context.Context, repoRoot, branch, ticketID string) ([]scm.Commit, error) {
 	projectPath, err := parseProjectPath(repoRoot)
 	if err != nil {
@@ -564,6 +597,34 @@ func (a *Adapter) mergeRequestsForCommit(ctx context.Context, projectPath, hash 
 		return nil, err
 	}
 	return payload, nil
+}
+
+func (a *Adapter) mergeRequestsForTicket(ctx context.Context, projectPath, ticketID string) ([]mergeRequestPayload, error) {
+	results := make([]mergeRequestPayload, 0)
+	for page := 1; page <= 5; page++ {
+		var payload []mergeRequestPayload
+		endpoint := fmt.Sprintf("projects/%s/merge_requests?scope=all&state=all&search=%s&per_page=100&page=%d", url.PathEscape(projectPath), url.QueryEscape(strings.TrimSpace(ticketID)), page)
+		if err := a.api(ctx, endpoint, &payload); err != nil {
+			if isNotFound(err) {
+				break
+			}
+			return nil, err
+		}
+		if len(payload) == 0 {
+			break
+		}
+		for _, item := range payload {
+			text := strings.TrimSpace(item.Title) + "\n" + strings.TrimSpace(item.Description)
+			if !a.parser.Matches(ticketID, text) {
+				continue
+			}
+			results = append(results, item)
+		}
+		if len(payload) < 100 {
+			break
+		}
+	}
+	return results, nil
 }
 
 func (a *Adapter) commitStatusesForCommit(ctx context.Context, projectPath, hash string) ([]commitStatusPayload, error) {
@@ -713,7 +774,7 @@ func (a *Adapter) runGLab(ctx context.Context, args ...string) (string, error) {
 		return a.run(ctx, args...)
 	}
 	if _, err := exec.LookPath("glab"); err != nil {
-		return "", fmt.Errorf("glab executable not found: %w", err)
+		return "", toolcheck.MissingTool(toolcheck.GitLabCLI(), err)
 	}
 
 	cmd := exec.CommandContext(ctx, "glab", args...)

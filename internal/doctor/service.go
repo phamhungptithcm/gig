@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"gig/internal/repo"
 	"gig/internal/scm"
 	"gig/internal/sourcecontrol"
+	"gig/internal/toolcheck"
 )
 
 type adapterProvider interface {
@@ -62,24 +64,27 @@ type Summary struct {
 }
 
 type Report struct {
-	Workspace    string             `json:"workspace"`
-	ConfigPath   string             `json:"configPath,omitempty"`
-	UsingBuiltIn bool               `json:"usingBuiltIn"`
-	Verdict      Verdict            `json:"verdict"`
-	Summary      Summary            `json:"summary"`
-	Findings     []Finding          `json:"findings,omitempty"`
-	Repositories []RepositoryResult `json:"repositories,omitempty"`
+	Workspace        string             `json:"workspace"`
+	ConfigPath       string             `json:"configPath,omitempty"`
+	UsingBuiltIn     bool               `json:"usingBuiltIn"`
+	Verdict          Verdict            `json:"verdict"`
+	Summary          Summary            `json:"summary"`
+	DependencyChecks []toolcheck.Status `json:"dependencyChecks,omitempty"`
+	Findings         []Finding          `json:"findings,omitempty"`
+	Repositories     []RepositoryResult `json:"repositories,omitempty"`
 }
 
 type Service struct {
 	discoverer repo.Discoverer
 	adapters   adapterProvider
+	lookPath   func(string) (string, error)
 }
 
 func NewService(discoverer repo.Discoverer, adapters adapterProvider) *Service {
 	return &Service{
 		discoverer: discoverer,
 		adapters:   adapters,
+		lookPath:   exec.LookPath,
 	}
 }
 
@@ -100,12 +105,28 @@ func (s *Service) Run(ctx context.Context, workspacePath string, loaded config.L
 	}
 
 	if len(repositories) == 0 {
+		report.DependencyChecks = toolcheck.CheckSystemDependenciesWithLookPath(s.lookPath, map[string]bool{"git": true, "svn": true})
 		report.Verdict = VerdictBlocked
 		report.Findings = append(report.Findings, Finding{
 			Severity: VerdictBlocked,
 			Code:     "no-repositories",
 			Summary:  "No repositories were found under the selected workspace path.",
 		})
+		return report, nil
+	}
+
+	report.DependencyChecks = toolcheck.CheckSystemDependenciesWithLookPath(s.lookPath, requiredToolsForRepositories(repositories))
+	for _, check := range report.DependencyChecks {
+		if check.Required && !check.Installed {
+			report.Findings = append(report.Findings, Finding{
+				Severity: VerdictBlocked,
+				Code:     "dependency-missing-" + check.Name,
+				Summary:  check.Summary,
+			})
+		}
+	}
+	if len(toolcheck.MissingRequired(report.DependencyChecks)) > 0 {
+		report.Verdict = VerdictBlocked
 		return report, nil
 	}
 
@@ -309,9 +330,36 @@ func deriveVerdict(report Report) Verdict {
 		return VerdictBlocked
 	}
 	if len(report.Findings) > 0 || report.Summary.MissingCatalogEntries > 0 || report.Summary.MissingEnvironmentRefs > 0 {
+		for _, finding := range report.Findings {
+			if finding.Severity == VerdictBlocked {
+				return VerdictBlocked
+			}
+		}
 		return VerdictWarning
 	}
 	return VerdictOK
+}
+
+func requiredToolsForRepositories(repositories []scm.Repository) map[string]bool {
+	required := map[string]bool{}
+	for _, repository := range repositories {
+		switch repository.Type {
+		case scm.TypeGit:
+			required["git"] = true
+		case scm.TypeSVN, scm.TypeRemoteSVN:
+			required["svn"] = true
+		case scm.TypeGitHub:
+			required["gh"] = true
+		case scm.TypeGitLab:
+			required["glab"] = true
+		case scm.TypeAzureDevOps:
+			required["az"] = true
+		}
+	}
+	if len(required) == 0 {
+		required["git"] = true
+	}
+	return required
 }
 
 func refExists(ctx context.Context, adapter scm.Adapter, repoRoot, ref string) (bool, error) {

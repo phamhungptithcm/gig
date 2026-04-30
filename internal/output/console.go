@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -12,6 +13,7 @@ import (
 type Console struct {
 	w      io.Writer
 	styled bool
+	width  int
 }
 
 type KeyValue struct {
@@ -23,11 +25,16 @@ func NewConsole(w io.Writer) Console {
 	return Console{
 		w:      w,
 		styled: supportsStyle(w),
+		width:  terminalWidth(w),
 	}
 }
 
 func (c Console) Styled() bool {
 	return c.styled
+}
+
+func (c Console) Width() int {
+	return c.width
 }
 
 func (c Console) Blank() error {
@@ -51,8 +58,7 @@ func (c Console) Section(text string) error {
 }
 
 func (c Console) Note(text string) error {
-	_, err := fmt.Fprintf(c.w, "  %s\n", c.muted(text))
-	return err
+	return c.writeWrapped("  ", text, c.muted)
 }
 
 func (c Console) Rows(rows ...KeyValue) error {
@@ -76,7 +82,19 @@ func (c Console) Commands(lines ...string) error {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if _, err := fmt.Fprintf(c.w, "  %s\n", c.command(line)); err != nil {
+		if err := c.writeWrapped("  ", line, c.command); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c Console) Lines(indent string, lines ...string) error {
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if err := c.writeWrapped(indent, line, func(value string) string { return value }); err != nil {
 			return err
 		}
 	}
@@ -133,8 +151,20 @@ func (c Console) writeRows(indent string, rows ...KeyValue) error {
 
 	for _, row := range filtered {
 		label := fmt.Sprintf("%-*s", width, row.Label)
-		if _, err := fmt.Fprintf(c.w, "%s%s  %s\n", indent, c.muted(label), row.Value); err != nil {
+		prefixWidth := len(indent) + width + 2
+		valueWidth := c.availableWidth(prefixWidth)
+		lines := wrapPlainText(row.Value, valueWidth)
+		if len(lines) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintf(c.w, "%s%s  %s\n", indent, c.muted(label), lines[0]); err != nil {
 			return err
+		}
+		continuationLabel := strings.Repeat(" ", width)
+		for _, line := range lines[1:] {
+			if _, err := fmt.Fprintf(c.w, "%s%s  %s\n", indent, c.muted(continuationLabel), line); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -149,11 +179,48 @@ func (c Console) writeBullets(indent string, lines ...string) error {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if _, err := fmt.Fprintf(c.w, "%s%s %s\n", indent, prefix, line); err != nil {
+		prefixWidth := len(indent) + len(prefix) + 1
+		wrapped := wrapPlainText(line, c.availableWidth(prefixWidth))
+		for index, segment := range wrapped {
+			marker := prefix
+			if index > 0 {
+				marker = " "
+			}
+			if _, err := fmt.Fprintf(c.w, "%s%s %s\n", indent, marker, segment); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (c Console) writeWrapped(indent, text string, style func(string) string) error {
+	width := c.availableWidth(len(indent))
+	lines := wrapPlainText(text, width)
+	if len(lines) == 0 {
+		return nil
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(c.w, "%s%s\n", indent, style(line)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (c Console) availableWidth(prefixWidth int) int {
+	if c.width <= 0 {
+		return 0
+	}
+	width := c.width - prefixWidth
+	if width < 16 {
+		return 16
+	}
+	return width
+}
+
+func (c Console) Truncate(text string, width int) string {
+	return truncatePlainText(text, width)
 }
 
 func (c Console) emphasis(text string) string {
@@ -191,6 +258,74 @@ func supportsStyle(w io.Writer) bool {
 		return false
 	}
 	return term.IsTerminal(int(file.Fd()))
+}
+
+func terminalWidth(w io.Writer) int {
+	if file, ok := w.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
+		width, _, err := term.GetSize(int(file.Fd()))
+		if err == nil && width >= 40 {
+			return width
+		}
+	}
+	if columns := strings.TrimSpace(os.Getenv("COLUMNS")); columns != "" {
+		width, err := strconv.Atoi(columns)
+		if err == nil && width >= 40 {
+			return width
+		}
+	}
+	return 0
+}
+
+func wrapPlainText(text string, width int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if width <= 0 || len(text) <= width {
+		return []string{text}
+	}
+
+	words := strings.Fields(text)
+	lines := make([]string, 0, len(words))
+	current := ""
+	for _, word := range words {
+		for len(word) > width {
+			if current != "" {
+				lines = append(lines, current)
+				current = ""
+			}
+			lines = append(lines, word[:width])
+			word = word[width:]
+		}
+		if word == "" {
+			continue
+		}
+		if current == "" {
+			current = word
+			continue
+		}
+		if len(current)+1+len(word) <= width {
+			current += " " + word
+			continue
+		}
+		lines = append(lines, current)
+		current = word
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func truncatePlainText(text string, width int) string {
+	text = strings.TrimRight(text, " ")
+	if width <= 0 || len(text) <= width {
+		return text
+	}
+	if width <= 3 {
+		return text[:width]
+	}
+	return strings.TrimRight(text[:width-3], " ") + "..."
 }
 
 const (

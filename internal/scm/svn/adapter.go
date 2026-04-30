@@ -14,6 +14,7 @@ import (
 
 	"gig/internal/scm"
 	"gig/internal/ticket"
+	"gig/internal/toolcheck"
 )
 
 type commandRunner func(ctx context.Context, args ...string) (string, error)
@@ -609,7 +610,11 @@ func branchRoot(repoPath string) string {
 		return "trunk"
 	case "branches", "tags":
 		if len(parts) >= 2 && parts[1] != "" {
-			return pathpkg.Join(parts[0], parts[1])
+			rootParts := []string{parts[0], parts[1]}
+			if parts[0] == "branches" && len(parts) >= 3 && isNestedSVNBranchPrefix(parts[1]) {
+				rootParts = append(rootParts, parts[2])
+			}
+			return pathpkg.Join(rootParts...)
 		}
 	}
 
@@ -664,8 +669,9 @@ func displayBranchName(location string) string {
 	case "trunk":
 		return "trunk"
 	case "branches":
-		if len(parts) >= 2 && parts[1] != "" {
-			return parts[1]
+		root := branchRoot(location)
+		if strings.HasPrefix(root, "branches/") {
+			return strings.TrimPrefix(root, "branches/")
 		}
 	case "tags":
 		if len(parts) >= 2 && parts[1] != "" {
@@ -674,6 +680,15 @@ func displayBranchName(location string) string {
 	}
 
 	return location
+}
+
+func isNestedSVNBranchPrefix(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "release", "releases", "rc", "hotfix", "feature", "features", "bugfix", "bugfixes":
+		return true
+	default:
+		return false
+	}
 }
 
 func joinBranchPath(root, suffix string) string {
@@ -705,7 +720,7 @@ func (a *Adapter) runSVN(ctx context.Context, args ...string) (string, error) {
 	}
 
 	if _, err := exec.LookPath("svn"); err != nil {
-		return "", fmt.Errorf("svn executable not found: %w", err)
+		return "", toolcheck.MissingTool(toolcheck.SVN(), err)
 	}
 
 	cmd := exec.CommandContext(ctx, "svn", args...)
@@ -715,7 +730,7 @@ func (a *Adapter) runSVN(ctx context.Context, args ...string) (string, error) {
 		if message == "" {
 			message = err.Error()
 		}
-		return "", fmt.Errorf("svn %s failed: %s", strings.Join(args, " "), message)
+		return "", fmt.Errorf("svn %s failed: %s", redactCommandArgs(args), message)
 	}
 
 	return string(output), nil

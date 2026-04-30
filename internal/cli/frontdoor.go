@@ -38,6 +38,9 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 	if definition, ok, err := store.Current(); err == nil && ok {
 		current = &definition
 	}
+	if _, _, ok := a.inferRemoteRepositoryFromCurrentCheckout(ctx); ok {
+		current = nil
+	}
 
 	assistSession, hasAssistSession, _ := a.currentAssistSessionForWorkarea(current)
 	state := a.buildFrontDoorState(ctx, current, workareas, assistSession, hasAssistSession)
@@ -76,6 +79,9 @@ func (a *App) frontDoorPromptEnabled() bool {
 }
 
 func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definition, workareas []workarea.Definition, assistSession sessionstore.Session, hasAssistSession bool) output.FrontDoorState {
+	var suggestionProvider scm.Type
+	var suggestionStatus *sourcecontrol.ProviderStatus
+
 	state := output.FrontDoorState{
 		Current:          current,
 		Workareas:        workareas,
@@ -96,11 +102,13 @@ func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definit
 		state.Prompt = "ask gig > ABC-123"
 		state.Examples = []string{
 			"verify ABC-123",
-			"manifest ABC-123",
+			"packet ABC-123",
 			"switch",
 		}
 		if provider, label, ok := frontDoorWorkareaProvider(*current); ok {
 			providerStatus := a.frontDoorProviderStatus(ctx, provider)
+			suggestionProvider = provider
+			suggestionStatus = &providerStatus
 			state.HeroStatus = formatFrontDoorProviderStatus(label, providerStatus)
 			state.StatusRows = append(state.StatusRows,
 				output.KeyValue{Label: "Mode", Value: "current project"},
@@ -120,24 +128,55 @@ func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definit
 			)
 		}
 	} else {
-		githubStatus := a.frontDoorProviderStatus(ctx, scm.TypeGitHub)
-		state.HeroStatus = "no project selected yet"
-		state.StatusRows = append(state.StatusRows,
-			output.KeyValue{Label: "Mode", Value: "new session"},
-			output.KeyValue{Label: "Provider", Value: formatFrontDoorProviderStatus(sourcecontrol.ProviderLabel(scm.TypeGitHub), githubStatus)},
-		)
-		state.Prompt = "ask gig > repo github:owner/name ABC-123"
-		state.Examples = []string{
-			"ABC-123",
-			"repo github:owner/name ABC-123",
-			"login github",
-		}
-		if githubStatus.Ready {
-			state.Prompt = "ask gig > ABC-123"
-			state.Examples = []string{
-				"ABC-123",
+		if detected, ok := a.detectFrontDoorRepository(ctx); ok {
+			command := "gig ABC-123 --path ."
+			prompt := "ask gig > local ABC-123"
+			examples := []string{
+				"local ABC-123",
+				"project add local --path . --from <source> --to <target> --use",
 				"repo github:owner/name ABC-123",
-				"verify ABC-123 github:owner/name",
+			}
+			if detected.Type.IsRemote() {
+				command = "gig ABC-123"
+				prompt = "ask gig > ABC-123"
+				examples = []string{
+					"ABC-123",
+					"verify ABC-123",
+					"packet ABC-123",
+				}
+			}
+			state.Detected = &output.FrontDoorDetectedRepository{
+				Name:    detected.Name,
+				Root:    detected.Root,
+				Type:    frontDoorRepositoryTypeLabel(detected.Type),
+				Branch:  detected.CurrentBranch,
+				Command: command,
+			}
+			if detected.Type.IsRemote() {
+				providerStatus := a.frontDoorProviderStatus(ctx, detected.Type)
+				suggestionProvider = detected.Type
+				suggestionStatus = &providerStatus
+			}
+			state.HeroStatus = "current folder ready"
+			state.Prompt = prompt
+			state.Examples = examples
+		} else {
+			githubStatus := a.frontDoorProviderStatus(ctx, scm.TypeGitHub)
+			suggestionProvider = scm.TypeGitHub
+			suggestionStatus = &githubStatus
+			state.HeroStatus = "no project selected yet"
+			state.StatusRows = append(state.StatusRows,
+				output.KeyValue{Label: "Mode", Value: "new session"},
+				output.KeyValue{Label: "Provider", Value: formatFrontDoorProviderStatus(sourcecontrol.ProviderLabel(scm.TypeGitHub), githubStatus)},
+			)
+			state.Prompt = "ask gig > repo github:owner/name ABC-123"
+			state.Examples = []string{
+				"repo github:owner/name ABC-123",
+				"login",
+				"local ABC-123",
+			}
+			if githubStatus.Ready {
+				state.Prompt = "ask gig > repo github:owner/name ABC-123"
 			}
 		}
 	}
@@ -152,8 +191,50 @@ func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definit
 	if len(workareas) > 0 {
 		state.StatusRows = append(state.StatusRows, output.KeyValue{Label: "Saved", Value: fmt.Sprintf("%d project(s)", len(workareas))})
 	}
+	repoTarget := ""
+	if current != nil {
+		repoTarget = current.RepoTarget
+	} else if state.Detected != nil && suggestionDetectedIsRemote(*state.Detected) {
+		repoTarget = state.Detected.Root
+	}
+	state.Suggestions = buildSmartSuggestions(suggestionContext{
+		Command:        "frontdoor",
+		TicketID:       "ABC-123",
+		RepoTarget:     repoTarget,
+		Provider:       suggestionProvider,
+		AuthStatus:     suggestionStatus,
+		Current:        current,
+		Detected:       state.Detected,
+		HasAssist:      hasAssistSession,
+		ConfigPath:     "",
+		ConfigDetected: false,
+	})
 
 	return state
+}
+
+func (a *App) detectFrontDoorRepository(ctx context.Context) (scm.Repository, bool) {
+	remoteRepository, localRepository, ok := a.inferRemoteRepositoryFromCurrentCheckout(ctx)
+	if ok {
+		remoteRepository.CurrentBranch = localRepository.CurrentBranch
+		return remoteRepository, true
+	}
+	repository, ok, err := a.scanner.Current(ctx, ".")
+	if err != nil || !ok {
+		return scm.Repository{}, false
+	}
+	return repository, true
+}
+
+func frontDoorRepositoryTypeLabel(repoType scm.Type) string {
+	switch repoType {
+	case scm.TypeGit:
+		return "Git repository"
+	case scm.TypeSVN:
+		return "SVN checkout"
+	default:
+		return sourcecontrol.ProviderLabel(repoType)
+	}
 }
 
 func frontDoorProviderCoverageRows() []output.KeyValue {
@@ -169,9 +250,6 @@ func frontDoorProviderCoverageRows() []output.KeyValue {
 }
 
 func (a *App) frontDoorProviderStatus(ctx context.Context, provider scm.Type) sourcecontrol.ProviderStatus {
-	if !a.terminalPickerEnabled() {
-		return sourcecontrol.ProviderStatus{Provider: provider, Detail: "not checked"}
-	}
 	return sourcecontrol.CheckProviderStatus(ctx, provider, a.stdin)
 }
 
@@ -246,7 +324,11 @@ func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, sto
 		}
 		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, "")
 	case frontDoorActionLogin:
-		return a.runLogin(ctx, []string{command.Provider}), nil
+		args := []string{}
+		if strings.TrimSpace(command.Provider) != "" {
+			args = append(args, command.Provider)
+		}
+		return a.runLoginWithReader(ctx, reader, args), nil
 	case frontDoorActionResume:
 		return a.runAssistResume(nil), nil
 	case frontDoorActionAsk:
@@ -274,6 +356,17 @@ func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, sto
 		return a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
 	case frontDoorActionInspect, frontDoorActionVerify, frontDoorActionManifest:
 		if current == nil && strings.TrimSpace(command.RepoTarget) == "" {
+			if detected, ok := a.detectFrontDoorRepository(ctx); ok {
+				ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
+				if err != nil {
+					return -1, err
+				}
+				path := "."
+				if detected.Type.IsRemote() {
+					path = ""
+				}
+				return a.executeFrontDoorAction(ctx, command.Action, ticketID, "", path), nil
+			}
 			return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, command.Action, command.TicketID)
 		}
 		ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
@@ -315,7 +408,7 @@ func (a *App) runFrontDoorActionWithoutCurrentProject(ctx context.Context, reade
 		{
 			Value:    "use-current-folder",
 			Title:    "Use the current folder",
-			Subtitle: "Local Git or SVN fallback if you already have the code checked out.",
+			Subtitle: "Local Git or SVN fallback when you do not want provider-backed lookup.",
 			Keywords: []string{"local", "path", "folder", "workspace"},
 		},
 		{
@@ -528,6 +621,7 @@ func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction
 		}
 		if strings.TrimSpace(path) != "" {
 			args = append(args, "--path", path)
+			args = append(args, a.frontDoorLocalPromotionArgs(ctx, path)...)
 		}
 		return a.runVerify(ctx, args)
 	case frontDoorActionManifest:
@@ -537,11 +631,42 @@ func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction
 		}
 		if strings.TrimSpace(path) != "" {
 			args = append(args, "--path", path)
+			args = append(args, a.frontDoorLocalPromotionArgs(ctx, path)...)
 		}
 		return a.runManifest(ctx, args)
 	default:
 		fmt.Fprintf(a.stderr, "front door failed: unsupported action %q\n", action)
 		return 1
+	}
+}
+
+func (a *App) frontDoorLocalPromotionArgs(ctx context.Context, path string) []string {
+	repository, ok, err := a.scanner.Current(ctx, path)
+	if err != nil || !ok {
+		return nil
+	}
+
+	fromBranch := strings.TrimSpace(repository.CurrentBranch)
+	if fromBranch == "" || isFrontDoorProductionBranch(fromBranch) {
+		return nil
+	}
+
+	toBranch := "main"
+	if repository.Type == scm.TypeSVN {
+		toBranch = "trunk"
+	}
+	if strings.EqualFold(fromBranch, toBranch) {
+		return nil
+	}
+	return []string{"--from", fromBranch, "--to", toBranch}
+}
+
+func isFrontDoorProductionBranch(branch string) bool {
+	switch strings.ToLower(strings.TrimSpace(branch)) {
+	case "main", "master", "prod", "production", "trunk":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -617,14 +742,14 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (f
 		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
 	case "verify":
 		return frontDoorCommand{Action: frontDoorActionVerify, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
-	case "manifest":
+	case "manifest", "packet":
 		args := tokens[1:]
 		if len(args) > 0 && strings.EqualFold(args[0], "generate") {
 			args = args[1:]
 		}
 		return frontDoorCommand{Action: frontDoorActionManifest, TicketID: frontDoorTicketArg(args), RepoTarget: repoTarget}, nil
 	case "login":
-		provider := "github"
+		provider := ""
 		if len(tokens) > 1 {
 			provider = strings.TrimSpace(tokens[1])
 		}

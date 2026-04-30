@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"gig/internal/scm"
+	"gig/internal/toolcheck"
 
 	"golang.org/x/term"
 )
@@ -173,11 +174,11 @@ func (s *Session) promptCredentials() (credentials, error) {
 	}
 	email, err := reader.ReadString('\n')
 	if err != nil && len(strings.TrimSpace(email)) == 0 {
-		return credentials{}, fmt.Errorf("bitbucket email is required")
+		return credentials{}, toolcheck.AuthRequired("Bitbucket", "", toolcheck.Bitbucket(), fmt.Errorf("bitbucket email is required"))
 	}
 	email = strings.TrimSpace(email)
 	if email == "" {
-		return credentials{}, fmt.Errorf("bitbucket email is required")
+		return credentials{}, toolcheck.AuthRequired("Bitbucket", "", toolcheck.Bitbucket(), fmt.Errorf("bitbucket email is required"))
 	}
 
 	tokenPrompt := s.stderr
@@ -194,7 +195,7 @@ func (s *Session) promptCredentials() (credentials, error) {
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return credentials{}, fmt.Errorf("bitbucket API token is required")
+		return credentials{}, toolcheck.AuthRequired("Bitbucket", "", toolcheck.Bitbucket(), fmt.Errorf("bitbucket API token is required"))
 	}
 
 	if tokenPrompt != nil {
@@ -219,7 +220,7 @@ func readSecret(input io.Reader, reader *bufio.Reader) (string, error) {
 
 	value, err := reader.ReadString('\n')
 	if err != nil && len(strings.TrimSpace(value)) == 0 {
-		return "", fmt.Errorf("bitbucket API token is required")
+		return "", toolcheck.AuthRequired("Bitbucket", "", toolcheck.Bitbucket(), fmt.Errorf("bitbucket API token is required"))
 	}
 	return value, nil
 }
@@ -286,15 +287,16 @@ func (s *Session) ListRepositories(ctx context.Context, workspace string) ([]scm
 		if err != nil {
 			return nil, err
 		}
+		if response.StatusCode >= 400 {
+			response.Body.Close()
+			return nil, fmt.Errorf("bitbucket repository discovery failed: %s", response.Status)
+		}
 		var payload repositoriesPayload
 		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 			response.Body.Close()
 			return nil, fmt.Errorf("parse bitbucket repository discovery response: %w", err)
 		}
 		response.Body.Close()
-		if response.StatusCode >= 400 {
-			return nil, fmt.Errorf("bitbucket repository discovery failed: %s", response.Status)
-		}
 		if len(payload.Values) == 0 {
 			break
 		}

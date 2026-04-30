@@ -119,7 +119,7 @@ func ResumeQuestion(kind Kind) string {
 func ResumeScopeLabel(session Session) string {
 	switch {
 	case strings.TrimSpace(session.WorkareaName) != "":
-		return "workarea " + strings.TrimSpace(session.WorkareaName)
+		return "project " + strings.TrimSpace(session.WorkareaName)
 	case strings.TrimSpace(session.RepoTarget) != "":
 		return strings.TrimSpace(session.RepoTarget)
 	case strings.TrimSpace(session.ScopeLabel) != "":

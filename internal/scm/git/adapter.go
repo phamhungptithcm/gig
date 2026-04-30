@@ -12,6 +12,7 @@ import (
 
 	"gig/internal/scm"
 	"gig/internal/ticket"
+	"gig/internal/toolcheck"
 )
 
 type Adapter struct {
@@ -133,7 +134,7 @@ func (a *Adapter) PrepareCherryPick(context.Context, string, scm.CherryPickPlan)
 
 func (a *Adapter) RefExists(ctx context.Context, repoRoot, ref string) (bool, error) {
 	if _, err := exec.LookPath("git"); err != nil {
-		return false, fmt.Errorf("git executable not found: %w", err)
+		return false, toolcheck.MissingTool(toolcheck.Git(), err)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "--verify", ref)
@@ -330,7 +331,7 @@ func (a *Adapter) branchesContaining(ctx context.Context, repoRoot, hash string)
 
 func (a *Adapter) runGit(ctx context.Context, repoRoot string, args ...string) (string, error) {
 	if _, err := exec.LookPath("git"); err != nil {
-		return "", fmt.Errorf("git executable not found: %w", err)
+		return "", toolcheck.MissingTool(toolcheck.Git(), err)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...)

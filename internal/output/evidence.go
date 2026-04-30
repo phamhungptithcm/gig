@@ -19,7 +19,7 @@ func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent s
 			return err
 		}
 		for _, item := range sortedPullRequests(evidence.PullRequests) {
-			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatPullRequestEvidence(item)); err != nil {
+			if err := renderEvidenceBullet(w, indent, formatPullRequestEvidence(item)); err != nil {
 				return err
 			}
 		}
@@ -30,7 +30,7 @@ func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent s
 			return err
 		}
 		for _, item := range sortedDeployments(evidence.Deployments) {
-			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatDeploymentEvidence(item)); err != nil {
+			if err := renderEvidenceBullet(w, indent, formatDeploymentEvidence(item)); err != nil {
 				return err
 			}
 		}
@@ -41,7 +41,7 @@ func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent s
 			return err
 		}
 		for _, item := range sortedChecks(evidence.Checks) {
-			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatCheckEvidence(item)); err != nil {
+			if err := renderEvidenceBullet(w, indent, formatCheckEvidence(item)); err != nil {
 				return err
 			}
 		}
@@ -52,7 +52,7 @@ func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent s
 			return err
 		}
 		for _, item := range sortedIssues(evidence.Issues) {
-			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatIssueEvidence(item)); err != nil {
+			if err := renderEvidenceBullet(w, indent, formatIssueEvidence(item)); err != nil {
 				return err
 			}
 		}
@@ -63,12 +63,35 @@ func renderProviderEvidence(w io.Writer, evidence scm.ProviderEvidence, indent s
 			return err
 		}
 		for _, item := range sortedReleases(evidence.Releases) {
-			if _, err := fmt.Fprintf(w, "%s  - %s\n", indent, formatReleaseEvidence(item)); err != nil {
+			if err := renderEvidenceBullet(w, indent, formatReleaseEvidence(item)); err != nil {
 				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+func renderEvidenceBullet(w io.Writer, indent, line string) error {
+	ui := NewConsole(w)
+	width := 0
+	prefix := indent + "  - "
+	if ui.Width() > 0 {
+		width = ui.Width() - len(prefix)
+	}
+	wrapped := wrapPlainText(line, width)
+	if len(wrapped) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(w, "%s%s\n", prefix, wrapped[0]); err != nil {
+		return err
+	}
+	continuationPrefix := indent + "    "
+	for _, continuation := range wrapped[1:] {
+		if _, err := fmt.Fprintf(w, "%s%s\n", continuationPrefix, continuation); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -32,14 +32,19 @@ func TestParseFrontDoorCommand(t *testing.T) {
 			want: frontDoorCommand{Action: frontDoorActionManifest, TicketID: "ABC-123"},
 		},
 		{
+			name: "packet shortcut",
+			line: "packet ABC-123",
+			want: frontDoorCommand{Action: frontDoorActionManifest, TicketID: "ABC-123"},
+		},
+		{
 			name: "repo shortcut",
 			line: "repo github:acme/payments ABC-123",
 			want: frontDoorCommand{Action: frontDoorActionInspect, TicketID: "ABC-123", RepoTarget: "github:acme/payments"},
 		},
 		{
-			name: "login defaults to github",
+			name: "login without provider keeps provider empty",
 			line: "login",
-			want: frontDoorCommand{Action: frontDoorActionLogin, Provider: "github"},
+			want: frontDoorCommand{Action: frontDoorActionLogin},
 		},
 		{
 			name:      "ask explicit question",

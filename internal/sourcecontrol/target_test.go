@@ -1,6 +1,7 @@
 package sourcecontrol_test
 
 import (
+	"strings"
 	"testing"
 
 	"gig/internal/scm"
@@ -39,6 +40,19 @@ func TestParseRepositoryTargetGitHubURL(t *testing.T) {
 	}
 }
 
+func TestParseRepositoryTargetGitHubSSHURL(t *testing.T) {
+	t.Parallel()
+
+	repository, err := sourcecontrol.ParseRepositoryTarget("git@github.com:acme/payments.git")
+	if err != nil {
+		t.Fatalf("ParseRepositoryTarget() error = %v", err)
+	}
+
+	if repository.Root != "github:acme/payments" {
+		t.Fatalf("Root = %q, want github:acme/payments", repository.Root)
+	}
+}
+
 func TestParseRepositoryTargetRejectsUnsupportedTarget(t *testing.T) {
 	t.Parallel()
 
@@ -66,6 +80,19 @@ func TestParseRepositoryTargetGitLabShortcut(t *testing.T) {
 	}
 }
 
+func TestParseRepositoryTargetGitLabSSHURL(t *testing.T) {
+	t.Parallel()
+
+	repository, err := sourcecontrol.ParseRepositoryTarget("ssh://git@gitlab.com/acme/platform/payments.git")
+	if err != nil {
+		t.Fatalf("ParseRepositoryTarget() error = %v", err)
+	}
+
+	if repository.Root != "gitlab:acme/platform/payments" {
+		t.Fatalf("Root = %q, want gitlab:acme/platform/payments", repository.Root)
+	}
+}
+
 func TestParseRepositoryTargetBitbucketURL(t *testing.T) {
 	t.Parallel()
 
@@ -79,6 +106,19 @@ func TestParseRepositoryTargetBitbucketURL(t *testing.T) {
 	}
 	if repository.Root != "bitbucket:acme/payments" {
 		t.Fatalf("Root = %q, want bitbucket:acme/payments", repository.Root)
+	}
+}
+
+func TestParseRepositoryTargetAzureDevOpsSSHURL(t *testing.T) {
+	t.Parallel()
+
+	repository, err := sourcecontrol.ParseRepositoryTarget("git@ssh.dev.azure.com:v3/acme/Payments/release-audit")
+	if err != nil {
+		t.Fatalf("ParseRepositoryTarget() error = %v", err)
+	}
+
+	if repository.Root != "azure-devops:acme/Payments/release-audit" {
+		t.Fatalf("Root = %q, want azure-devops:acme/Payments/release-audit", repository.Root)
 	}
 }
 
@@ -146,5 +186,20 @@ func TestParseRepositoryTargetSVNSSHURL(t *testing.T) {
 	}
 	if repository.Root != "svn:svn+ssh://svn.example.com/repos/app/trunk" {
 		t.Fatalf("Root = %q, want svn:svn+ssh://svn.example.com/repos/app/trunk", repository.Root)
+	}
+}
+
+func TestParseRepositoryTargetRejectsSVNURLCredentials(t *testing.T) {
+	t.Parallel()
+
+	_, err := sourcecontrol.ParseRepositoryTarget("svn:https://demo:super-secret@svn.example.com/repos/app/trunk")
+	if err == nil {
+		t.Fatal("ParseRepositoryTarget() error = nil, want credentials rejected")
+	}
+	if strings.Contains(err.Error(), "super-secret") {
+		t.Fatalf("error = %q, leaked password", err.Error())
+	}
+	if !strings.Contains(err.Error(), "gig login svn") {
+		t.Fatalf("error = %q, want login guidance", err.Error())
 	}
 }
