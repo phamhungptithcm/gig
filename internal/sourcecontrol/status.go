@@ -2,14 +2,13 @@ package sourcecontrol
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"gig/internal/scm"
-	azuredevopsscm "gig/internal/scm/azuredevops"
-	bitbucketscm "gig/internal/scm/bitbucket"
-	githubscm "gig/internal/scm/github"
-	gitlabscm "gig/internal/scm/gitlab"
+	"gig/internal/toolcheck"
 )
 
 type ProviderStatus struct {
@@ -19,16 +18,13 @@ type ProviderStatus struct {
 }
 
 func CheckProviderStatus(ctx context.Context, provider scm.Type, stdin io.Reader) ProviderStatus {
+	statusCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	var err error
 	switch provider {
-	case scm.TypeGitHub:
-		err = githubscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
-	case scm.TypeGitLab:
-		err = gitlabscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
-	case scm.TypeBitbucket:
-		err = bitbucketscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
-	case scm.TypeAzureDevOps:
-		err = azuredevopsscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
+	case scm.TypeGitHub, scm.TypeGitLab, scm.TypeBitbucket, scm.TypeAzureDevOps, scm.TypeRemoteSVN:
+		err = ProviderStatusError(statusCtx, provider, nil, stdin)
 	default:
 		return ProviderStatus{Provider: provider, Detail: "status unavailable"}
 	}
@@ -41,11 +37,11 @@ func CheckProviderStatus(ctx context.Context, provider scm.Type, stdin io.Reader
 		}
 	}
 
-	detail := "login required"
+	detail := toolcheck.Detail(err)
 	message := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(message, "executable not found"):
-		detail = "cli missing"
+	case errors.Is(err, context.DeadlineExceeded):
+		detail = "status timed out"
 	case strings.Contains(message, "credential"), strings.Contains(message, "token"), strings.Contains(message, "password"):
 		detail = "credentials needed"
 	}

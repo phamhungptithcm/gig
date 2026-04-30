@@ -73,6 +73,30 @@ func TestScannerDetectsEnclosingRepository(t *testing.T) {
 	}
 }
 
+func TestScannerCurrentDetectsEnclosingRepositoryOnly(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	repoRoot := filepath.Join(workspace, "service-a")
+	nestedPath := filepath.Join(repoRoot, "pkg", "module")
+
+	mustMkdir(t, filepath.Join(repoRoot, ".git"))
+	mustMkdir(t, nestedPath)
+	mustMkdir(t, filepath.Join(workspace, "other-service", ".git"))
+
+	scanner := newScanner(t)
+	repository, ok, err := scanner.Current(context.Background(), nestedPath)
+	if err != nil {
+		t.Fatalf("Current() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Current() ok = false, want true")
+	}
+	if repository.Root != repoRoot {
+		t.Fatalf("repository.Root = %q, want %q", repository.Root, repoRoot)
+	}
+}
+
 func newScanner(t *testing.T) *repo.Scanner {
 	t.Helper()
 

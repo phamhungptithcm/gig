@@ -24,6 +24,8 @@ Status update:
 - initial workarea save and switch flow is live
 - interactive workarea and repository pickers with recent-history ranking are live
 - running `gig` with no subcommand now opens a guided front door
+- core commands can infer a supported remote target from the current Git checkout's `origin`
+- `packet`, `project`, `repos`, `commits`, `where`, and `explain` are now the preferred user-facing names, with the older command names kept as aliases
 - successful remote runs can now save inferred branch topology back into the current workarea
 - `gig assist doctor` now checks whether the bundled DeerFlow sidecar is configured, startable, and reachable
 - `gig assist setup` now bootstraps the bundled DeerFlow sidecar config
@@ -125,13 +127,13 @@ The tool should instead:
 
 The current command set is internally coherent, but externally it exposes too much of the engine shape:
 
-- `scan`
-- `find`
+- `repos`
+- `commits`
 - `inspect`
-- `env status`
+- `where`
 - `plan`
 - `verify`
-- `manifest`
+- `packet`
 - `snapshot create`
 - `doctor`
 - `resolve`
@@ -156,7 +158,8 @@ That is no longer fully true.
 
 The remaining gap is product polish around:
 
-- workarea-driven project picking
+- current-checkout inference before manual repo targeting
+- project-driven picking and reuse
 - repository or organization discovery
 - richer provider capability display
 - issue-tracker evidence retrieval
@@ -200,6 +203,7 @@ The current assist slice now supports audience-specific ticket briefs, release-l
 Examples:
 
 ```bash
+gig login
 gig login github
 gig login gitlab
 gig login bitbucket
@@ -333,7 +337,7 @@ Build one normalized graph per ticket or release:
 - manual-step evidence
 - repository metadata
 
-Current `inspect`, `plan`, `verify`, and `manifest` logic should consume this graph rather than querying each layer independently.
+Current `inspect`, `plan`, `verify`, and `packet` logic should consume this graph rather than querying each layer independently.
 
 ## 5. Decision Engine
 

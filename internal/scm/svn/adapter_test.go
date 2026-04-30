@@ -77,6 +77,32 @@ func TestBuildCommitsUsesRequestedBranchWhenProvided(t *testing.T) {
 	}
 }
 
+func TestBuildCommitsPreservesNestedSVNReleaseBranch(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(config.Default().TicketPattern)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	commits := buildCommits([]logEntry{
+		{
+			Revision: "250",
+			Message:  "ABC-123 Mendix release branch fix",
+			Paths: []logPath{
+				{Value: "/branches/release/2026.04/HorizonCRM/javasource/Main.java"},
+			},
+		},
+	}, parser, "ABC-123", "")
+
+	if len(commits) != 1 {
+		t.Fatalf("buildCommits() returned %d commits, want 1", len(commits))
+	}
+	if got := commits[0].Branches; len(got) != 1 || got[0] != "release/2026.04" {
+		t.Fatalf("buildCommits() branches = %#v, want [release/2026.04]", got)
+	}
+}
+
 func TestChangedFilesNormalizesBranchPrefixes(t *testing.T) {
 	t.Parallel()
 
@@ -125,16 +151,26 @@ func TestResolveBranchPathPreservesNestedProjectSuffix(t *testing.T) {
 	}
 }
 
+func TestResolveBranchPathPreservesNestedReleaseBranchAndProjectSuffix(t *testing.T) {
+	t.Parallel()
+
+	gotPath, gotDisplay := resolveBranchPath("release/2026.05", "^/branches/release/2026.04/HorizonCRM")
+	if gotPath != "branches/release/2026.05/HorizonCRM" || gotDisplay != "release/2026.05" {
+		t.Fatalf("resolveBranchPath(nested release) = (%q, %q), want (%q, %q)", gotPath, gotDisplay, "branches/release/2026.05/HorizonCRM", "release/2026.05")
+	}
+}
+
 func TestDisplayBranchNameHandlesCommonLayouts(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"^/trunk":            "trunk",
-		"^/branches/dev":     "dev",
-		"^/tags/release-1.0": "tags/release-1.0",
-		"^/projects/horizon": "projects/horizon",
-		"/branches/test/app": "test",
-		"branches/main":      "main",
+		"^/trunk":                               "trunk",
+		"^/branches/dev":                        "dev",
+		"^/branches/release/2026.04/HorizonCRM": "release/2026.04",
+		"^/tags/release-1.0":                    "tags/release-1.0",
+		"^/projects/horizon":                    "projects/horizon",
+		"/branches/test/app":                    "test",
+		"branches/main":                         "main",
 	}
 
 	for input, want := range cases {

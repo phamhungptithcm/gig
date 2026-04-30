@@ -261,9 +261,23 @@ func renderAudienceSection(w io.Writer, section manifestsvc.AudienceSection) err
 }
 
 func renderMarkdownList(w io.Writer, lines []string) error {
+	ui := NewConsole(w)
+	width := 0
+	if ui.Width() > 0 {
+		width = ui.Width() - 2
+	}
 	for _, line := range lines {
-		if _, err := fmt.Fprintf(w, "- %s\n", line); err != nil {
+		wrapped := wrapPlainText(line, width)
+		if len(wrapped) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "- %s\n", wrapped[0]); err != nil {
 			return err
+		}
+		for _, continuation := range wrapped[1:] {
+			if _, err := fmt.Fprintf(w, "  %s\n", continuation); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

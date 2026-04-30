@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"gig/internal/scm"
+	"gig/internal/toolcheck"
 )
 
 const azureDevOpsResourceID = "499b84ac-1321-427f-aa17-267ca6975798"
@@ -86,7 +87,7 @@ func (s *Session) login(ctx context.Context) error {
 		return err
 	}
 	if _, err := exec.LookPath("az"); err != nil {
-		return fmt.Errorf("az executable not found: %w", err)
+		return missingAzureCLIError(err)
 	}
 
 	cmd := exec.CommandContext(ctx, "az", "login")
@@ -111,7 +112,7 @@ func (s *Session) runAzure(ctx context.Context, args ...string) (string, error) 
 		return s.run(ctx, args...)
 	}
 	if _, err := exec.LookPath("az"); err != nil {
-		return "", fmt.Errorf("az executable not found: %w", err)
+		return "", missingAzureCLIError(err)
 	}
 
 	cmd := exec.CommandContext(ctx, "az", args...)
@@ -125,6 +126,10 @@ func (s *Session) runAzure(ctx context.Context, args ...string) (string, error) 
 	}
 
 	return string(output), nil
+}
+
+func missingAzureCLIError(err error) error {
+	return toolcheck.MissingTool(toolcheck.AzureCLI(), err)
 }
 
 func (s *Session) ListRepositories(ctx context.Context, organization, project string) ([]scm.Repository, error) {

@@ -13,6 +13,7 @@ import (
 	githubscm "gig/internal/scm/github"
 	gitlabscm "gig/internal/scm/gitlab"
 	svnscm "gig/internal/scm/svn"
+	"gig/internal/toolcheck"
 )
 
 type adapterLookup interface {
@@ -97,23 +98,12 @@ func EnsureAccess(ctx context.Context, repositories []scm.Repository, stdin io.R
 			SCM:     string(provider),
 			Details: map[string]any{"repositories": append([]string(nil), roots...)},
 		}, nil)
-		switch provider {
-		case scm.TypeRemoteSVN:
-			if err := svnscm.NewSession(stdin, stdout, stderr).EnsureAuthenticated(ctx, roots...); err != nil {
-				diagnostics.Emit(ctx, "error", "provider.access", "provider access failed", diagnostics.Meta{
-					Repo: strings.Join(roots, ","),
-					SCM:  string(provider),
-				}, err)
-				return err
-			}
-		default:
-			if err := Login(ctx, provider, stdin, stdout, stderr); err != nil {
-				diagnostics.Emit(ctx, "error", "provider.access", "provider access failed", diagnostics.Meta{
-					Repo: strings.Join(roots, ","),
-					SCM:  string(provider),
-				}, err)
-				return err
-			}
+		if err := ProviderStatusError(ctx, provider, roots, stdin); err != nil {
+			diagnostics.Emit(ctx, "error", "provider.access", "provider access failed", diagnostics.Meta{
+				Repo: strings.Join(roots, ","),
+				SCM:  string(provider),
+			}, err)
+			return err
 		}
 		diagnostics.Emit(ctx, "info", "provider.access", "provider access ready", diagnostics.Meta{
 			Repo: strings.Join(roots, ","),
@@ -122,6 +112,48 @@ func EnsureAccess(ctx context.Context, repositories []scm.Repository, stdin io.R
 	}
 
 	return nil
+}
+
+func ProviderStatusError(ctx context.Context, provider scm.Type, roots []string, stdin io.Reader) error {
+	var err error
+	switch provider {
+	case scm.TypeGitHub:
+		err = githubscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
+	case scm.TypeGitLab:
+		err = gitlabscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
+	case scm.TypeBitbucket:
+		err = bitbucketscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
+	case scm.TypeAzureDevOps:
+		err = azuredevopsscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx)
+	case scm.TypeSVN, scm.TypeRemoteSVN:
+		err = svnscm.NewSession(stdin, io.Discard, io.Discard).Status(ctx, roots...)
+	default:
+		return fmt.Errorf("provider %q is not supported", provider)
+	}
+	if err == nil {
+		return nil
+	}
+	if toolcheck.IsMissingTool(err) {
+		return err
+	}
+	return toolcheck.AuthRequired(ProviderLabel(provider), strings.Join(roots, ","), providerTool(provider), err)
+}
+
+func providerTool(provider scm.Type) toolcheck.Tool {
+	switch provider {
+	case scm.TypeGitHub:
+		return toolcheck.GitHubCLI()
+	case scm.TypeGitLab:
+		return toolcheck.GitLabCLI()
+	case scm.TypeBitbucket:
+		return toolcheck.Bitbucket()
+	case scm.TypeAzureDevOps:
+		return toolcheck.AzureCLI()
+	case scm.TypeSVN, scm.TypeRemoteSVN:
+		return toolcheck.SVN()
+	default:
+		return toolcheck.Tool{LoginCommand: "gig login " + string(provider)}
+	}
 }
 
 func Login(ctx context.Context, provider scm.Type, stdin io.Reader, stdout, stderr io.Writer) error {

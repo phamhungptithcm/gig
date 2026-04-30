@@ -12,9 +12,10 @@ The current codebase already delivers:
 - release verification and risk hints
 - Markdown and JSON release packets
 - remote inspection for GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
+- current-checkout remote inference from Git `origin`
 - high-confidence protected-branch inference with explicit fallback when topology is ambiguous
 - local Git and SVN fallback flows
-- reusable workareas
+- reusable projects, with `workarea` kept as a compatibility alias
 - a guided `gig` front door
 - optional DeerFlow-backed ticket, release, and conflict briefings with saved follow-up sessions and richer release evidence
 - structured diagnostics for auth and topology support traces
@@ -26,8 +27,8 @@ The current codebase already delivers:
 Priority:
 
 - reduce friction from install to first useful audit
-- keep remote repo targeting ahead of local workspace assumptions
-- improve repository discovery and workarea reuse
+- let users run `gig ABC-123`, `gig verify ABC-123`, and `gig packet ABC-123` from inside the repo without typing `--repo`
+- improve repository discovery and project reuse
 
 ### 2. Stronger Remote Audit Depth
 
@@ -38,7 +39,7 @@ Priority:
 - make `safe`, `warning`, and `blocked` verdicts easier to trust at a glance
 - raise more providers from basic release evidence to deep release evidence
 
-### 3. Better Workarea And Console UX
+### 3. Better Project And Console UX
 
 Priority:
 

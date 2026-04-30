@@ -137,6 +137,41 @@ func TestAdapterProtectedBranchesFallsBackToBranchSelection(t *testing.T) {
 	}
 }
 
+func TestAdapterTicketEvidenceFindsPullRequestWithoutCommits(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := NewAdapter(parser)
+	adapter.baseURL = "https://bitbucket.example/api/2.0"
+	adapter.credentials = func(context.Context) (credentials, error) {
+		return credentials{Email: "demo@example.com", APIToken: "token-123"}, nil
+	}
+	adapter.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path + "?" + request.URL.RawQuery {
+		case "/api/2.0/repositories/acme/payments/pullrequests?q=title+~+%22ABC-123%22&pagelen=100&page=1":
+			return jsonResponse(`{"values":[{"id":42,"title":"ABC-123 payments fix","state":"OPEN","links":{"html":{"href":"https://bitbucket.org/acme/payments/pull-requests/42"}},"source":{"branch":{"name":"feature/abc-123"}},"destination":{"branch":{"name":"main"}}}]}`), nil
+		default:
+			t.Fatalf("unexpected request %s?%s", request.URL.Path, request.URL.RawQuery)
+			return nil, nil
+		}
+	})}
+
+	evidence, err := adapter.TicketEvidence(context.Background(), "bitbucket:acme/payments", "ABC-123")
+	if err != nil {
+		t.Fatalf("TicketEvidence() error = %v", err)
+	}
+	if len(evidence.PullRequests) != 1 {
+		t.Fatalf("len(PullRequests) = %d, want 1", len(evidence.PullRequests))
+	}
+	if evidence.PullRequests[0].ID != "#42" || evidence.PullRequests[0].State != "open" {
+		t.Fatalf("PullRequests[0] = %#v, want open PR #42", evidence.PullRequests[0])
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

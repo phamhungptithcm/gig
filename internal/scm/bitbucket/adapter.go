@@ -247,25 +247,12 @@ func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query sc
 		return scm.CompareResult{}, err
 	}
 
-	targetByHash := make(map[string]struct{}, len(targetCommits))
-	for _, commit := range targetCommits {
-		targetByHash[commit.Hash] = struct{}{}
-	}
-
-	missingCommits := make([]scm.Commit, 0, len(sourceCommits))
-	for _, commit := range sourceCommits {
-		if _, ok := targetByHash[commit.Hash]; ok {
-			continue
-		}
-		missingCommits = append(missingCommits, commit)
-	}
-
 	return scm.CompareResult{
 		FromBranch:     query.FromBranch,
 		ToBranch:       query.ToBranch,
 		SourceCommits:  sourceCommits,
 		TargetCommits:  targetCommits,
-		MissingCommits: missingCommits,
+		MissingCommits: scm.MissingCommitsByEvidence(sourceCommits, targetCommits),
 	}, nil
 }
 
@@ -565,6 +552,37 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 	}, nil
 }
 
+func (a *Adapter) TicketEvidence(ctx context.Context, repoRoot, ticketID string) (scm.ProviderEvidence, error) {
+	if err := a.parser.Validate(ticketID); err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	workspace, repo, err := parseWorkspaceRepo(repoRoot)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	pullRequests, err := a.pullRequestsForTicket(ctx, workspace, repo, ticketID)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	for _, item := range pullRequests {
+		id := fmt.Sprintf("#%d", item.ID)
+		pullRequestsByID[id] = scm.PullRequestEvidence{
+			ID:           id,
+			Title:        strings.TrimSpace(item.Title),
+			State:        normalizeBitbucketState(item.State),
+			SourceBranch: strings.TrimSpace(item.Source.Branch.Name),
+			TargetBranch: strings.TrimSpace(item.Destination.Branch.Name),
+			URL:          strings.TrimSpace(item.Links.HTML.Href),
+		}
+	}
+
+	return scm.ProviderEvidence{
+		PullRequests: mapPullRequestEvidence(pullRequestsByID),
+	}, nil
+}
+
 func (a *Adapter) searchBranchCommits(ctx context.Context, repoRoot, branch, ticketID string) ([]scm.Commit, error) {
 	workspace, repo, err := parseWorkspaceRepo(repoRoot)
 	if err != nil {
@@ -663,6 +681,44 @@ func (a *Adapter) pullRequestsForCommit(ctx context.Context, workspace, repo, ha
 		}
 	}
 
+	return results, nil
+}
+
+func (a *Adapter) pullRequestsForTicket(ctx context.Context, workspace, repo, ticketID string) ([]pullRequestPayload, error) {
+	results := make([]pullRequestPayload, 0)
+	pageSize := a.pageSize
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	query := url.QueryEscape(fmt.Sprintf(`title ~ "%s"`, strings.TrimSpace(ticketID)))
+	for page := 1; page <= 5; page++ {
+		endpoint := fmt.Sprintf("/repositories/%s/%s/pullrequests?q=%s&pagelen=%d&page=%d",
+			url.PathEscape(workspace),
+			url.PathEscape(repo),
+			query,
+			pageSize,
+			page,
+		)
+		var payload pullRequestsPayload
+		if err := a.api(ctx, endpoint, &payload); err != nil {
+			if isNotFound(err) {
+				break
+			}
+			return nil, err
+		}
+		if len(payload.Values) == 0 {
+			break
+		}
+		for _, item := range payload.Values {
+			if !a.parser.Matches(ticketID, item.Title) {
+				continue
+			}
+			results = append(results, item)
+		}
+		if len(payload.Values) < pageSize || strings.TrimSpace(payload.Next) == "" {
+			break
+		}
+	}
 	return results, nil
 }
 

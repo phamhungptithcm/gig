@@ -216,25 +216,12 @@ func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query sc
 		return scm.CompareResult{}, err
 	}
 
-	targetByHash := make(map[string]struct{}, len(targetCommits))
-	for _, commit := range targetCommits {
-		targetByHash[commit.Hash] = struct{}{}
-	}
-
-	missingCommits := make([]scm.Commit, 0, len(sourceCommits))
-	for _, commit := range sourceCommits {
-		if _, ok := targetByHash[commit.Hash]; ok {
-			continue
-		}
-		missingCommits = append(missingCommits, commit)
-	}
-
 	return scm.CompareResult{
 		FromBranch:     query.FromBranch,
 		ToBranch:       query.ToBranch,
 		SourceCommits:  sourceCommits,
 		TargetCommits:  targetCommits,
-		MissingCommits: missingCommits,
+		MissingCommits: scm.MissingCommitsByEvidence(sourceCommits, targetCommits),
 	}, nil
 }
 
@@ -478,6 +465,47 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 	}, nil
 }
 
+func (a *Adapter) TicketEvidence(ctx context.Context, repoRoot, ticketID string) (scm.ProviderEvidence, error) {
+	if err := a.parser.Validate(ticketID); err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	descriptor, err := parseDescriptor(repoRoot)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	issuesByID := map[string]scm.IssueEvidence{}
+	pullRequests, err := a.pullRequestsForTicket(ctx, descriptor, ticketID)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	for _, item := range pullRequests {
+		id := fmt.Sprintf("#%d", item.PullRequestID)
+		linkedIssues, err := a.linkedIssuesForPullRequest(ctx, descriptor, item.PullRequestID)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, issue := range linkedIssues {
+			issuesByID[strings.TrimSpace(issue.ID)] = issue
+		}
+		pullRequestsByID[id] = scm.PullRequestEvidence{
+			ID:           id,
+			Title:        strings.TrimSpace(item.Title),
+			State:        strings.TrimSpace(item.Status),
+			SourceBranch: normalizeRefName(item.SourceRefName),
+			TargetBranch: normalizeRefName(item.TargetRefName),
+			URL:          firstNonEmpty(pullRequestWebURL(descriptor, item.PullRequestID), strings.TrimSpace(item.URL)),
+			LinkedIssues: linkedIssues,
+		}
+	}
+
+	return scm.ProviderEvidence{
+		PullRequests: mapPullRequestEvidence(pullRequestsByID),
+		Issues:       mapIssueEvidence(issuesByID),
+	}, nil
+}
+
 func (a *Adapter) searchBranchCommits(ctx context.Context, repoRoot, branch, ticketID string) ([]scm.Commit, error) {
 	descriptor, err := parseDescriptor(repoRoot)
 	if err != nil {
@@ -552,6 +580,29 @@ func (a *Adapter) pullRequestsForBranch(ctx context.Context, descriptor descript
 		return nil, err
 	}
 	return payload.Value, nil
+}
+
+func (a *Adapter) pullRequestsForTicket(ctx context.Context, descriptor descriptor, ticketID string) ([]pullRequestPayload, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests?searchCriteria.status=all&$top=100&api-version=%s",
+		strings.TrimRight(a.baseURL, "/"),
+		url.PathEscape(descriptor.Organization),
+		url.PathEscape(descriptor.Project),
+		url.PathEscape(descriptor.Repository),
+		apiVersion,
+	)
+
+	var payload pullRequestsPayload
+	if err := a.api(ctx, endpoint, &payload); err != nil {
+		return nil, err
+	}
+	results := make([]pullRequestPayload, 0, len(payload.Value))
+	for _, item := range payload.Value {
+		if !a.parser.Matches(ticketID, item.Title) {
+			continue
+		}
+		results = append(results, item)
+	}
+	return results, nil
 }
 
 func (a *Adapter) deploymentsForCommits(ctx context.Context, descriptor descriptor, hashes map[string]struct{}) ([]scm.DeploymentEvidence, error) {

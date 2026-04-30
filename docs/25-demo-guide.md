@@ -23,8 +23,8 @@ A strong demo helps docs, portfolio pages, hiring conversations, and GitHub star
 What it shows:
 
 - `gig` opening the guided front door
-- the branded `googling in git` terminal layout
-- saving a remote-style workarea
+- the branded ticket-to-release terminal layout
+- saving a remote-style project
 - re-opening `gig` with current-project shortcuts
 - `gig assist doctor` readiness output
 - `gig assist setup` bootstrap output
@@ -74,9 +74,9 @@ For a 45 to 60 second product demo, keep the flow tight:
 
 1. show `gig` with no arguments
 2. show the command palette idea: `ABC-123` or `repo github:owner/name ABC-123`
-3. show one remote-style workarea being saved
+3. show one remote-style project being saved
 4. show `gig inspect` or the guided shortcut path
-5. close with `gig verify`, `gig manifest`, or `gig assist audit`
+5. close with `gig verify`, `gig packet`, or `gig assist audit`
 
 That sequence sells the strongest product story without drowning the viewer in command surface area.
 
@@ -91,7 +91,7 @@ Use the demo in these places:
 
 When writing the caption, lead with:
 
-- `gig = googling in git`
+- `gig = ticket-to-release confidence`
 - multi-repo ticket reconciliation
 - remote-first release audit
 - deterministic evidence with optional AI explanation

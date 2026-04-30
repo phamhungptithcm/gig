@@ -269,8 +269,8 @@ func TestAppRootHelpGroupsCommonFlows(t *testing.T) {
 	if !strings.Contains(stderr, "First-time users") || !strings.Contains(stderr, "Core workflows") || !strings.Contains(stderr, "Commands") {
 		t.Fatalf("stderr = %q, want grouped help sections", stderr)
 	}
-	if !strings.Contains(stderr, "gig ABC-123 --repo github:owner/name") {
-		t.Fatalf("stderr = %q, want remote-first example", stderr)
+	if !strings.Contains(stderr, "gig ABC-123") || !strings.Contains(stderr, "gig packet ABC-123") {
+		t.Fatalf("stderr = %q, want short remote-first examples", stderr)
 	}
 }
 
@@ -316,7 +316,7 @@ func TestAppWorkareaAddUseAndShow(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("workarea add exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Workarea payments") || !strings.Contains(stdout, "Current: yes") {
+	if !strings.Contains(stdout, "Project payments") || !strings.Contains(stdout, "Current: yes") {
 		t.Fatalf("stdout = %q, want saved workarea summary", stdout)
 	}
 
@@ -343,41 +343,113 @@ func TestAppWorkareaUseInteractive(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("workarea use exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Select a workarea:") || !strings.Contains(stdout, "Choice or filter text") || !strings.Contains(stdout, "Workarea billing") {
+	if !strings.Contains(stdout, "Select a project:") || !strings.Contains(stdout, "Choice or filter text") || !strings.Contains(stdout, "Project billing") {
 		t.Fatalf("stdout = %q, want interactive selection output", stdout)
 	}
 }
 
 func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile)
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "googling in git") || !strings.Contains(stdout, "status:  no project selected yet") || !strings.Contains(stdout, "input:   ticket, command, or Enter for picker") {
+	if !strings.Contains(stdout, "ticket-aware release audit") || !strings.Contains(stdout, "status  no project selected yet") {
 		t.Fatalf("stdout = %q, want branded hero state", stdout)
 	}
-	if !strings.Contains(stdout, "Startup status") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > repo github:owner/name ABC-123") {
-		t.Fatalf("stdout = %q, want startup status and prompt box", stdout)
+	if !strings.Contains(stdout, "docs   https://phamhungptithcm.github.io/gig") {
+		t.Fatalf("stdout = %q, want docs link in hero", stdout)
 	}
-	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
-		t.Fatalf("stdout = %q, want guided picker hint", stdout)
+	if !strings.Contains(stdout, "Suggested next") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > repo github:owner/name ABC-123") {
+		t.Fatalf("stdout = %q, want focused suggestions and prompt box", stdout)
 	}
-	if !strings.Contains(stdout, "gig remembers a successful remote repo as your current project automatically") {
-		t.Fatalf("stdout = %q, want implicit project-memory hint", stdout)
+	if !strings.Contains(stdout, "gig login") || !strings.Contains(stdout, "gig ABC-123 --repo github:owner/name") {
+		t.Fatalf("stdout = %q, want remote-first suggestions", stdout)
 	}
-	if !strings.Contains(stdout, "Ask gig to") || !strings.Contains(stdout, "Still local?") {
-		t.Fatalf("stdout = %q, want focused workflow sections", stdout)
+	if !strings.Contains(stdout, "Provider coverage") || !strings.Contains(stdout, "GitHub") || !strings.Contains(stdout, "deep release evidence") {
+		t.Fatalf("stdout = %q, want provider coverage summary", stdout)
 	}
-	if !strings.Contains(stdout, "gig assist doctor") {
-		t.Fatalf("stdout = %q, want DeerFlow doctor suggestion", stdout)
-	}
-	if !strings.Contains(stdout, "gig assist setup") {
-		t.Fatalf("stdout = %q, want DeerFlow setup suggestion", stdout)
+	if strings.Contains(stdout, "Optional AI sidecar") {
+		t.Fatalf("stdout = %q, want compact front door without optional AI reference section", stdout)
 	}
 	if strings.Contains(stdout, "Resume last") {
 		t.Fatalf("stdout = %q, want no resume section without saved assist session", stdout)
+	}
+}
+
+func TestAppFrontDoorDetectsCurrentGitRepository(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	chdir(t, repoRoot)
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stdout, "source  Git repository") || !strings.Contains(stdout, "branch") || !strings.Contains(stdout, "main") {
+		t.Fatalf("stdout = %q, want detected git repository and branch", stdout)
+	}
+	if !strings.Contains(stdout, "gig ABC-123 --path .") || !strings.Contains(stdout, "gig project add local --path . --from <source> --to <target> --use") || !strings.Contains(stdout, "ask gig > local ABC-123") {
+		t.Fatalf("stdout = %q, want local path suggestions", stdout)
+	}
+}
+
+func TestAppFrontDoorUsesDetectedGitRepositoryForTicketInput(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "payments fix\n")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 fix payments")
+	chdir(t, repoRoot)
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "ABC-123\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door ticket input exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "source  Git repository") || !strings.Contains(stdout, "ABC-123 fix payments") {
+		t.Fatalf("stdout = %q, want local inspect from detected git repo", stdout)
+	}
+}
+
+func TestAppFrontDoorUsesDetectedGitRepositoryForLocalVerify(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "staging")
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "payments fix\n")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 fix payments")
+	chdir(t, repoRoot)
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "verify ABC-123\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door local verify exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if strings.Contains(stderr, "both --from and --to branches are required") {
+		t.Fatalf("stderr = %q, want front door to provide detected local topology", stderr)
+	}
+	if !strings.Contains(stdout, "staging -> main") || !strings.Contains(stdout, "ABC-123") {
+		t.Fatalf("stdout = %q, want local verification output with inferred staging -> main", stdout)
+	}
+}
+
+func TestAppVerifyPromptsForTicketAndPromotionBranches(t *testing.T) {
+	workspace := createPromotionFixture(t)
+
+	stdout, stderr, exitCode := runAppWithInput(t, "ABC-123\ntest\nmain\n", "verify", "--path", workspace)
+	if exitCode != 0 {
+		t.Fatalf("verify prompt exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "Ticket ID:") || !strings.Contains(stderr, "Source branch:") || !strings.Contains(stderr, "Target branch:") {
+		t.Fatalf("stderr = %q, want ticket and promotion prompts", stderr)
+	}
+	if !strings.Contains(stdout, "test -> main") || !strings.Contains(stdout, "ABC-123") {
+		t.Fatalf("stdout = %q, want verification output from prompted values", stdout)
 	}
 }
 
@@ -425,6 +497,7 @@ func TestAppFrontDoorQuickStartInspectsRepoTarget(t *testing.T) {
 
 func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	if _, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "workarea", "add", "payments", "--repo", "github:acme/payments", "--from", "staging", "--to", "main", "--use"); exitCode != 0 {
 		t.Fatalf("seed workarea exit code = %d, stderr = %q", exitCode, stderr)
@@ -434,17 +507,14 @@ func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") || !strings.Contains(stdout, "input:   ticket or command palette") {
+	if !strings.Contains(stdout, "scope   project payments") || !strings.Contains(stdout, "target  github:acme/payments") || !strings.Contains(stdout, "branch  staging") || !strings.Contains(stdout, "release main") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
 	}
-	if !strings.Contains(stdout, "Startup status") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > ABC-123") {
+	if !strings.Contains(stdout, "Suggested next") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > ABC-123") {
 		t.Fatalf("stdout = %q, want current-project prompt box", stdout)
 	}
-	if !strings.Contains(stdout, "Quick commands") || !strings.Contains(stdout, "gig manifest ABC-123") {
+	if !strings.Contains(stdout, "gig packet ABC-123") {
 		t.Fatalf("stdout = %q, want guided core workflows", stdout)
-	}
-	if !strings.Contains(stdout, "Run `gig` in a real terminal and use ↑/↓ then Enter") {
-		t.Fatalf("stdout = %q, want interactive action hint", stdout)
 	}
 	if strings.Contains(stdout, "Resume last") {
 		t.Fatalf("stdout = %q, want no resume section without saved assist session", stdout)
@@ -496,7 +566,7 @@ func TestAppFrontDoorShowsScopedResumeSession(t *testing.T) {
 	if !strings.Contains(stdout, "Audit ABC-123 on github:acme/payments") {
 		t.Fatalf("stdout = %q, want payments resume summary", stdout)
 	}
-	if !strings.Contains(stdout, "Scope: workarea payments") {
+	if !strings.Contains(stdout, "Scope: project payments") {
 		t.Fatalf("stdout = %q, want workarea resume scope", stdout)
 	}
 	if !strings.Contains(stdout, "gig resume") || !strings.Contains(stdout, "ask gig > what is still blocked?") {
@@ -549,7 +619,7 @@ func TestAppResumeUsesCurrentWorkareaSession(t *testing.T) {
 	if !strings.Contains(stdout, "Resume last audit: Audit ABC-123 on github:acme/payments") {
 		t.Fatalf("stdout = %q, want current workarea resume summary", stdout)
 	}
-	if !strings.Contains(stdout, "Scope: workarea payments") {
+	if !strings.Contains(stdout, "Scope: project payments") {
 		t.Fatalf("stdout = %q, want payments workarea scope", stdout)
 	}
 	if strings.Contains(stdout, "BILL-42") {
@@ -559,6 +629,7 @@ func TestAppResumeUsesCurrentWorkareaSession(t *testing.T) {
 
 func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndInspects(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -586,13 +657,14 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndInspects(t *testing.T) {
 	if !strings.Contains(stdout, "github:acme/payments") || !strings.Contains(stdout, "Provider evidence") {
 		t.Fatalf("stdout = %q, want inspect output", stdout)
 	}
-	if !strings.Contains(stderr, "Using workarea payments (github:acme/payments)") {
+	if !strings.Contains(stderr, "Using project payments (github:acme/payments)") {
 		t.Fatalf("stderr = %q, want workarea hint", stderr)
 	}
 }
 
 func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndVerifies(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -622,13 +694,14 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndVerifies(t *testing.T) {
 	if !strings.Contains(stdout, "Promotion") || !strings.Contains(stdout, "staging -> main") || !strings.Contains(stdout, "SAFE") {
 		t.Fatalf("stdout = %q, want verification output", stdout)
 	}
-	if !strings.Contains(stderr, "Using workarea payments (github:acme/payments)") {
+	if !strings.Contains(stderr, "Using project payments (github:acme/payments)") {
 		t.Fatalf("stderr = %q, want workarea hint", stderr)
 	}
 }
 
 func TestAppInspectUsesCurrentRemoteWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -650,8 +723,19 @@ func TestAppInspectUsesCurrentRemoteWorkarea(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("inspect via workarea exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stderr, "Using workarea payments (github:acme/payments)") {
+	if !strings.Contains(stderr, "Using project payments (github:acme/payments)") {
 		t.Fatalf("stderr = %q, want workarea selection hint", stderr)
+	}
+	if !strings.Contains(stdout, "github:acme/payments") || !strings.Contains(stdout, "Provider evidence") {
+		t.Fatalf("stdout = %q, want remote inspect output", stdout)
+	}
+
+	stdout, stderr, exitCode = runAppWithInputAndWorkareaFile(t, "", workareaFile, "inspect", "ABC-123", "--project", "payments")
+	if exitCode != 0 {
+		t.Fatalf("inspect via project flag exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "Using project payments (github:acme/payments)") {
+		t.Fatalf("stderr = %q, want project selection hint", stderr)
 	}
 	if !strings.Contains(stdout, "github:acme/payments") || !strings.Contains(stdout, "Provider evidence") {
 		t.Fatalf("stdout = %q, want remote inspect output", stdout)
@@ -677,7 +761,7 @@ func TestAppWorkareaAddDiscoversGitHubRepository(t *testing.T) {
 	if !strings.Contains(stderr, "Starting gh auth login") {
 		t.Fatalf("stderr = %q, want auto-login message", stderr)
 	}
-	if !strings.Contains(stdout, "Select a GitHub repository:") || !strings.Contains(stdout, "Workarea payments") || !strings.Contains(stdout, "Target: github:acme/payments") {
+	if !strings.Contains(stdout, "Select a GitHub repository:") || !strings.Contains(stdout, "Project payments") || !strings.Contains(stdout, "Target: github:acme/payments") {
 		t.Fatalf("stdout = %q, want discovered github workarea", stdout)
 	}
 }
@@ -727,7 +811,7 @@ func TestAppWorkareaAddDiscoveryFiltersRepositoryChoices(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("workarea add discovery exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Choice or filter text") || !strings.Contains(stdout, "Workarea payments") || !strings.Contains(stdout, "Target: github:acme/payments") {
+	if !strings.Contains(stdout, "Choice or filter text") || !strings.Contains(stdout, "Project payments") || !strings.Contains(stdout, "Target: github:acme/payments") {
 		t.Fatalf("stdout = %q, want filtered repository selection output", stdout)
 	}
 }
@@ -764,7 +848,7 @@ func TestAppWorkareaAddDiscoversAzureRepository(t *testing.T) {
 	if !strings.Contains(stderr, "Starting az login") {
 		t.Fatalf("stderr = %q, want auto-login message", stderr)
 	}
-	if !strings.Contains(stdout, "Azure DevOps organization:") || !strings.Contains(stdout, "Workarea release-audit") || !strings.Contains(stdout, "Target: azure-devops:acme/Payments/release-audit") {
+	if !strings.Contains(stdout, "Azure DevOps organization:") || !strings.Contains(stdout, "Project release-audit") || !strings.Contains(stdout, "Target: azure-devops:acme/Payments/release-audit") {
 		t.Fatalf("stdout = %q, want discovered azure workarea", stdout)
 	}
 }
@@ -820,6 +904,38 @@ func TestAppDoctorWithoutConfigUsesInferenceAndBuiltIns(t *testing.T) {
 	}
 	if strings.Contains(stdout, "No gig config file was found") {
 		t.Fatalf("stdout = %q, want no config-missing warning", stdout)
+	}
+}
+
+func TestAppSetupPrintsMissingToolInstallCommands(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	stdout, stderr, exitCode := runApp(t, "setup", "--provider", "github")
+	if exitCode != 0 {
+		t.Fatalf("setup exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("setup stderr = %q, want empty", stderr)
+	}
+	for _, want := range []string{"Missing required tools: git, gh", "Install commands", "gig setup --provider github --install-missing"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout = %q, want %q", stdout, want)
+		}
+	}
+}
+
+func TestAppSetupInstallMissingRequiresConfirmation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	stdout, stderr, exitCode := runAppWithInput(t, "no\n", "setup", "--provider", "github", "--install-missing")
+	if exitCode != 0 {
+		t.Fatalf("setup install exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "Type yes to continue") {
+		t.Fatalf("stderr = %q, want confirmation prompt", stderr)
+	}
+	if !strings.Contains(stdout, "Setup cancelled. No tools installed.") {
+		t.Fatalf("stdout = %q, want cancellation message", stdout)
 	}
 }
 
@@ -1780,7 +1896,7 @@ func TestAppManifestGenerateReleaseJSONGolden(t *testing.T) {
 	assertGolden(t, "manifest_generate_release_json.golden", normalizeOutput(stdout, workspace))
 }
 
-func TestAppInspectRemoteGitHubAutoLogin(t *testing.T) {
+func TestAppInspectRemoteGitHubRequiresLogin(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "gh-auth-state")
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -1797,21 +1913,18 @@ func TestAppInspectRemoteGitHubAutoLogin(t *testing.T) {
 	t.Setenv("FAKE_GH_REQUIRE_LOGIN", "1")
 
 	stdout, stderr, exitCode := runApp(t, "inspect", "ABC-123", "--repo", "github:acme/payments")
-	if exitCode != 0 {
+	if exitCode != 1 {
 		t.Fatalf("inspect remote exit code = %d, stderr = %q", exitCode, stderr)
 	}
 
-	if !strings.Contains(stderr, "Starting gh auth login") {
-		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stdout, "github:acme/payments") {
-		t.Fatalf("stdout = %q, want remote repository label", stdout)
+	if strings.Contains(stderr, "Starting gh auth login") {
+		t.Fatalf("stderr = %q, want no auto-login from inspect", stderr)
 	}
-	if !strings.Contains(stdout, "Declared dependencies") {
-		t.Fatalf("stdout = %q, want declared dependency output", stdout)
-	}
-	if !strings.Contains(stdout, "Provider evidence") || !strings.Contains(stdout, "#42") || !strings.Contains(stdout, "production") {
-		t.Fatalf("stdout = %q, want provider evidence output", stdout)
+	if !strings.Contains(stderr, "GitHub login is required") || !strings.Contains(stderr, "gig login github") {
+		t.Fatalf("stderr = %q, want exact login guidance", stderr)
 	}
 }
 
@@ -1840,6 +1953,49 @@ func TestAppVerifyRemoteGitHubInfersProtectedBranches(t *testing.T) {
 	}
 }
 
+func TestAppInspectAutoDetectsRemoteFromCurrentCheckout(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "staging")
+	runGit(t, repoRoot, "remote", "add", "origin", "git@github.com:acme/payments.git")
+	chdir(t, repoRoot)
+
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments": `{"default_branch":"main"}`,
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1":      `[{"name":"staging","protected":true},{"name":"main","protected":true}]`,
+		"repos/acme/payments/commits?sha=staging&per_page=100&page=1":          `[{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"}}]`,
+		"repos/acme/payments/commits?sha=main&per_page=100&page=1":             `[]`,
+		"repos/acme/payments/commits/abc123456789":                             `{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"},"files":[{"filename":"service/app.txt"}]}`,
+		"repos/acme/payments/commits/abc123456789/pulls?per_page=100&page=1":   `[{"number":42,"title":"ABC-123 payments release","state":"closed","merged_at":"2026-04-10T01:02:03Z","html_url":"https://github.com/acme/payments/pull/42","head":{"ref":"staging"},"base":{"ref":"main"}}]`,
+		"repos/acme/payments/deployments?sha=abc123456789&per_page=100&page=1": `[]`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "inspect", "ABC-123")
+	if exitCode != 0 {
+		t.Fatalf("inspect auto remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "Using current checkout remote github:acme/payments on staging") {
+		t.Fatalf("stderr = %q, want current checkout remote hint", stderr)
+	}
+	if !strings.Contains(stdout, "Scope         github:acme/payments") {
+		t.Fatalf("stdout = %q, want remote scope label", stdout)
+	}
+
+	store := workarea.NewStoreAt(workareaFile)
+	current, ok, err := store.Current()
+	if err != nil {
+		t.Fatalf("Current() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Current() ok = false, want true")
+	}
+	if current.Name != "payments" || current.RepoTarget != "github:acme/payments" {
+		t.Fatalf("current = %#v, want auto-saved payments remote", current)
+	}
+}
+
 func TestAppVerifyRemoteGitHubRejectsAmbiguousProtectedBranches(t *testing.T) {
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments/branches?protected=true&per_page=100&page=1": `[{"name":"release/2026.04","protected":true},{"name":"rc/2026.04","protected":true},{"name":"main","protected":true}]`,
@@ -1856,13 +2012,42 @@ func TestAppVerifyRemoteGitHubRejectsAmbiguousProtectedBranches(t *testing.T) {
 	if !strings.Contains(stderr, "gig is not sure about the protected branch topology") {
 		t.Fatalf("stderr = %q, want explicit topology warning", stderr)
 	}
-	if !strings.Contains(stderr, "Pass --envs and explicit --from/--to") {
-		t.Fatalf("stderr = %q, want fallback guidance", stderr)
+	if !strings.Contains(stderr, "gig verify ABC-123 --repo github:acme/payments --from <source> --to <target>") {
+		t.Fatalf("stderr = %q, want copyable fallback guidance", stderr)
+	}
+}
+
+func TestAppVerifyRemoteGitHubUsesExplicitBranchesForAmbiguousProtectedBranches(t *testing.T) {
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments": `{"default_branch":"main"}`,
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1":       `[{"name":"release/2026.04","protected":true},{"name":"rc/2026.04","protected":true},{"name":"main","protected":true}]`,
+		"repos/acme/payments/branches/release%2F2026.04":                        `{"name":"release/2026.04","protected":true}`,
+		"repos/acme/payments/branches/rc%2F2026.04":                             `{"name":"rc/2026.04","protected":true}`,
+		"repos/acme/payments/branches/main":                                     `{"name":"main","protected":true}`,
+		"repos/acme/payments/commits?sha=release%2F2026.04&per_page=100&page=1": `[{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"}}]`,
+		"repos/acme/payments/commits?sha=rc%2F2026.04&per_page=100&page=1":      `[]`,
+		"repos/acme/payments/commits?sha=main&per_page=100&page=1":              `[]`,
+		"repos/acme/payments/commits/abc123456789":                              `{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"},"files":[{"filename":"service/app.txt"}]}`,
+		"repos/acme/payments/commits/abc123456789/pulls?per_page=100&page=1":    `[]`,
+		"repos/acme/payments/deployments?sha=abc123456789&per_page=100&page=1":  `[]`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runApp(t, "verify", "--ticket", "ABC-123", "--repo", "github:acme/payments", "--from", "release/2026.04", "--to", "main")
+	if exitCode != 0 {
+		t.Fatalf("verify remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "release/2026.04 -> main") {
+		t.Fatalf("stdout = %q, want explicit ambiguous promotion path", stdout)
+	}
+	if strings.Contains(stderr, "Pass --envs") {
+		t.Fatalf("stderr = %q, want no mandatory env mapping guidance", stderr)
 	}
 }
 
 func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -1889,7 +2074,7 @@ func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	if !strings.Contains(stdout, "Promotion") || !strings.Contains(stdout, "staging -> main") {
 		t.Fatalf("stdout = %q, want inferred verification", stdout)
 	}
-	if !strings.Contains(stderr, "Using workarea payments (github:acme/payments)") {
+	if !strings.Contains(stderr, "Using project payments (github:acme/payments)") {
 		t.Fatalf("stderr = %q, want workarea hint", stderr)
 	}
 
@@ -1912,13 +2097,14 @@ func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Promotion") || !strings.Contains(stdout, "staging -> main") {
+	if !strings.Contains(stdout, "promotion staging -> main") || !strings.Contains(stdout, "branch  staging") || !strings.Contains(stdout, "release main") {
 		t.Fatalf("stdout = %q, want remembered promotion on front door", stdout)
 	}
 }
 
 func TestAppInspectRemoteRepoAutoCreatesCurrentProject(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -1959,7 +2145,7 @@ func TestAppInspectRemoteRepoAutoCreatesCurrentProject(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "Ready now") || !strings.Contains(stdout, "Workarea") || !strings.Contains(stdout, "payments") {
+	if !strings.Contains(stdout, "scope   project payments") || !strings.Contains(stdout, "target  github:acme/payments") {
 		t.Fatalf("stdout = %q, want current project summary", stdout)
 	}
 }
@@ -1991,7 +2177,7 @@ func TestAppFrontDoorPaletteRepoCommandInspects(t *testing.T) {
 	}
 }
 
-func TestAppInspectRemoteGitLabAutoLogin(t *testing.T) {
+func TestAppInspectRemoteGitLabRequiresLogin(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "glab-auth-state")
 	glabDir := installFakeGitLabCLI(t, map[string]string{
 		"projects/acme%2Fplatform%2Fpayments":                                                              `{"default_branch":"main"}`,
@@ -2010,21 +2196,18 @@ func TestAppInspectRemoteGitLabAutoLogin(t *testing.T) {
 	t.Setenv("FAKE_GLAB_REQUIRE_LOGIN", "1")
 
 	stdout, stderr, exitCode := runApp(t, "inspect", "ABC-123", "--repo", "gitlab:acme/platform/payments")
-	if exitCode != 0 {
+	if exitCode != 1 {
 		t.Fatalf("inspect remote exit code = %d, stderr = %q", exitCode, stderr)
 	}
 
-	if !strings.Contains(stderr, "Starting glab auth login") {
-		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stdout, "gitlab:acme/platform/payments") {
-		t.Fatalf("stdout = %q, want remote repository label", stdout)
+	if strings.Contains(stderr, "Starting glab auth login") {
+		t.Fatalf("stderr = %q, want no auto-login from inspect", stderr)
 	}
-	if !strings.Contains(stdout, "Declared dependencies") {
-		t.Fatalf("stdout = %q, want declared dependency output", stdout)
-	}
-	if !strings.Contains(stdout, "Provider evidence") || !strings.Contains(stdout, "!42") || !strings.Contains(stdout, "production") {
-		t.Fatalf("stdout = %q, want provider evidence output", stdout)
+	if !strings.Contains(stderr, "GitLab login is required") || !strings.Contains(stderr, "gig login gitlab") {
+		t.Fatalf("stderr = %q, want exact login guidance", stderr)
 	}
 }
 
@@ -2055,7 +2238,7 @@ func TestAppVerifyRemoteGitLabInfersProtectedBranches(t *testing.T) {
 	}
 }
 
-func TestAppInspectRemoteAzureDevOpsAutoLogin(t *testing.T) {
+func TestAppInspectRemoteAzureDevOpsRequiresLogin(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "az-auth-state")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path + "?" + r.URL.RawQuery {
@@ -2103,21 +2286,18 @@ func TestAppInspectRemoteAzureDevOpsAutoLogin(t *testing.T) {
 	t.Setenv("GIG_AZURE_DEVOPS_BASE_URL", server.URL)
 
 	stdout, stderr, exitCode := runApp(t, "inspect", "ABC-123", "--repo", "azure-devops:acme/Payments/release-audit")
-	if exitCode != 0 {
+	if exitCode != 1 {
 		t.Fatalf("inspect remote exit code = %d, stderr = %q", exitCode, stderr)
 	}
 
-	if !strings.Contains(stderr, "Starting az login") {
-		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stdout, "azure-devops:acme/Payments/release-audit") {
-		t.Fatalf("stdout = %q, want remote repository label", stdout)
+	if strings.Contains(stderr, "Starting az login") {
+		t.Fatalf("stderr = %q, want no auto-login from inspect", stderr)
 	}
-	if !strings.Contains(stdout, "Declared dependencies") {
-		t.Fatalf("stdout = %q, want declared dependency output", stdout)
-	}
-	if !strings.Contains(stdout, "Provider evidence") || !strings.Contains(stdout, "#42") || !strings.Contains(stdout, "production") {
-		t.Fatalf("stdout = %q, want provider evidence output", stdout)
+	if !strings.Contains(stderr, "Azure DevOps login is required") || !strings.Contains(stderr, "gig login azure-devops") {
+		t.Fatalf("stderr = %q, want exact login guidance", stderr)
 	}
 }
 
@@ -2181,7 +2361,7 @@ func TestAppVerifyRemoteAzureDevOpsInfersProtectedBranches(t *testing.T) {
 	}
 }
 
-func TestAppInspectRemoteSVNAutoLogin(t *testing.T) {
+func TestAppInspectRemoteSVNRequiresLogin(t *testing.T) {
 	authFile := filepath.Join(t.TempDir(), "svn-auth.json")
 	svnDir := installFakeSVNCLI(t, map[string]string{
 		"info --xml https://svn.example.com/repos/app/branches/staging/HorizonCRM": `<info><entry><url>https://svn.example.com/repos/app/branches/staging/HorizonCRM</url><relative-url>^/branches/staging/HorizonCRM</relative-url><repository><root>https://svn.example.com/repos/app</root></repository></entry></info>`,
@@ -2199,21 +2379,18 @@ Depends-On: XYZ-456</msg></logentry></log>`,
 	t.Setenv("GIG_SVN_AUTH_FILE", authFile)
 
 	stdout, stderr, exitCode := runAppWithInput(t, "\ndemo\nsecret\n", "inspect", "ABC-123", "--repo", "svn:https://svn.example.com/repos/app/branches/staging/HorizonCRM")
-	if exitCode != 0 {
+	if exitCode != 1 {
 		t.Fatalf("inspect remote svn exit code = %d, stderr = %q", exitCode, stderr)
 	}
 
-	if !strings.Contains(stderr, "Starting interactive SVN login") {
-		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stdout, "svn:https://svn.example.com/repos/app/branches/staging/HorizonCRM") {
-		t.Fatalf("stdout = %q, want remote svn repository label", stdout)
+	if strings.Contains(stderr, "Starting interactive SVN login") {
+		t.Fatalf("stderr = %q, want no auto-login from inspect", stderr)
 	}
-	if !strings.Contains(stdout, "Declared dependencies") {
-		t.Fatalf("stdout = %q, want declared dependency output", stdout)
-	}
-	if _, err := os.Stat(authFile); err != nil {
-		t.Fatalf("Stat(%q) error = %v", authFile, err)
+	if !strings.Contains(stderr, "SVN login is required") || !strings.Contains(stderr, "gig login svn") || !strings.Contains(stderr, "GIG_SVN_USERNAME") {
+		t.Fatalf("stderr = %q, want exact login guidance", stderr)
 	}
 }
 
@@ -2282,7 +2459,106 @@ func TestAppLoginBitbucketInteractive(t *testing.T) {
 	}
 }
 
-func TestAppInspectRemoteBitbucketAutoLogin(t *testing.T) {
+func TestAppLoginInfersGitHubFromCurrentGitRemote(t *testing.T) {
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "remote", "add", "origin", "git@github.com:acme/payments.git")
+	chdir(t, repoRoot)
+
+	ghDir := installFakeGitHubCLI(t, nil)
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runAppWithInput(t, "", "login")
+	if exitCode != 0 {
+		t.Fatalf("login exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if strings.Contains(stdout, "Pick a provider:") {
+		t.Fatalf("stdout = %q, want inferred provider without picker", stdout)
+	}
+	if !strings.Contains(stderr, "Detected GitHub from current checkout.") {
+		t.Fatalf("stderr = %q, want inferred provider message", stderr)
+	}
+	if !strings.Contains(stdout, "GitHub authentication is ready.") {
+		t.Fatalf("stdout = %q, want ready message", stdout)
+	}
+}
+
+func TestAppLoginInfersSVNFromCurrentCheckout(t *testing.T) {
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".svn"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.svn) error = %v", err)
+	}
+	chdir(t, repoRoot)
+
+	authFile := filepath.Join(t.TempDir(), "svn-auth.json")
+	svnDir := installFakeSVNCLI(t, nil)
+	t.Setenv("PATH", svnDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIG_SVN_AUTH_FILE", authFile)
+
+	stdout, stderr, exitCode := runAppWithInput(t, "\ndemo\nsecret\n", "login")
+	if exitCode != 0 {
+		t.Fatalf("login exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if strings.Contains(stdout, "Pick a provider:") {
+		t.Fatalf("stdout = %q, want inferred provider without picker", stdout)
+	}
+	if !strings.Contains(stderr, "Detected SVN from current checkout.") {
+		t.Fatalf("stderr = %q, want inferred provider message", stderr)
+	}
+	if !strings.Contains(stdout, "SVN authentication is ready.") {
+		t.Fatalf("stdout = %q, want ready message", stdout)
+	}
+}
+
+func TestAppLoginPromptsForProviderSelection(t *testing.T) {
+	chdir(t, t.TempDir())
+
+	authFile := filepath.Join(t.TempDir(), "svn-auth.json")
+	svnDir := installFakeSVNCLI(t, nil)
+	t.Setenv("PATH", svnDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIG_SVN_AUTH_FILE", authFile)
+
+	stdout, stderr, exitCode := runAppWithInput(t, "svn\n\ndemo\nsecret\n", "login")
+	if exitCode != 0 {
+		t.Fatalf("login exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stdout, "Pick a provider:") {
+		t.Fatalf("stdout = %q, want provider picker", stdout)
+	}
+	if !strings.Contains(stdout, "SVN authentication is ready.") {
+		t.Fatalf("stdout = %q, want ready message", stdout)
+	}
+	if !strings.Contains(stderr, "SVN repository URL") || !strings.Contains(stderr, "SVN username:") || !strings.Contains(stderr, "SVN password:") {
+		t.Fatalf("stderr = %q, want svn prompts", stderr)
+	}
+	if _, err := os.Stat(authFile); err != nil {
+		t.Fatalf("Stat(%q) error = %v", authFile, err)
+	}
+}
+
+func TestAppFrontDoorLoginPromptsForProviderSelection(t *testing.T) {
+	chdir(t, t.TempDir())
+
+	glabDir := installFakeGitLabCLI(t, nil)
+	t.Setenv("PATH", glabDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runAppWithInput(t, "login\ngitlab\n")
+	if exitCode != 0 {
+		t.Fatalf("front door login exit code = %d, stderr = %q", exitCode, stderr)
+	}
+
+	if !strings.Contains(stdout, "Pick a provider:") {
+		t.Fatalf("stdout = %q, want provider picker", stdout)
+	}
+	if !strings.Contains(stdout, "GitLab authentication is ready.") {
+		t.Fatalf("stdout = %q, want gitlab ready message", stdout)
+	}
+}
+
+func TestAppInspectRemoteBitbucketRequiresLogin(t *testing.T) {
 	authFile := filepath.Join(t.TempDir(), "bitbucket-auth.json")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()
@@ -2331,21 +2607,18 @@ func TestAppInspectRemoteBitbucketAutoLogin(t *testing.T) {
 	t.Setenv("GIG_BITBUCKET_BASE_URL", server.URL)
 
 	stdout, stderr, exitCode := runAppWithInput(t, "demo@example.com\nsecret-token\n", "inspect", "ABC-123", "--repo", "bitbucket:acme/payments")
-	if exitCode != 0 {
+	if exitCode != 1 {
 		t.Fatalf("inspect remote exit code = %d, stderr = %q", exitCode, stderr)
 	}
 
-	if !strings.Contains(stderr, "Starting interactive API token login") {
-		t.Fatalf("stderr = %q, want auto-login message", stderr)
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stdout, "bitbucket:acme/payments") {
-		t.Fatalf("stdout = %q, want remote repository label", stdout)
+	if strings.Contains(stderr, "Starting interactive API token login") {
+		t.Fatalf("stderr = %q, want no auto-login from inspect", stderr)
 	}
-	if !strings.Contains(stdout, "Declared dependencies") {
-		t.Fatalf("stdout = %q, want declared dependency output", stdout)
-	}
-	if !strings.Contains(stdout, "Provider evidence") || !strings.Contains(stdout, "#42") || !strings.Contains(stdout, "production") {
-		t.Fatalf("stdout = %q, want provider evidence output", stdout)
+	if !strings.Contains(stderr, "Bitbucket login is required") || !strings.Contains(stderr, "gig login bitbucket") || !strings.Contains(stderr, "GIG_BITBUCKET_EMAIL") {
+		t.Fatalf("stderr = %q, want exact login guidance", stderr)
 	}
 }
 
@@ -2507,7 +2780,7 @@ func TestAppSubcommandHelpReturnsZero(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("scan --help stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "Usage: gig scan --path .") {
+	if !strings.Contains(stderr, "Usage") || !strings.Contains(stderr, "gig repos --path .") || !strings.Contains(stderr, "scan  gig scan --path .") {
 		t.Fatalf("scan --help stderr = %q, want usage", stderr)
 	}
 }
@@ -2522,7 +2795,7 @@ func TestAppUpdateHelpReturnsZero(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("update --help stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "Usage: gig update") {
+	if !strings.Contains(stderr, "Usage") || !strings.Contains(stderr, "gig update") {
 		t.Fatalf("update --help stderr = %q, want usage", stderr)
 	}
 }
@@ -2540,25 +2813,25 @@ func TestAppRootHelpReturnsZero(t *testing.T) {
 	if !strings.Contains(stderr, "gig [ticket-id | command] [flags]") {
 		t.Fatalf("--help stderr = %q, want root usage", stderr)
 	}
-	if !strings.Contains(stderr, "scan        Find repositories under a local path") {
-		t.Fatalf("--help stderr = %q, want command summary", stderr)
+	if !strings.Contains(stderr, "repos     Find repositories under a local path") {
+		t.Fatalf("--help stderr = %q, want repos command summary", stderr)
 	}
-	if !strings.Contains(stderr, "workarea    Remember a project so later commands stay short") {
-		t.Fatalf("--help stderr = %q, want workarea command summary", stderr)
+	if !strings.Contains(stderr, "project   Remember a project so later commands stay short") {
+		t.Fatalf("--help stderr = %q, want project command summary", stderr)
 	}
-	if !strings.Contains(stderr, "manifest    Generate a release packet for QA and release review") {
-		t.Fatalf("--help stderr = %q, want manifest command summary", stderr)
+	if !strings.Contains(stderr, "packet    Generate a release packet for QA and release review") {
+		t.Fatalf("--help stderr = %q, want packet command summary", stderr)
 	}
-	if !strings.Contains(stderr, "snapshot    Save a repeatable ticket baseline for audit and re-check") {
+	if !strings.Contains(stderr, "snapshot") || !strings.Contains(stderr, "Save a repeatable ticket baseline for audit and re-check") {
 		t.Fatalf("--help stderr = %q, want snapshot command summary", stderr)
 	}
-	if !strings.Contains(stderr, "doctor      Check inferred topology, overrides, and repo health") {
+	if !strings.Contains(stderr, "doctor") || !strings.Contains(stderr, "Check inferred topology, overrides, and repo health") {
 		t.Fatalf("--help stderr = %q, want doctor command summary", stderr)
 	}
-	if !strings.Contains(stderr, "resolve     Inspect or resolve active Git merge conflicts") {
+	if !strings.Contains(stderr, "resolve") || !strings.Contains(stderr, "Inspect or resolve active Git merge conflicts") {
 		t.Fatalf("--help stderr = %q, want resolve command summary", stderr)
 	}
-	if !strings.Contains(stderr, "update      Install the latest release or a specific version") {
+	if !strings.Contains(stderr, "update") || !strings.Contains(stderr, "Install the latest release or a specific version") {
 		t.Fatalf("--help stderr = %q, want update command summary", stderr)
 	}
 	if !strings.Contains(stderr, "GitHub") || !strings.Contains(stderr, "deep release evidence: PRs, deployments, checks, linked issues, releases") {
@@ -2626,6 +2899,23 @@ func runAppWithInputAndWorkareaFile(t *testing.T, input, workareaFile string, ar
 
 	exitCode = app.Run(context.Background(), args)
 	return out.String(), errOut.String(), exitCode
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(%q) error = %v", dir, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatalf("restore cwd %q: %v", previous, err)
+		}
+	})
 }
 
 func assertGolden(t *testing.T, name, got string) {
@@ -2733,6 +3023,10 @@ func installFakeGitHubCLI(t *testing.T, endpoints map[string]string) string {
 		script.WriteString("  fi\n")
 	}
 	script.WriteString("  case \"$endpoint\" in\n")
+	script.WriteString("    repos/*/branches\\?protected=true\\&per_page=100\\&page=1)\n")
+	script.WriteString("      printf '%s\\n' '[{\"name\":\"staging\",\"protected\":true},{\"name\":\"main\",\"protected\":true}]'\n")
+	script.WriteString("      exit 0\n")
+	script.WriteString("      ;;\n")
 	script.WriteString("    repos/*/releases\\?per_page=1\\&page=1)\n")
 	script.WriteString("      printf '%s\\n' '[]'\n")
 	script.WriteString("      exit 0\n")
