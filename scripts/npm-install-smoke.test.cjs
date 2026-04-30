@@ -38,28 +38,32 @@ let serverProcess;
 let releaseBaseURL;
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd || repoRoot,
-    env: {
-      ...process.env,
+	const result = spawnSync(command, args, {
+		cwd: options.cwd || repoRoot,
+		env: {
+			...process.env,
       ...options.env
     },
     encoding: "utf8",
     shell: options.shell || false,
-    stdio: options.stdio || "pipe"
-  });
+		stdio: options.stdio || "pipe"
+	});
+	const detail = [result.stdout, result.stderr, result.error && result.error.message]
+		.filter(Boolean)
+		.join("\n")
+		.trim();
 
-  if (options.expectStatus !== undefined) {
-    assert.equal(
-      result.status,
-      options.expectStatus,
-      [result.stdout, result.stderr].filter(Boolean).join("\n").trim()
-    );
-  } else if (result.status !== 0) {
-    assert.fail([result.stdout, result.stderr].filter(Boolean).join("\n").trim());
-  }
+	if (options.expectStatus !== undefined) {
+		assert.equal(
+			result.status,
+			options.expectStatus,
+			detail
+		);
+	} else if (result.status !== 0) {
+		assert.fail(detail === "" ? `${command} exited with status ${result.status}` : detail);
+	}
 
-  return result;
+	return result;
 }
 
 async function createCurrentPlatformReleaseFixture(rootDir) {
@@ -176,7 +180,11 @@ server.listen(0, host, () => {
 }
 
 function globalPrefixBinDir(prefixDir) {
-  return isWindows ? prefixDir : path.join(prefixDir, "bin");
+	return isWindows ? prefixDir : path.join(prefixDir, "bin");
+}
+
+function commandShim(dir, name) {
+	return path.join(dir, isWindows ? `${name}.cmd` : name);
 }
 
 function globalPackageRoot(prefixDir) {
@@ -233,7 +241,7 @@ test.after(async () => {
   }
 });
 
-test("local npm install can run gig through npx", async () => {
+test("local npm install can run gig from the local shim path", async () => {
   const projectDir = path.join(fixtureRoot, "local-project");
   await fsp.mkdir(projectDir, { recursive: true });
   await fsp.writeFile(
@@ -260,9 +268,14 @@ test("local npm install can run gig through npx", async () => {
   assert.equal(receipt.packageVersion, npmVersion);
   assert.equal(receipt.assetName, assetName);
 
+  const localBinDir = path.join(projectDir, "node_modules", ".bin");
+  const localGig = commandShim(localBinDir, "gig");
+  assert.equal(fs.existsSync(localGig), true);
+
   assertSmokeCommands((args) =>
-    run("npx", ["--no-install", "gig", ...args], {
-      cwd: projectDir
+    run(localGig, args, {
+      cwd: projectDir,
+      shell: isWindows
     })
   );
 });
@@ -289,8 +302,11 @@ test("global npm install can run gig from the shim path", async () => {
   assert.equal(receipt.packageVersion, npmVersion);
   assert.equal(receipt.assetName, assetName);
 
+  const globalGig = commandShim(globalPrefixBinDir(prefixDir), "gig");
+  assert.equal(fs.existsSync(globalGig), true);
+
   assertSmokeCommands((args) =>
-    run("gig", args, {
+    run(globalGig, args, {
       env: {
         PATH: `${globalPrefixBinDir(prefixDir)}${path.delimiter}${process.env.PATH || ""}`
       },
