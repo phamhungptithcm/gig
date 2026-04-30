@@ -76,6 +76,34 @@ jobs:
           node scripts/prepare-npm-package.cjs v2026.04.13 dist/npm-package
           npm pack --dry-run ./dist/npm-package
 
+  packaging-smoke:
+    name: Packaging Smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Run npm install smoke tests
+        run: node --test scripts/npm-install-smoke.test.cjs
+
   docs:
     runs-on: ubuntu-latest
 

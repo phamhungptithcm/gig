@@ -53,6 +53,22 @@ gig update
 
 If your team already distributes CLIs through npm and `@hunpeolabs/gig` is available in that environment, npm remains a compatibility channel. The direct installer stays the default product path.
 
+Use npm in one of these two ways:
+
+```bash
+npm install -g @hunpeolabs/gig
+gig --help
+```
+
+or without a global install:
+
+```bash
+npx @hunpeolabs/gig --help
+```
+
+`npm install @hunpeolabs/gig` adds `gig` to the current project only.
+Run it with `npx gig` from that project, or install it globally with `npm install -g`.
+
 ## Fastest Path
 
 ```bash

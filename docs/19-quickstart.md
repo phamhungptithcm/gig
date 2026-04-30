@@ -25,6 +25,22 @@ gig version
 Refresh later with `gig update`.
 Use npm only when your environment already distributes `gig` that way.
 
+For npm installs:
+
+```bash
+npm install -g @hunpeolabs/gig
+gig --help
+```
+
+or:
+
+```bash
+npx @hunpeolabs/gig --help
+```
+
+`npm install @hunpeolabs/gig` installs `gig` into the current project only.
+Use `npx gig` from that project, or add `-g` when you want a global `gig` command.
+
 ## 2. Open The Front Door
 
 ```bash

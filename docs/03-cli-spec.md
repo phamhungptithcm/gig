@@ -151,6 +151,22 @@ Use this to refresh the installed CLI.
 The direct installer is the canonical path.
 Use npm only when your environment already distributes `gig` that way.
 
+When you use npm:
+
+```bash
+npm install -g @hunpeolabs/gig
+gig --help
+```
+
+or run it on demand:
+
+```bash
+npx @hunpeolabs/gig --help
+```
+
+`npm install @hunpeolabs/gig` installs the package into the current project only.
+Use `npx gig` from that project, or use `npm install -g` when you want a global `gig` command.
+
 ## Release-Day Path
 
 For repeated release work, the main flow should feel like this:
