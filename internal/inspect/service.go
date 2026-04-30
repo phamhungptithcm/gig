@@ -120,6 +120,16 @@ func (s *Service) InspectInRepositories(ctx context.Context, repositories []scm.
 			return nil, err
 		}
 		if len(commits) == 0 {
+			providerEvidence, err := s.loadTicketProviderEvidence(ctx, adapter, repository.Root, ticketID)
+			if err != nil {
+				return nil, err
+			}
+			if providerEvidence != nil {
+				results = append(results, RepositoryInspection{
+					Repository:       repository,
+					ProviderEvidence: providerEvidence,
+				})
+			}
 			continue
 		}
 
@@ -277,6 +287,22 @@ func (s *Service) loadProviderEvidence(ctx context.Context, adapter scm.Adapter,
 		Commits:  commits,
 		Branches: collectBranches(commits),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if evidence.IsZero() {
+		return nil, nil
+	}
+	return &evidence, nil
+}
+
+func (s *Service) loadTicketProviderEvidence(ctx context.Context, adapter scm.Adapter, repoRoot, ticketID string) (*scm.ProviderEvidence, error) {
+	evidenceProvider, ok := adapter.(scm.TicketEvidenceProvider)
+	if !ok {
+		return nil, nil
+	}
+
+	evidence, err := evidenceProvider.TicketEvidence(ctx, repoRoot, ticketID)
 	if err != nil {
 		return nil, err
 	}

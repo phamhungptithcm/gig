@@ -8,7 +8,7 @@
 
 The product story is simple:
 
-`gig = googling in git`
+`gig = ticket-to-release confidence`
 
 That question gets expensive when:
 
@@ -20,13 +20,13 @@ That question gets expensive when:
 
 - `inspect` collects the full ticket story across repositories and branches
 - `verify` returns a `safe`, `warning`, or `blocked` verdict
-- `manifest` exports a release packet in Markdown or JSON
-- `gig` opens a guided terminal front door so first-time users can pick a repo with ↑/↓ and Enter instead of memorizing flags
+- `packet` exports a release packet in Markdown or JSON
+- `gig` opens a guided terminal front door that detects the current Git/SVN checkout before asking for a remote provider
 
 Why teams adopt it:
 
 - remote-first: works directly against GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
-- zero-config-first: start with `--repo`, add `gig.yaml` only when inference needs help
+- zero-config-first: from inside a Git checkout, start without `--repo`; add `gig.yaml` only when inference needs help
 - auditable by default: repository evidence first, optional AI explanation second
 
 ## Install
@@ -73,15 +73,22 @@ Run it with `npx gig` from that project, or install it globally with `npm instal
 
 ```bash
 gig
-gig login github
-gig ABC-123 --repo github:owner/name
-gig verify ABC-123 --repo github:owner/name
-gig manifest ABC-123 --repo github:owner/name
+gig setup --provider github
+gig login
+gig ABC-123
+gig verify ABC-123
+gig packet ABC-123
 ```
 
-If you are brand new, start with `gig` first and use `↑/↓` then `Enter` to pick a GitHub repo, a saved project, or the current folder.
-If you already know the repo target, jump straight to `inspect`.
-You can also type straight into the front door, for example: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `manifest ABC-123`, or `repo github:owner/name ABC-123`.
+If you are brand new, start with `gig` first. It detects the current Git/SVN checkout when you are already inside one, otherwise use `↑/↓` then `Enter` to pick a remote repo, a saved project, or the current folder.
+If you type `gig login` without a provider, `gig` now asks which provider you want to use.
+If you are not inside a checkout, pass a repo target once or save a project.
+You can also type straight into the front door, for example: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `packet ABC-123`, or `repo github:owner/name ABC-123`.
+Read-only remote commands do not start interactive login; they print the exact `gig login <provider>` command when auth or a provider CLI is missing.
+Use `gig setup --provider <name>` to check required local tools first. Add `--install-missing` only when you want `gig` to ask before running install commands.
+
+Remote targets are optional when the current Git `origin` points at a supported provider.
+They remain useful for CI, scripts, and audits from outside the checkout.
 
 Remote target forms:
 
@@ -105,11 +112,12 @@ Local fallback is still available:
 
 ```bash
 gig ABC-123 --path .
-gig verify ABC-123 --path .
+gig verify ABC-123 --path . --from staging --to main
+gig project add local --path . --from staging --to main --use
 ```
 
 If protected branches are ambiguous, `gig` stops and says it is not sure instead of guessing a promotion path.
-In that case, pass explicit `--envs`, `--from`, and `--to`, or save them in a workarea.
+In an interactive terminal, it can ask for the source and target branch. In scripts, pass explicit `--from` and `--to`, or save them in a project. Add `--envs` only when the environment order itself needs an override.
 
 ## Demo And Docs
 
@@ -137,13 +145,13 @@ That file captures structured auth and topology events so teams can trace provid
 When the DeerFlow sidecar is enabled, `gig` can keep the last AI brief alive:
 
 ```bash
-gig assist audit --ticket ABC-123 --repo github:owner/name
+gig explain ABC-123
 gig resume
 gig ask "what is still blocked?"
 gig ask "what changed since the last brief?"
 ```
 
-`gig` resumes the last DeerFlow thread for the current workarea or remembered repo target, so returning to the same project brings the right brief back instead of one global AI state.
+`gig` resumes the last DeerFlow thread for the current project or remembered repo target, so returning to the same project brings the right brief back instead of one global AI state.
 
 ## Benchmark
 

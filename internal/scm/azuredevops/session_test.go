@@ -3,6 +3,7 @@ package azuredevops
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -43,5 +44,21 @@ func TestSessionListRepositoriesRequiresOrganization(t *testing.T) {
 	session := NewSession(nil, nil, nil)
 	if _, err := session.ListRepositories(context.Background(), "", ""); err == nil {
 		t.Fatal("ListRepositories() error = nil, want organization validation error")
+	}
+}
+
+func TestSessionMissingCLIShowsInstallHint(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	err := NewSession(nil, nil, nil).Status(context.Background())
+	if err == nil {
+		t.Fatal("Status() error = nil, want missing az error")
+	}
+
+	message := err.Error()
+	for _, want := range []string{"az executable not found", "winget install --id Microsoft.AzureCLI", "brew install azure-cli", "gig login azure-devops"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error = %q, want %q", message, want)
+		}
 	}
 }

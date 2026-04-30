@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gig/internal/scm"
+	"gig/internal/toolcheck"
 )
 
 type Session struct {
@@ -64,7 +65,7 @@ func (s *Session) login(ctx context.Context) error {
 		return err
 	}
 	if _, err := exec.LookPath("glab"); err != nil {
-		return fmt.Errorf("glab executable not found: %w", err)
+		return missingGitLabCLIError(err)
 	}
 
 	cmd := exec.CommandContext(ctx, "glab", "auth", "login", "--hostname", "gitlab.com", "--web")
@@ -89,7 +90,7 @@ func (s *Session) runGLab(ctx context.Context, args ...string) (string, error) {
 		return s.run(ctx, args...)
 	}
 	if _, err := exec.LookPath("glab"); err != nil {
-		return "", fmt.Errorf("glab executable not found: %w", err)
+		return "", missingGitLabCLIError(err)
 	}
 
 	cmd := exec.CommandContext(ctx, "glab", args...)
@@ -103,6 +104,10 @@ func (s *Session) runGLab(ctx context.Context, args ...string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+func missingGitLabCLIError(err error) error {
+	return toolcheck.MissingTool(toolcheck.GitLabCLI(), err)
 }
 
 func (s *Session) ListRepositories(ctx context.Context, namespace string) ([]scm.Repository, error) {

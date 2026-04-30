@@ -175,6 +175,35 @@ func TestAdapterProviderEvidenceIncludesLinkedIssuesAndLatestRelease(t *testing.
 	}
 }
 
+func TestAdapterTicketEvidenceFindsMergeRequestWithoutCommits(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := NewAdapter(parser)
+	adapter.run = fakeGitLabRunner(map[string]string{
+		"projects/acme%2Fpayments/merge_requests?scope=all&state=all&search=ABC-123&per_page=100&page=1": `[{"iid":42,"title":"ABC-123 payments fix","description":"Closes #77","state":"opened","web_url":"https://gitlab.com/acme/payments/-/merge_requests/42","source_branch":"feature/abc-123","target_branch":"main"}]`,
+		"projects/acme%2Fpayments/issues/77": `{"iid":77,"title":"Prod validation","state":"opened","web_url":"https://gitlab.com/acme/payments/-/issues/77","labels":["release"]}`,
+	})
+
+	evidence, err := adapter.TicketEvidence(context.Background(), "gitlab:acme/payments", "ABC-123")
+	if err != nil {
+		t.Fatalf("TicketEvidence() error = %v", err)
+	}
+	if len(evidence.PullRequests) != 1 {
+		t.Fatalf("len(PullRequests) = %d, want 1", len(evidence.PullRequests))
+	}
+	if evidence.PullRequests[0].ID != "!42" || evidence.PullRequests[0].SourceBranch != "feature/abc-123" {
+		t.Fatalf("PullRequests[0] = %#v, want merge request !42", evidence.PullRequests[0])
+	}
+	if len(evidence.Issues) != 1 || evidence.Issues[0].ID != "#77" {
+		t.Fatalf("Issues = %#v, want linked issue #77", evidence.Issues)
+	}
+}
+
 func fakeGitLabRunner(outputs map[string]string) commandRunner {
 	return func(_ context.Context, args ...string) (string, error) {
 		if len(args) == 0 {

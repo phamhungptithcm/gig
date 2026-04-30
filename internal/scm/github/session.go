@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gig/internal/scm"
+	"gig/internal/toolcheck"
 )
 
 type Session struct {
@@ -64,7 +65,7 @@ func (s *Session) login(ctx context.Context) error {
 		return err
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
-		return fmt.Errorf("gh executable not found: %w", err)
+		return missingGitHubCLIError(err)
 	}
 
 	cmd := exec.CommandContext(ctx, "gh", "auth", "login", "--hostname", "github.com", "--web")
@@ -89,7 +90,7 @@ func (s *Session) runGH(ctx context.Context, args ...string) (string, error) {
 		return s.run(ctx, args...)
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
-		return "", fmt.Errorf("gh executable not found: %w", err)
+		return "", missingGitHubCLIError(err)
 	}
 
 	cmd := exec.CommandContext(ctx, "gh", args...)
@@ -103,6 +104,10 @@ func (s *Session) runGH(ctx context.Context, args ...string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+func missingGitHubCLIError(err error) error {
+	return toolcheck.MissingTool(toolcheck.GitHubCLI(), err)
 }
 
 func (s *Session) ListRepositories(ctx context.Context, owner string) ([]scm.Repository, error) {

@@ -29,9 +29,7 @@ func printHelpHeading(w io.Writer, title, subtitle string) {
 func printHelpUsage(w io.Writer, lines ...string) {
 	ui := newHelpPrinter(w)
 	_ = ui.Section("Usage")
-	for _, line := range lines {
-		_, _ = fmt.Fprintf(w, "  %s\n", line)
-	}
+	_ = ui.Lines("  ", lines...)
 	_ = ui.Blank()
 }
 
@@ -68,6 +66,23 @@ func printUsageFailure(w io.Writer, command, summary string, examples ...string)
 	}
 	_ = ui.Section("Try next")
 	_ = ui.Commands(examples...)
+	_ = ui.Blank()
+}
+
+func printSuggestions(w io.Writer, suggestions []output.FrontDoorSuggestion) {
+	if len(suggestions) == 0 {
+		return
+	}
+	ui := newHelpPrinter(w)
+	_ = ui.Section("Try next")
+	for _, suggestion := range suggestions {
+		if suggestion.Command != "" {
+			_ = ui.Commands(suggestion.Command)
+		}
+		if suggestion.Note != "" {
+			_ = ui.Note(suggestion.Note)
+		}
+	}
 	_ = ui.Blank()
 }
 

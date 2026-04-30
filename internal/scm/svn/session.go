@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"gig/internal/toolcheck"
+
 	"golang.org/x/term"
 )
 
@@ -61,6 +63,20 @@ func (s *Session) EnsureAuthenticated(ctx context.Context, repositoryRoots ...st
 		return fmt.Errorf("svn authentication is still unavailable after login: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Session) Status(ctx context.Context, repositoryRoots ...string) error {
+	if err := s.ensureExecutable(); err != nil {
+		return err
+	}
+	creds, err := s.Credentials(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.validateAgainstRepository(ctx, creds, repositoryRoots...); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -209,9 +225,13 @@ func (s *Session) ensureExecutable() error {
 		return nil
 	}
 	if _, err := exec.LookPath("svn"); err != nil {
-		return fmt.Errorf("svn executable not found: %w", err)
+		return missingSVNCLIError(err)
 	}
 	return nil
+}
+
+func missingSVNCLIError(err error) error {
+	return toolcheck.MissingTool(toolcheck.SVN(), err)
 }
 
 func (s *Session) runSVN(ctx context.Context, args ...string) (string, error) {
@@ -226,7 +246,7 @@ func (s *Session) runSVN(ctx context.Context, args ...string) (string, error) {
 		if message == "" {
 			message = err.Error()
 		}
-		return "", fmt.Errorf("svn %s failed: %s", strings.Join(args, " "), message)
+		return "", fmt.Errorf("svn %s failed: %s", redactCommandArgs(args), message)
 	}
 
 	return string(output), nil

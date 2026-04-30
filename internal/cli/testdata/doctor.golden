@@ -7,6 +7,10 @@ Covered repositories: 1
 Missing catalog entries: 0
 Missing environment refs: 1
 
+Dependencies
+git  found, required - Git is installed.
+  Provider tools are optional until you use that provider; run gig setup --provider <name> to check one.
+
 Workspace Findings
   - [warning] Configured repository entry apps/missing-ui was not found under the selected workspace.
 

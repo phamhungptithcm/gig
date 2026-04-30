@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	doctorsvc "gig/internal/doctor"
+	"gig/internal/toolcheck"
 )
 
 func RenderDoctor(w io.Writer, report doctorsvc.Report) error {
@@ -38,6 +39,12 @@ func RenderDoctor(w io.Writer, report doctorsvc.Report) error {
 	}
 	if _, err := fmt.Fprintf(w, "Missing environment refs: %d\n\n", report.Summary.MissingEnvironmentRefs); err != nil {
 		return err
+	}
+
+	if len(report.DependencyChecks) > 0 {
+		if err := renderDoctorDependencies(w, report.DependencyChecks); err != nil {
+			return err
+		}
 	}
 
 	if len(report.Findings) > 0 {
@@ -136,4 +143,56 @@ func RenderDoctor(w io.Writer, report doctorsvc.Report) error {
 	}
 
 	return nil
+}
+
+func renderDoctorDependencies(w io.Writer, checks []toolcheck.Status) error {
+	ui := NewConsole(w)
+	if err := ui.Section("Dependencies"); err != nil {
+		return err
+	}
+	rows := make([]KeyValue, 0, len(checks))
+	for _, check := range checks {
+		if !check.Required {
+			continue
+		}
+		state := "optional"
+		if check.Required {
+			state = "required"
+		}
+		status := "missing"
+		if check.Installed {
+			status = "found"
+		}
+		rows = append(rows, KeyValue{
+			Label: check.Name,
+			Value: fmt.Sprintf("%s, %s - %s", status, state, check.Summary),
+		})
+	}
+	if len(rows) == 0 {
+		return ui.Bullets("No required system tools were detected for this workspace.")
+	}
+	if err := ui.Rows(rows...); err != nil {
+		return err
+	}
+	if err := ui.Note("Provider tools are optional until you use that provider; run gig setup --provider <name> to check one."); err != nil {
+		return err
+	}
+
+	missing := toolcheck.MissingRequired(checks)
+	if len(missing) > 0 {
+		if err := ui.NestedSection("Install required tools"); err != nil {
+			return err
+		}
+		commands := make([]string, 0, len(missing))
+		for _, check := range missing {
+			if install, ok := toolcheck.PreferredInstallCommand(check); ok {
+				commands = append(commands, install.Command)
+			}
+		}
+		if err := ui.Commands(commands...); err != nil {
+			return err
+		}
+	}
+
+	return ui.Blank()
 }

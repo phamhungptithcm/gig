@@ -10,14 +10,14 @@ import (
 
 func RenderWorkareaList(w io.Writer, current string, workareas []workarea.Definition) error {
 	if len(workareas) == 0 {
-		if _, err := fmt.Fprintln(w, "No workareas saved yet."); err != nil {
+		if _, err := fmt.Fprintln(w, "No projects saved yet."); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintln(w, "Try: gig workarea add payments --repo github:acme/payments --use")
+		_, err := fmt.Fprintln(w, "Try: gig project add payments --repo github:acme/payments --use")
 		return err
 	}
 
-	if _, err := fmt.Fprintln(w, "Workareas"); err != nil {
+	if _, err := fmt.Fprintln(w, "Projects"); err != nil {
 		return err
 	}
 	for index, definition := range workareas {
@@ -59,7 +59,7 @@ func RenderWorkareaList(w io.Writer, current string, workareas []workarea.Defini
 }
 
 func RenderWorkareaDetail(w io.Writer, definition workarea.Definition, scopePath string, current bool) error {
-	if _, err := fmt.Fprintf(w, "Workarea %s\n", definition.Name); err != nil {
+	if _, err := fmt.Fprintf(w, "Project %s\n", definition.Name); err != nil {
 		return err
 	}
 	if current {

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	assistsvc "gig/internal/assistant"
@@ -35,6 +37,7 @@ import (
 	snapshotsvc "gig/internal/snapshot"
 	"gig/internal/sourcecontrol"
 	ticketsvc "gig/internal/ticket"
+	"gig/internal/toolcheck"
 )
 
 const usageExitCode = 2
@@ -88,9 +91,9 @@ func (a *App) Run(ctx context.Context, args []string) int {
 
 	var exitCode int
 	switch args[0] {
-	case "scan":
+	case "scan", "repos":
 		exitCode = a.runScan(ctx, args[1:])
-	case "find":
+	case "find", "commits":
 		exitCode = a.runFind(ctx, args[1:])
 	case "diff":
 		exitCode = a.runDiff(ctx, args[1:])
@@ -98,16 +101,20 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		exitCode = a.runInspect(ctx, args[1:])
 	case "env":
 		exitCode = a.runEnv(ctx, args[1:])
+	case "where":
+		exitCode = a.runEnvStatus(ctx, args[1:])
 	case "plan":
 		exitCode = a.runPlan(ctx, args[1:])
 	case "verify":
 		exitCode = a.runVerify(ctx, args[1:])
-	case "manifest":
+	case "manifest", "packet":
 		exitCode = a.runManifest(ctx, args[1:])
 	case "snapshot":
 		exitCode = a.runSnapshot(ctx, args[1:])
 	case "assist":
 		exitCode = a.runAssist(ctx, args[1:])
+	case "explain":
+		exitCode = a.runAssistAudit(ctx, args[1:])
 	case "ask":
 		exitCode = a.runAsk(ctx, args[1:])
 	case "resume":
@@ -118,6 +125,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		exitCode = a.runLogin(ctx, args[1:])
 	case "doctor":
 		exitCode = a.runDoctor(ctx, args[1:])
+	case "setup":
+		exitCode = a.runSetup(ctx, args[1:])
 	case "resolve":
 		exitCode = a.runResolve(ctx, args[1:])
 	case "update":
@@ -184,7 +193,7 @@ func (a *App) runScan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runFind(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-workarea", "--workarea")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-workarea", "--workarea", "-project", "--project")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		a.printFindUsage()
@@ -203,19 +212,22 @@ func (a *App) runFind(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	if err := fs.Parse(args); err != nil {
 		a.printFindUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 1 {
+	promptReader := a.commandPromptReader()
+	ticketID, err := a.resolveRequiredTicketArg(promptReader, "find", fs.Args())
+	if err != nil {
 		fmt.Fprintln(a.stderr, "find requires exactly one <ticket-id> argument")
 		a.printFindUsage()
 		return usageExitCode
 	}
 
-	ticketID := normalizeTicketID(fs.Arg(0))
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "find failed: %v\n", err)
 		return 1
@@ -274,6 +286,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 		a.printDiffUsage()
 		return usageExitCode
 	}
+	promptReader := a.commandPromptReader()
 
 	resolvedPath, err := normalizeCLIPath(*path)
 	if err != nil {
@@ -282,6 +295,30 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 	}
 
 	normalizedTicketID := normalizeTicketID(*ticketID)
+	if normalizedTicketID == "" && promptReader != nil {
+		promptedTicketID, err := a.promptForRequiredCommandValue(promptReader, "Ticket ID")
+		if err != nil {
+			fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
+			return usageExitCode
+		}
+		normalizedTicketID = normalizeTicketID(promptedTicketID)
+	}
+	if strings.TrimSpace(*fromBranch) == "" && promptReader != nil {
+		promptedFromBranch, err := a.promptForRequiredCommandValue(promptReader, "Source branch")
+		if err != nil {
+			fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
+			return usageExitCode
+		}
+		*fromBranch = promptedFromBranch
+	}
+	if strings.TrimSpace(*toBranch) == "" && promptReader != nil {
+		promptedToBranch, err := a.promptForRequiredCommandValue(promptReader, "Target branch")
+		if err != nil {
+			fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
+			return usageExitCode
+		}
+		*toBranch = promptedToBranch
+	}
 	runtime, err := newCommandRuntime(resolvedPath, *configPath)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "diff failed: %v\n", err)
@@ -309,7 +346,7 @@ func (a *App) runDiff(ctx context.Context, args []string) int {
 }
 
 func (a *App) runInspect(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-workarea", "--workarea")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-repo", "--repo", "-workarea", "--workarea", "-project", "--project")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		a.printInspectUsage()
@@ -328,19 +365,22 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	if err := fs.Parse(args); err != nil {
 		a.printInspectUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 1 {
+	promptReader := a.commandPromptReader()
+	ticketID, err := a.resolveRequiredTicketArg(promptReader, "inspect", fs.Args())
+	if err != nil {
 		printUsageFailure(a.stderr, "inspect", "provide exactly one ticket ID.", "gig inspect ABC-123", "gig ABC-123 --repo github:owner/name")
 		a.printInspectUsage()
 		return usageExitCode
 	}
 
-	ticketID := normalizeTicketID(fs.Arg(0))
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
@@ -392,7 +432,7 @@ func (a *App) runEnv(ctx context.Context, args []string) int {
 }
 
 func (a *App) runEnvStatus(ctx context.Context, args []string) int {
-	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs", "-repo", "--repo", "-workarea", "--workarea")
+	reorderedArgs, err := reorderArgsWithSinglePositional(args, "-path", "--path", "-config", "--config", "-envs", "--envs", "-repo", "--repo", "-workarea", "--workarea", "-project", "--project")
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		a.printEnvStatusUsage()
@@ -412,18 +452,22 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	if err := fs.Parse(args); err != nil {
 		a.printEnvStatusUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 1 {
+	promptReader := a.commandPromptReader()
+	ticketID, err := a.resolveRequiredTicketArg(promptReader, "env status", fs.Args())
+	if err != nil {
 		fmt.Fprintln(a.stderr, "env status requires exactly one <ticket-id> argument")
 		a.printEnvStatusUsage()
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
@@ -443,14 +487,13 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
-	environments, err := resolveOperationEnvironments(ctx, runtime, repositories, defaults.EnvironmentSpec)
+	environments, err := a.resolveOperationEnvironmentsWithPrompt(ctx, promptReader, runtime, repositories, defaults.EnvironmentSpec)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return usageExitCode
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, "", "")
 
-	ticketID := normalizeTicketID(fs.Arg(0))
 	results, err := runtime.inspect.EnvironmentStatusInRepositories(ctx, repositories, ticketID, environments)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
@@ -470,7 +513,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		"-path", "--path",
 		"-config", "--config",
 		"-repo", "--repo",
-		"-workarea", "--workarea",
+		"-workarea", "--workarea", "-project", "--project",
 		"-release", "--release",
 		"-ticket", "--ticket",
 		"-ticket-file", "--ticket-file",
@@ -497,7 +540,9 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	releaseID := fs.String("release", "", "Release ID to plan from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to plan")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -505,6 +550,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
 
 	if err := fs.Parse(args); err != nil {
 		a.printPlanUsage()
@@ -523,19 +569,21 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		}
 		*ticketID = normalizeTicketID(fs.Arg(0))
 	}
+	promptReader := a.commandPromptReader()
 
-	outputFormat, err := parseOutputFormat(*format)
+	outputFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	defaults = applyScopePromotionDefaults(scope, defaults)
 	a.announceWorkareaSelection(scope, defaults)
 
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
@@ -604,7 +652,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+	ticketIDs, resolvedTicketFile, err := a.resolveTicketIDsWithPrompt(promptReader, *ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return usageExitCode
@@ -616,9 +664,9 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := a.resolveOperationContextWithPrompt(ctx, promptReader, "plan", runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		a.printOperationFailure("plan", err, ticketIDs, scope, defaults, repositories)
 		return usageExitCode
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
@@ -686,7 +734,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		"-path", "--path",
 		"-config", "--config",
 		"-repo", "--repo",
-		"-workarea", "--workarea",
+		"-workarea", "--workarea", "-project", "--project",
 		"-release", "--release",
 		"-ticket", "--ticket",
 		"-ticket-file", "--ticket-file",
@@ -713,7 +761,9 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	releaseID := fs.String("release", "", "Release ID to verify from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to verify")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -721,6 +771,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
 
 	if err := fs.Parse(args); err != nil {
 		a.printVerifyUsage()
@@ -739,19 +790,21 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		}
 		*ticketID = normalizeTicketID(fs.Arg(0))
 	}
+	promptReader := a.commandPromptReader()
 
-	outputFormat, err := parseOutputFormat(*format)
+	outputFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	defaults = applyScopePromotionDefaults(scope, defaults)
 	a.announceWorkareaSelection(scope, defaults)
 
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
@@ -823,7 +876,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+	ticketIDs, resolvedTicketFile, err := a.resolveTicketIDsWithPrompt(promptReader, *ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
@@ -835,9 +888,9 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := a.resolveOperationContextWithPrompt(ctx, promptReader, "verify", runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		a.printOperationFailure("verify", err, ticketIDs, scope, defaults, repositories)
 		return usageExitCode
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
@@ -901,9 +954,12 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 }
 
 func (a *App) runManifest(ctx context.Context, args []string) int {
-	if len(args) == 0 || hasHelpFlag(args) {
+	if hasHelpFlag(args) {
 		a.printManifestUsage()
 		return 0
+	}
+	if len(args) == 0 {
+		return a.runManifestGenerate(ctx, args)
 	}
 
 	switch args[0] {
@@ -919,7 +975,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		"-path", "--path",
 		"-config", "--config",
 		"-repo", "--repo",
-		"-workarea", "--workarea",
+		"-workarea", "--workarea", "-project", "--project",
 		"-release", "--release",
 		"-ticket", "--ticket",
 		"-ticket-file", "--ticket-file",
@@ -946,7 +1002,9 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	releaseID := fs.String("release", "", "Release ID to package from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to package")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line")
@@ -954,37 +1012,40 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	format := fs.String("format", string(manifestFormatMarkdown), "Output format: markdown or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
 
 	if err := fs.Parse(args); err != nil {
 		a.printManifestGenerateUsage()
 		return usageExitCode
 	}
 	if fs.NArg() > 1 {
-		printUsageFailure(a.stderr, "manifest", "provide at most one positional ticket ID.", "gig manifest ABC-123", "gig manifest --release rel-2026-04-09 --path .")
+		printUsageFailure(a.stderr, "packet", "provide at most one positional ticket ID.", "gig packet ABC-123", "gig packet --release rel-2026-04-09 --path .")
 		a.printManifestGenerateUsage()
 		return usageExitCode
 	}
 	if fs.NArg() == 1 {
 		if strings.TrimSpace(*releaseID) != "" || strings.TrimSpace(*ticketID) != "" || strings.TrimSpace(*ticketFile) != "" {
-			printUsageFailure(a.stderr, "manifest", "choose either one ticket ID, --ticket-file, or --release.", "gig manifest ABC-123", "gig manifest --ticket-file tickets.txt --repo github:owner/name")
+			printUsageFailure(a.stderr, "packet", "choose either one ticket ID, --ticket-file, or --release.", "gig packet ABC-123", "gig packet --ticket-file tickets.txt --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		*ticketID = normalizeTicketID(fs.Arg(0))
 	}
+	promptReader := a.commandPromptReader()
 
-	selectedFormat, err := parseManifestFormat(*format)
+	selectedFormat, err := parseManifestFormat(resolveManifestFormatAlias(*format, *jsonOutput))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	defaults = applyScopePromotionDefaults(scope, defaults)
 	a.announceWorkareaSelection(scope, defaults)
 
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
@@ -997,17 +1058,17 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID != "" {
 		if strings.TrimSpace(scope.RepoSpec) != "" && !scope.RepoInherited {
-			printUsageFailure(a.stderr, "manifest", "do not combine --release with an explicit --repo target.", "gig manifest --release rel-2026-04-09 --path .", "gig manifest ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "packet", "do not combine --release with an explicit --repo target.", "gig packet --release rel-2026-04-09 --path .", "gig packet ABC-123 --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		if *ticketID != "" || *ticketFile != "" {
-			printUsageFailure(a.stderr, "manifest", "choose either --release or ticket-based flags, not both.", "gig manifest --release rel-2026-04-09 --path .", "gig manifest ABC-123 --repo github:owner/name")
+			printUsageFailure(a.stderr, "packet", "choose either --release or ticket-based flags, not both.", "gig packet --release rel-2026-04-09 --path .", "gig packet ABC-123 --repo github:owner/name")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
 		if strings.TrimSpace(*fromBranch) != "" || strings.TrimSpace(*toBranch) != "" || strings.TrimSpace(*envsSpec) != "" {
-			printUsageFailure(a.stderr, "manifest", "--from, --to, and --envs are only for ticket-based packets.", "gig manifest --release rel-2026-04-09 --path .", "gig manifest ABC-123 --from test --to main --path .")
+			printUsageFailure(a.stderr, "packet", "--from, --to, and --envs are only for ticket-based packets.", "gig packet --release rel-2026-04-09 --path .", "gig packet ABC-123 --from test --to main --path .")
 			a.printManifestGenerateUsage()
 			return usageExitCode
 		}
@@ -1056,7 +1117,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	ticketIDs, resolvedTicketFile, err := resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+	ticketIDs, resolvedTicketFile, err := a.resolveTicketIDsWithPrompt(promptReader, *ticketID, *ticketFile, runtime.parser)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return usageExitCode
@@ -1068,9 +1129,9 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := a.resolveOperationContextWithPrompt(ctx, promptReader, "packet", runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
+		a.printOperationFailure("packet", err, ticketIDs, scope, defaults, repositories)
 		return usageExitCode
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
@@ -1176,6 +1237,27 @@ func (a *App) runAssist(ctx context.Context, args []string) int {
 }
 
 func (a *App) runAssistAudit(ctx context.Context, args []string) int {
+	reorderedArgs, err := reorderArgsWithSinglePositional(args,
+		"-path", "--path",
+		"-config", "--config",
+		"-repo", "--repo",
+		"-workarea", "--workarea", "-project", "--project",
+		"-ticket", "--ticket",
+		"-from", "--from",
+		"-to", "--to",
+		"-envs", "--envs",
+		"-url", "--url",
+		"-mode", "--mode",
+		"-audience", "--audience",
+		"-format", "--format",
+	)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+		a.printAssistAuditUsage()
+		return usageExitCode
+	}
+	args = reorderedArgs
+
 	if hasHelpFlag(args) {
 		a.printAssistAuditUsage()
 		return 0
@@ -1187,7 +1269,9 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	ticketID := fs.String("ticket", "", "Ticket ID to brief")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
@@ -1196,18 +1280,28 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 	mode := fs.String("mode", string(assistsvc.ModePro), "Execution mode: flash, standard, pro, or ultra")
 	audience := fs.String("audience", string(assistsvc.AudienceReleaseManager), "Audience: qa, client, or release-manager")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
 
 	if err := fs.Parse(args); err != nil {
 		a.printAssistAuditUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintln(a.stderr, "assist audit does not accept positional arguments")
+	if fs.NArg() > 1 {
+		fmt.Fprintln(a.stderr, "assist audit accepts at most one positional ticket ID")
 		a.printAssistAuditUsage()
 		return usageExitCode
 	}
+	if fs.NArg() == 1 {
+		if strings.TrimSpace(*ticketID) != "" {
+			fmt.Fprintln(a.stderr, "assist audit failed: use either a positional ticket ID or --ticket, not both")
+			a.printAssistAuditUsage()
+			return usageExitCode
+		}
+		*ticketID = normalizeTicketID(fs.Arg(0))
+	}
+	promptReader := a.commandPromptReader()
 
-	outputFormat, err := parseOutputFormat(*format)
+	outputFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
 		return usageExitCode
@@ -1224,12 +1318,13 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	defaults = applyScopePromotionDefaults(scope, defaults)
 	a.announceWorkareaSelection(scope, defaults)
 
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
@@ -1241,9 +1336,17 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 
 	normalizedTicketID := normalizeTicketID(*ticketID)
 	if normalizedTicketID == "" {
-		fmt.Fprintln(a.stderr, "assist audit failed: --ticket is required")
-		a.printAssistAuditUsage()
-		return usageExitCode
+		if promptReader == nil {
+			fmt.Fprintln(a.stderr, "assist audit failed: --ticket is required")
+			a.printAssistAuditUsage()
+			return usageExitCode
+		}
+		promptedTicketID, err := a.promptForRequiredCommandValue(promptReader, "Ticket ID")
+		if err != nil {
+			fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
+			return usageExitCode
+		}
+		normalizedTicketID = normalizeTicketID(promptedTicketID)
 	}
 	if err := runtime.parser.Validate(normalizedTicketID); err != nil {
 		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
@@ -1256,7 +1359,7 @@ func (a *App) runAssistAudit(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := a.resolveOperationContextWithPrompt(ctx, promptReader, "assist audit", runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "assist audit failed: %v\n", err)
 		return usageExitCode
@@ -1327,7 +1430,9 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	releaseID := fs.String("release", "", "Release ID to brief from saved snapshots")
 	ticketID := fs.String("ticket", "", "Ticket ID to include in a live release bundle")
 	ticketFile := fs.String("ticket-file", "", "Path to a file with one ticket ID per line for a live release bundle")
@@ -1348,6 +1453,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 		a.printAssistReleaseUsage()
 		return usageExitCode
 	}
+	promptReader := a.commandPromptReader()
 
 	outputFormat, err := parseOutputFormat(*format)
 	if err != nil {
@@ -1366,12 +1472,13 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	defaults = applyScopePromotionDefaults(scope, defaults)
 	a.announceWorkareaSelection(scope, defaults)
 
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
@@ -1383,9 +1490,16 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 
 	normalizedReleaseID := strings.TrimSpace(*releaseID)
 	if normalizedReleaseID == "" {
-		fmt.Fprintln(a.stderr, "assist release failed: --release is required")
-		a.printAssistReleaseUsage()
-		return usageExitCode
+		if promptReader == nil {
+			fmt.Fprintln(a.stderr, "assist release failed: --release is required")
+			a.printAssistReleaseUsage()
+			return usageExitCode
+		}
+		normalizedReleaseID, err = a.promptForRequiredCommandValue(promptReader, "Release ID")
+		if err != nil {
+			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
+			return usageExitCode
+		}
 	}
 	normalizedReleaseID, err = snapshotsvc.NormalizeReleaseID(normalizedReleaseID)
 	if err != nil {
@@ -1404,7 +1518,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 	)
 
 	if strings.TrimSpace(*ticketID) != "" || strings.TrimSpace(*ticketFile) != "" {
-		ticketIDs, _, err = resolveTicketIDs(*ticketID, *ticketFile, runtime.parser)
+		ticketIDs, _, err = a.resolveTicketIDsWithPrompt(promptReader, *ticketID, *ticketFile, runtime.parser)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
 			return usageExitCode
@@ -1416,7 +1530,7 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 			return 1
 		}
 
-		environments, resolvedFromBranch, resolvedToBranch, err = resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+		environments, resolvedFromBranch, resolvedToBranch, err = a.resolveOperationContextWithPrompt(ctx, promptReader, "assist release", runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 		if err != nil {
 			fmt.Fprintf(a.stderr, "assist release failed: %v\n", err)
 			return usageExitCode
@@ -1488,24 +1602,39 @@ func (a *App) runAssistRelease(ctx context.Context, args []string) int {
 }
 
 func (a *App) runLogin(ctx context.Context, args []string) int {
-	if len(args) == 0 || hasHelpFlag(args) {
+	return a.runLoginWithReader(ctx, bufio.NewReader(a.stdin), args)
+}
+
+func (a *App) runLoginWithReader(ctx context.Context, reader *bufio.Reader, args []string) int {
+	if hasHelpFlag(args) {
 		a.printLoginUsage()
 		return 0
 	}
-	if len(args) != 1 {
-		fmt.Fprintln(a.stderr, "login requires exactly one <provider> argument")
+	if len(args) > 1 {
+		fmt.Fprintln(a.stderr, "login accepts at most one [provider] argument")
 		a.printLoginUsage()
 		return usageExitCode
 	}
 
-	provider, err := sourcecontrol.ParseProvider(args[0])
+	providerValue := ""
+	if len(args) == 1 {
+		providerValue = args[0]
+	}
+
+	provider, inferred, err := a.resolveLoginProvider(ctx, reader, providerValue)
 	if err != nil {
+		if errors.Is(err, errPickerCancelled) {
+			return 0
+		}
 		fmt.Fprintf(a.stderr, "login failed: %v\n", err)
 		a.printLoginUsage()
 		return usageExitCode
 	}
+	if inferred {
+		fmt.Fprintln(a.stderr, formatDetectedLoginProvider(provider))
+	}
 
-	if err := sourcecontrol.Login(ctx, provider, a.stdin, a.stdout, a.stderr); err != nil {
+	if err := sourcecontrol.Login(ctx, provider, reader, a.stdout, a.stderr); err != nil {
 		fmt.Fprintf(a.stderr, "login failed: %v\n", err)
 		return 1
 	}
@@ -1515,6 +1644,26 @@ func (a *App) runLogin(ctx context.Context, args []string) int {
 }
 
 func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
+	reorderedArgs, err := reorderArgsWithSinglePositional(args,
+		"-path", "--path",
+		"-config", "--config",
+		"-repo", "--repo",
+		"-workarea", "--workarea", "-project", "--project",
+		"-ticket", "--ticket",
+		"-from", "--from",
+		"-to", "--to",
+		"-release", "--release",
+		"-envs", "--envs",
+		"-format", "--format",
+		"-output", "--output",
+	)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+		a.printSnapshotCreateUsage()
+		return usageExitCode
+	}
+	args = reorderedArgs
+
 	if hasHelpFlag(args) {
 		a.printSnapshotCreateUsage()
 		return 0
@@ -1526,37 +1675,50 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	repoTarget := fs.String("repo", "", "Remote repository target, for example github:owner/name or gitlab:group/project")
-	workareaName := fs.String("workarea", "", "Saved workarea to use")
+	workareaName := ""
+	fs.StringVar(&workareaName, "workarea", "", "Saved project to use")
+	fs.StringVar(&workareaName, "project", "", "Saved project to use")
 	ticketID := fs.String("ticket", "", "Ticket ID to capture")
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
 	releaseID := fs.String("release", "", "Release ID to attach this snapshot to")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
 	outputPath := fs.String("output", "", "Write the snapshot JSON to this path")
 
 	if err := fs.Parse(args); err != nil {
 		a.printSnapshotCreateUsage()
 		return usageExitCode
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintln(a.stderr, "snapshot create does not accept positional arguments")
+	if fs.NArg() > 1 {
+		fmt.Fprintln(a.stderr, "snapshot create accepts at most one positional ticket ID")
 		a.printSnapshotCreateUsage()
 		return usageExitCode
 	}
+	if fs.NArg() == 1 {
+		if strings.TrimSpace(*ticketID) != "" {
+			fmt.Fprintln(a.stderr, "snapshot create failed: use either a positional ticket ID or --ticket, not both")
+			a.printSnapshotCreateUsage()
+			return usageExitCode
+		}
+		*ticketID = normalizeTicketID(fs.Arg(0))
+	}
+	promptReader := a.commandPromptReader()
 
-	selectedFormat, err := parseOutputFormat(*format)
+	selectedFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
 	}
 
-	scope, err := a.resolveCommandScope(*path, *configPath, *repoTarget, *workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
+	scope, err := a.resolveCommandScope(ctx, *path, *configPath, *repoTarget, workareaName, flagProvided(fs, "path"), flagProvided(fs, "config"), flagProvided(fs, "repo"))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return 1
 	}
 	defaults := resolveCommandDefaults(scope.Workarea, *envsSpec, *fromBranch, *toBranch, flagProvided(fs, "envs"), flagProvided(fs, "from"), flagProvided(fs, "to"))
+	defaults = applyScopePromotionDefaults(scope, defaults)
 	a.announceWorkareaSelection(scope, defaults)
 
 	remoteMode := strings.TrimSpace(scope.RepoSpec) != ""
@@ -1568,20 +1730,21 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 
 	normalizedTicketID := normalizeTicketID(*ticketID)
 	if normalizedTicketID == "" {
-		fmt.Fprintln(a.stderr, "snapshot create failed: --ticket is required")
-		a.printSnapshotCreateUsage()
-		return usageExitCode
+		if promptReader == nil {
+			fmt.Fprintln(a.stderr, "snapshot create failed: --ticket is required")
+			a.printSnapshotCreateUsage()
+			return usageExitCode
+		}
+		promptedTicketID, err := a.promptForRequiredCommandValue(promptReader, "Ticket ID")
+		if err != nil {
+			fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
+			return usageExitCode
+		}
+		normalizedTicketID = normalizeTicketID(promptedTicketID)
 	}
 	if err := runtime.parser.Validate(normalizedTicketID); err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
-	}
-	if strings.TrimSpace(defaults.FromBranch) == "" || strings.TrimSpace(defaults.ToBranch) == "" {
-		if !remoteMode {
-			fmt.Fprintln(a.stderr, "snapshot create failed: both --from and --to branches are required")
-			a.printSnapshotCreateUsage()
-			return usageExitCode
-		}
 	}
 
 	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
@@ -1590,7 +1753,7 @@ func (a *App) runSnapshotCreate(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	environments, resolvedFromBranch, resolvedToBranch, err := resolveOperationContext(ctx, runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
+	environments, resolvedFromBranch, resolvedToBranch, err := a.resolveOperationContextWithPrompt(ctx, promptReader, "snapshot create", runtime, repositories, defaults.EnvironmentSpec, defaults.FromBranch, defaults.ToBranch)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "snapshot create failed: %v\n", err)
 		return usageExitCode
@@ -1675,6 +1838,8 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 	path := fs.String("path", ".", "Path to a repository or workspace")
 	configPath := fs.String("config", "", optionalOverrideFileHelp)
 	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
+	fix := fs.Bool("fix", false, "Print setup commands for missing required tools")
 
 	if err := fs.Parse(args); err != nil {
 		a.printDoctorUsage()
@@ -1686,7 +1851,7 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	outputFormat, err := parseOutputFormat(*format)
+	outputFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
 	if err != nil {
 		fmt.Fprintf(a.stderr, "doctor failed: %v\n", err)
 		return usageExitCode
@@ -1716,6 +1881,12 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 			return 1
 		}
+		if *fix {
+			if err := a.renderSetupPlan(report.DependencyChecks, false, ""); err != nil {
+				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+				return 1
+			}
+		}
 	case outputFormatJSON:
 		if err := output.RenderJSON(a.stdout, struct {
 			Command string           `json:"command"`
@@ -1730,6 +1901,186 @@ func (a *App) runDoctor(ctx context.Context, args []string) int {
 	}
 
 	return 0
+}
+
+func (a *App) runSetup(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printSetupUsage()
+		return 0
+	}
+
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	provider := fs.String("provider", "", "Provider to prepare: github, gitlab, azure-devops, svn, or all")
+	installMissing := fs.Bool("install-missing", false, "Install missing tools after confirmation")
+	yes := fs.Bool("yes", false, "Skip confirmation for --install-missing")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	jsonOutput := fs.Bool("json", false, "Print JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		a.printSetupUsage()
+		return usageExitCode
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(a.stderr, "setup does not accept positional arguments")
+		a.printSetupUsage()
+		return usageExitCode
+	}
+
+	outputFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
+	if err != nil {
+		fmt.Fprintf(a.stderr, "setup failed: %v\n", err)
+		return usageExitCode
+	}
+
+	required, err := setupRequiredTools(*provider)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "setup failed: %v\n", err)
+		return usageExitCode
+	}
+	checks := toolcheck.CheckSystemDependencies(required)
+
+	if outputFormat == outputFormatJSON {
+		if err := output.RenderJSON(a.stdout, struct {
+			Command string             `json:"command"`
+			OS      string             `json:"os"`
+			Checks  []toolcheck.Status `json:"checks"`
+		}{
+			Command: "setup",
+			OS:      runtime.GOOS,
+			Checks:  checks,
+		}); err != nil {
+			fmt.Fprintf(a.stderr, "render failed: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	if err := a.renderSetupPlan(checks, *installMissing, *provider); err != nil {
+		fmt.Fprintf(a.stderr, "setup failed: %v\n", err)
+		return 1
+	}
+	if !*installMissing {
+		return 0
+	}
+
+	missing := toolcheck.MissingRequired(checks)
+	if len(missing) == 0 {
+		fmt.Fprintln(a.stdout, "All required tools are installed.")
+		return 0
+	}
+	if !*yes && !a.confirmInstall(len(missing)) {
+		fmt.Fprintln(a.stdout, "Setup cancelled. No tools installed.")
+		return 0
+	}
+	for _, check := range missing {
+		install, ok := toolcheck.PreferredInstallCommand(check)
+		if !ok {
+			fmt.Fprintf(a.stderr, "setup failed: no install command is known for %s on %s\n", check.Name, runtime.GOOS)
+			return 1
+		}
+		if err := runShellCommand(ctx, install.Command, a.stdin, a.stdout, a.stderr); err != nil {
+			fmt.Fprintf(a.stderr, "setup failed: %s: %v\n", install.Command, err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func setupRequiredTools(provider string) (map[string]bool, error) {
+	required := map[string]bool{"git": true}
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "":
+	case "github", "gh":
+		required["gh"] = true
+	case "gitlab", "glab":
+		required["glab"] = true
+	case "azure-devops", "azuredevops", "ado", "azdo":
+		required["az"] = true
+	case "svn", "subversion":
+		required["svn"] = true
+	case "all":
+		required["gh"] = true
+		required["glab"] = true
+		required["az"] = true
+		required["svn"] = true
+	case "bitbucket":
+		return required, nil
+	default:
+		return nil, fmt.Errorf("provider %q is not recognized", provider)
+	}
+	return required, nil
+}
+
+func (a *App) renderSetupPlan(checks []toolcheck.Status, installMissing bool, provider string) error {
+	ui := output.NewConsole(a.stdout)
+	if err := ui.Section("Setup"); err != nil {
+		return err
+	}
+	if err := ui.Rows(output.KeyValue{Label: "OS", Value: runtime.GOOS}); err != nil {
+		return err
+	}
+	missing := toolcheck.MissingRequired(checks)
+	if len(missing) == 0 {
+		if err := ui.Bullets("All required tools are installed."); err != nil {
+			return err
+		}
+		return ui.Blank()
+	}
+	if err := ui.Bullets("Missing required tools: " + setupToolNames(missing)); err != nil {
+		return err
+	}
+	if err := ui.Section("Install commands"); err != nil {
+		return err
+	}
+	commands := make([]string, 0, len(missing))
+	for _, check := range missing {
+		if install, ok := toolcheck.PreferredInstallCommand(check); ok {
+			commands = append(commands, install.Command)
+		}
+	}
+	if err := ui.Commands(commands...); err != nil {
+		return err
+	}
+	if !installMissing {
+		command := "gig setup --install-missing"
+		if strings.TrimSpace(provider) != "" {
+			command = "gig setup --provider " + strings.TrimSpace(provider) + " --install-missing"
+		}
+		if err := ui.Note("Run " + command + " to install after confirmation."); err != nil {
+			return err
+		}
+	}
+	return ui.Blank()
+}
+
+func setupToolNames(checks []toolcheck.Status) string {
+	names := make([]string, 0, len(checks))
+	for _, check := range checks {
+		names = append(names, check.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+func (a *App) confirmInstall(count int) bool {
+	fmt.Fprintf(a.stderr, "Install %d missing tool(s) now? Type yes to continue: ", count)
+	reader := bufio.NewReader(a.stdin)
+	answer, _ := reader.ReadString('\n')
+	return strings.EqualFold(strings.TrimSpace(answer), "yes")
+}
+
+func runShellCommand(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	}
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
 }
 
 func (a *App) runAssistResolve(ctx context.Context, args []string) int {
@@ -2113,6 +2464,13 @@ func parseOutputFormat(raw string) (outputFormat, error) {
 	}
 }
 
+func resolveFormatAlias(raw string, jsonOutput bool) string {
+	if jsonOutput {
+		return string(outputFormatJSON)
+	}
+	return raw
+}
+
 func parseManifestFormat(raw string) (manifestFormat, error) {
 	switch manifestFormat(strings.ToLower(strings.TrimSpace(raw))) {
 	case manifestFormatMarkdown:
@@ -2122,6 +2480,13 @@ func parseManifestFormat(raw string) (manifestFormat, error) {
 	default:
 		return "", fmt.Errorf("unsupported format %q", raw)
 	}
+}
+
+func resolveManifestFormatAlias(raw string, jsonOutput bool) string {
+	if jsonOutput {
+		return string(manifestFormatJSON)
+	}
+	return raw
 }
 
 func parseEnvironmentSpec(spec string) ([]inspectsvc.Environment, error) {
@@ -2207,6 +2572,50 @@ func (a *App) resolveCommandRepositories(ctx context.Context, workspacePath, rep
 
 func (a *App) ensureSourceControlAccess(ctx context.Context, repositories []scm.Repository) error {
 	return sourcecontrol.EnsureAccess(ctx, repositories, a.stdin, a.stdout, a.stderr)
+}
+
+func (a *App) printOperationFailure(command string, err error, ticketIDs []string, scope commandScope, defaults commandDefaults, repositories []scm.Repository) {
+	fmt.Fprintf(a.stderr, "%s failed: %v\n", command, err)
+
+	var topologyErr *topologyResolutionError
+	needsBranches := errors.As(err, &topologyErr) || strings.Contains(err.Error(), "both --from and --to branches are required")
+	if !needsBranches {
+		return
+	}
+
+	ticketID := "ABC-123"
+	if len(ticketIDs) > 0 && strings.TrimSpace(ticketIDs[0]) != "" {
+		ticketID = ticketIDs[0]
+	}
+
+	var inference *sourcecontrol.TopologyInference
+	if topologyErr != nil {
+		inference = &topologyErr.Inference
+	}
+
+	printSuggestions(a.stderr, buildSmartSuggestions(suggestionContext{
+		Command:         command,
+		TicketID:        ticketID,
+		RepoTarget:      repositorySpecForSuggestions(scope, repositories),
+		Path:            scope.WorkspacePath,
+		Topology:        inference,
+		FromBranch:      defaults.FromBranch,
+		ToBranch:        defaults.ToBranch,
+		EnvironmentSpec: defaults.EnvironmentSpec,
+		ConfigPath:      scope.ConfigPath,
+		Current:         scope.Workarea,
+		NeedsBranches:   true,
+	}))
+}
+
+func repositorySpecForSuggestions(scope commandScope, repositories []scm.Repository) string {
+	if strings.TrimSpace(scope.RepoSpec) != "" {
+		return strings.TrimSpace(scope.RepoSpec)
+	}
+	if len(repositories) == 1 && repositories[0].Type.IsRemote() {
+		return repositories[0].Root
+	}
+	return ""
 }
 
 type commandRuntime struct {

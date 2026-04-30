@@ -64,6 +64,34 @@ func TestSessionListRepositoriesFiltersWorkspace(t *testing.T) {
 	}
 }
 
+func TestSessionListRepositoriesReportsHTTPStatusBeforeDecode(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil, nil, nil)
+	session.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		response := jsonResponse("not json")
+		response.StatusCode = http.StatusUnauthorized
+		response.Status = "401 Unauthorized"
+		return response, nil
+	})}
+	session.store = credentialStoreFunc{
+		load: func() (credentials, error) {
+			return credentials{Email: "demo@example.com", APIToken: "secret-token"}, nil
+		},
+	}
+
+	_, err := session.ListRepositories(context.Background(), "")
+	if err == nil {
+		t.Fatal("ListRepositories() error = nil, want HTTP status error")
+	}
+	if !strings.Contains(err.Error(), "401 Unauthorized") {
+		t.Fatalf("error = %q, want HTTP status", err.Error())
+	}
+	if strings.Contains(err.Error(), "parse bitbucket") {
+		t.Fatalf("error = %q, want status error before JSON parse", err.Error())
+	}
+}
+
 type credentialStoreFunc struct {
 	load func() (credentials, error)
 	save func(credentials) error

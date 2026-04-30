@@ -2,6 +2,10 @@
 
 This page explains the config file that `gig` can load today.
 
+Config is optional.
+Do not start here when you are trying `gig` for the first time.
+Start with [Quick Start](19-quickstart.md), then add config only when provider inference, projects, or explicit flags are not enough.
+
 The goal is simple:
 
 - map your real environment branches
@@ -31,10 +35,10 @@ The current config supports:
 
 This config is already used by:
 
-- `gig env status`
+- `gig where`
 - `gig verify`
 - `gig plan`
-- `gig manifest`
+- `gig packet`
 - `gig doctor`
 
 ## Example Config
@@ -94,7 +98,7 @@ Example:
 - `test` -> `release/test`
 - `prod` -> `main`
 
-Commands such as `env status`, `verify`, `plan`, and `manifest` use this mapping when `--envs` is not passed.
+Commands such as `where`, `verify`, `plan`, and `packet` use this mapping when `--envs` is not passed.
 
 ### `repositories`
 
