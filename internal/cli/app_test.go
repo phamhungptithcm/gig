@@ -350,7 +350,7 @@ func TestAppWorkareaUseInteractive(t *testing.T) {
 
 func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile)
 	if exitCode != 0 {
@@ -383,7 +383,7 @@ func TestAppFrontDoorDetectsCurrentGitRepository(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
 	repoRoot := filepath.Join(t.TempDir(), "payments")
 	initRepository(t, repoRoot)
-	t.Chdir(repoRoot)
+	chdir(t, repoRoot)
 
 	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile)
 	if exitCode != 0 {
@@ -405,7 +405,7 @@ func TestAppFrontDoorUsesDetectedGitRepositoryForTicketInput(t *testing.T) {
 	writeFile(t, filepath.Join(repoRoot, "app.txt"), "payments fix\n")
 	runGit(t, repoRoot, "add", "app.txt")
 	runGit(t, repoRoot, "commit", "-m", "ABC-123 fix payments")
-	t.Chdir(repoRoot)
+	chdir(t, repoRoot)
 
 	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "ABC-123\n", workareaFile)
 	if exitCode != 0 {
@@ -424,7 +424,7 @@ func TestAppFrontDoorUsesDetectedGitRepositoryForLocalVerify(t *testing.T) {
 	writeFile(t, filepath.Join(repoRoot, "app.txt"), "payments fix\n")
 	runGit(t, repoRoot, "add", "app.txt")
 	runGit(t, repoRoot, "commit", "-m", "ABC-123 fix payments")
-	t.Chdir(repoRoot)
+	chdir(t, repoRoot)
 
 	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "verify ABC-123\n", workareaFile)
 	if exitCode != 0 {
@@ -497,7 +497,7 @@ func TestAppFrontDoorQuickStartInspectsRepoTarget(t *testing.T) {
 
 func TestAppFrontDoorWithCurrentWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	if _, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "workarea", "add", "payments", "--repo", "github:acme/payments", "--from", "staging", "--to", "main", "--use"); exitCode != 0 {
 		t.Fatalf("seed workarea exit code = %d, stderr = %q", exitCode, stderr)
@@ -629,7 +629,7 @@ func TestAppResumeUsesCurrentWorkareaSession(t *testing.T) {
 
 func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndInspects(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -664,7 +664,7 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndInspects(t *testing.T) {
 
 func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndVerifies(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -701,7 +701,7 @@ func TestAppFrontDoorWithCurrentWorkareaPromptsActionAndVerifies(t *testing.T) {
 
 func TestAppInspectUsesCurrentRemoteWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -1959,7 +1959,7 @@ func TestAppInspectAutoDetectsRemoteFromCurrentCheckout(t *testing.T) {
 	initRepository(t, repoRoot)
 	runGit(t, repoRoot, "checkout", "-b", "staging")
 	runGit(t, repoRoot, "remote", "add", "origin", "git@github.com:acme/payments.git")
-	t.Chdir(repoRoot)
+	chdir(t, repoRoot)
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -2047,7 +2047,7 @@ func TestAppVerifyRemoteGitHubUsesExplicitBranchesForAmbiguousProtectedBranches(
 
 func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -2104,7 +2104,7 @@ func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 
 func TestAppInspectRemoteRepoAutoCreatesCurrentProject(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	ghDir := installFakeGitHubCLI(t, map[string]string{
 		"repos/acme/payments": `{"default_branch":"main"}`,
@@ -2463,7 +2463,7 @@ func TestAppLoginInfersGitHubFromCurrentGitRemote(t *testing.T) {
 	repoRoot := filepath.Join(t.TempDir(), "payments")
 	initRepository(t, repoRoot)
 	runGit(t, repoRoot, "remote", "add", "origin", "git@github.com:acme/payments.git")
-	t.Chdir(repoRoot)
+	chdir(t, repoRoot)
 
 	ghDir := installFakeGitHubCLI(t, nil)
 	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -2489,7 +2489,7 @@ func TestAppLoginInfersSVNFromCurrentCheckout(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repoRoot, ".svn"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(.svn) error = %v", err)
 	}
-	t.Chdir(repoRoot)
+	chdir(t, repoRoot)
 
 	authFile := filepath.Join(t.TempDir(), "svn-auth.json")
 	svnDir := installFakeSVNCLI(t, nil)
@@ -2513,7 +2513,7 @@ func TestAppLoginInfersSVNFromCurrentCheckout(t *testing.T) {
 }
 
 func TestAppLoginPromptsForProviderSelection(t *testing.T) {
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	authFile := filepath.Join(t.TempDir(), "svn-auth.json")
 	svnDir := installFakeSVNCLI(t, nil)
@@ -2540,7 +2540,7 @@ func TestAppLoginPromptsForProviderSelection(t *testing.T) {
 }
 
 func TestAppFrontDoorLoginPromptsForProviderSelection(t *testing.T) {
-	t.Chdir(t.TempDir())
+	chdir(t, t.TempDir())
 
 	glabDir := installFakeGitLabCLI(t, nil)
 	t.Setenv("PATH", glabDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -2899,6 +2899,23 @@ func runAppWithInputAndWorkareaFile(t *testing.T, input, workareaFile string, ar
 
 	exitCode = app.Run(context.Background(), args)
 	return out.String(), errOut.String(), exitCode
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(%q) error = %v", dir, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatalf("restore cwd %q: %v", previous, err)
+		}
+	})
 }
 
 func assertGolden(t *testing.T, name, got string) {
