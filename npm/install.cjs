@@ -43,6 +43,16 @@ function resolveGitHubRepo(repository) {
   return match[1];
 }
 
+function resolveReleaseBaseURL(repository, releaseTag) {
+  const override = String(process.env.GIG_RELEASE_BASE_URL || "").trim();
+  if (override !== "") {
+    return override.replace(/\/+$/, "");
+  }
+
+  const repo = resolveGitHubRepo(repository);
+  return `https://github.com/${repo}/releases/download/${releaseTag}`;
+}
+
 function normalizeReleaseTag(input) {
   const normalized = String(input || "").trim();
   if (normalized === "") {
@@ -173,7 +183,6 @@ function extractArchive(archivePath, extractDir, platform) {
 }
 
 async function install() {
-  const repo = resolveGitHubRepo(packageJson.repository);
   const releaseTag = releaseTagFromPackageVersion(packageJson.version);
   const versionWithoutV = releaseTag.replace(/^v/, "");
   const platform = resolvePlatform();
@@ -182,7 +191,7 @@ async function install() {
   const binaryName = platform === "windows" ? "gig.exe" : "gig";
   const assetName = `gig_${versionWithoutV}_${platform}_${arch}.${extension}`;
   const checksumsName = `gig_${versionWithoutV}_checksums.txt`;
-  const baseURL = `https://github.com/${repo}/releases/download/${releaseTag}`;
+  const baseURL = resolveReleaseBaseURL(packageJson.repository, releaseTag);
   const vendorDir = resolveVendorDir(__dirname);
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "gig-npm-"));
 
@@ -253,5 +262,6 @@ if (require.main === module) {
 
 module.exports = {
   resolvePackageRoot,
+  resolveReleaseBaseURL,
   resolveVendorDir
 };

@@ -18,13 +18,13 @@
     <text x="52" y="134" fill="#22c55e">$</text>
     <text x="82" y="134" fill="#f8fafc">gig</text>
     <text x="52" y="176" fill="#e2e8f0">gig</text>
-    <text x="52" y="210" fill="#94a3b8">Remote-first release audit CLI</text>
-    <text x="52" y="262" fill="#e2e8f0">No workarea selected yet.</text>
-    <text x="52" y="314" fill="#f8fafc">Start here</text>
-    <text x="82" y="348" fill="#cbd5e1">gig login github</text>
-    <text x="82" y="382" fill="#cbd5e1">gig ABC-123 --repo github:owner/name</text>
-    <text x="82" y="416" fill="#cbd5e1">gig verify ABC-123 --repo github:owner/name</text>
-    <text x="82" y="450" fill="#cbd5e1">gig remembers successful remote repos automatically</text>
+    <text x="52" y="210" fill="#94a3b8">ticket-aware release audit</text>
+    <text x="52" y="262" fill="#e2e8f0">source  Git repository</text>
+    <text x="52" y="296" fill="#e2e8f0">branch  release/2026.04.20</text>
+    <text x="52" y="348" fill="#f8fafc">Suggested next</text>
+    <text x="82" y="382" fill="#cbd5e1">gig ABC-123 --path .</text>
+    <text x="82" y="416" fill="#cbd5e1">gig verify ABC-123 --path . --from release/2026.04.20 --to main</text>
+    <text x="82" y="450" fill="#cbd5e1">gig workarea add local --path . --from staging --to main --use</text>
     <text x="52" y="510" fill="#f8fafc">Optional AI sidecar</text>
     <text x="82" y="544" fill="#cbd5e1">gig assist doctor</text>
     <text x="82" y="578" fill="#cbd5e1">gig assist setup</text>

@@ -44,6 +44,10 @@ func ParseRepositoryTarget(raw string) (scm.Repository, error) {
 
 	lower := strings.ToLower(raw)
 	switch {
+	case strings.HasPrefix(lower, "ssh://"):
+		return parseGitSSHRepository(raw)
+	case looksLikeGitSSHRepository(raw):
+		return parseGitSSHRepository(raw)
 	case strings.HasPrefix(lower, "github:"):
 		return parseGitHubRepository(strings.TrimSpace(raw[len("github:"):]))
 	case strings.HasPrefix(lower, "gitlab:"):
@@ -83,6 +87,59 @@ func ParseRepositoryTarget(raw string) (scm.Repository, error) {
 	default:
 		return scm.Repository{}, fmt.Errorf("unsupported repository target %q", raw)
 	}
+}
+
+func looksLikeGitSSHRepository(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	at := strings.Index(raw, "@")
+	colon := strings.Index(raw, ":")
+	return at > 0 && colon > at+1 && !strings.Contains(raw[:colon], "/")
+}
+
+func parseGitSSHRepository(raw string) (scm.Repository, error) {
+	host := ""
+	identifier := ""
+
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(raw)), "ssh://") {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			return scm.Repository{}, fmt.Errorf("parse repository target %q: %w", raw, err)
+		}
+		host = strings.ToLower(strings.TrimSpace(u.Hostname()))
+		identifier = strings.TrimPrefix(path.Clean(u.Path), "/")
+	} else {
+		trimmed := strings.TrimSpace(raw)
+		at := strings.Index(trimmed, "@")
+		colon := strings.Index(trimmed, ":")
+		if at <= 0 || colon <= at+1 {
+			return scm.Repository{}, fmt.Errorf("unsupported repository target %q", raw)
+		}
+		host = strings.ToLower(strings.TrimSpace(trimmed[at+1 : colon]))
+		identifier = strings.TrimSpace(trimmed[colon+1:])
+	}
+
+	identifier = normalizeRemoteIdentifier(identifier)
+	switch host {
+	case "github.com":
+		return parseGitHubRepository(identifier)
+	case "gitlab.com":
+		return parseGitLabRepository(identifier)
+	case "bitbucket.org":
+		return parseBitbucketRepository(identifier)
+	case "ssh.dev.azure.com":
+		return parseAzureDevOpsSSHRepository(identifier)
+	default:
+		return scm.Repository{}, fmt.Errorf("unsupported repository target %q", raw)
+	}
+}
+
+func parseAzureDevOpsSSHRepository(identifier string) (scm.Repository, error) {
+	identifier = normalizeRemoteIdentifier(identifier)
+	parts := strings.Split(identifier, "/")
+	if len(parts) == 4 && strings.EqualFold(parts[0], "v3") {
+		return parseAzureDevOpsRepository(strings.Join(parts[1:], "/"))
+	}
+	return scm.Repository{}, fmt.Errorf("azure devops SSH repository target must be in v3/org/project/repo form")
 }
 
 func FormatScopeLabel(repositories []scm.Repository, fallback string) string {
@@ -219,6 +276,9 @@ func parseSVNRepository(identifier string) (scm.Repository, error) {
 	}
 	if strings.TrimSpace(u.Scheme) == "" || strings.TrimSpace(u.Host) == "" {
 		return scm.Repository{}, fmt.Errorf("svn repository target must include an absolute repository URL")
+	}
+	if u.User != nil {
+		return scm.Repository{}, fmt.Errorf("svn repository target must not include username or password in the URL; run `gig login svn` or set GIG_SVN_USERNAME and GIG_SVN_PASSWORD instead")
 	}
 
 	cleanPath := strings.Trim(strings.TrimSpace(u.Path), "/")

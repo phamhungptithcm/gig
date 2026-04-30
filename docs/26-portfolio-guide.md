@@ -38,7 +38,7 @@ Choose the version that best fits your target role.
 - why ticket reconciliation is harder than raw commit search
 - how remote-first access changes onboarding and daily usage
 - why deterministic evidence should stay below any AI summarization layer
-- how workareas reduce repeated setup across many clients or products
+- how projects reduce repeated setup across many clients or products
 - how terminal UX can be summary-first without hiding critical detail
 
 ## How To Make The Repo Star-Worthy
@@ -47,7 +47,7 @@ The repo earns stars when the value is obvious in under a minute.
 
 Do these consistently:
 
-- keep the README focused on `inspect`, `verify`, and `manifest`
+- keep the README focused on `inspect`, `verify`, and `packet`
 - keep a short terminal demo near the top of the repo
 - show one clear enterprise use case instead of every possible command
 - keep the roadmap credible and incremental
@@ -72,5 +72,5 @@ If you are presenting `gig` on a portfolio site or in a case study, keep the str
 1. problem: release teams miss follow-up fixes across repos
 2. solution: `gig` reconciles ticket evidence and verifies readiness
 3. proof: terminal demo plus deterministic output screenshots
-4. architecture: remote-first provider access, workareas, deterministic audit core, optional AI layer
+4. architecture: remote-first provider access, projects, deterministic audit core, optional AI layer
 5. outcome: easier release decisions, clearer audit trails, better developer experience

@@ -1,93 +1,89 @@
-# Product Overview
+# Overview
 
-## Product In One Line
+`gig` is a source-control-native release audit CLI for ticket-based delivery.
 
-`gig` is a remote-first release audit CLI that reconciles ticket evidence across repositories, verifies promotion readiness, and generates release-ready output.
-
-The memorable shorthand is:
-
-`gig = googling in git`
-
-## The Problem
-
-Release teams rarely struggle to find Git history.
-They struggle to answer one operational question fast enough:
+It answers:
 
 `Did we miss any change for this ticket?`
 
-That question gets harder when:
+## What gig Does
 
-- one ticket touches several repositories
-- QA or client review adds follow-up fixes
-- one missed DB, config, or dependency change can block a release
-- different stakeholders need the same facts in different formats
+`gig` reads source-control evidence and turns it into release decisions:
 
-## The Promise
+- inspect one ticket across commits, branches, PRs, merge requests, deployments, checks, issues, or work items where supported
+- verify whether the next promotion looks `safe`, `warning`, or `blocked`
+- generate a release packet for QA, release managers, clients, or automation
+- save repeated repo/branch context in projects
+- keep local Git and SVN fallback available when remote access is not enough
 
-Before a team moves a ticket or release forward, `gig` should answer:
+## When To Use It
 
-- what changed for this ticket
-- what is still missing from the target path
-- what looks risky or still needs manual review
-- what evidence should be shared with QA, release, or client-facing stakeholders
+Use `gig` before a ticket or release moves forward.
 
-## Core Workflow
+It helps when:
 
-- remote-first repository inspection for GitHub, GitLab, Bitbucket, Azure DevOps, and remote SVN
-- `inspect` for the full ticket story
-- `verify` for a `safe`, `warning`, or `blocked` release verdict
-- `manifest` for Markdown and JSON release packets
+- one ticket spans backend, frontend, database, scripts, or Mendix/low-code assets
+- follow-up fixes arrived after QA, UAT, or client review
+- teams need to confirm what reached the target branch
+- release managers need the same evidence in terminal output, Markdown, and JSON
+- manual repo-by-repo checking is too slow or inconsistent
 
-## Why It Wins
+## What gig Does Not Replace
 
-- deterministic release reasoning instead of manual repo-by-repo checking
-- zero-config-first activation instead of config-heavy onboarding
-- guided terminal onboarding so first-time users can pick a repo before they learn flags
-- a command-palette front door so users can type `ABC-123` or `verify ABC-123` directly
-- reusable workareas for repeated project context
-- optional AI explanation layered on top of auditable source-control evidence, including resumable follow-up questions through `gig ask`
+`gig` does not replace:
 
-## What Ships Today
+- code review
+- CI/CD
+- issue tracking
+- human release approval
 
-The current build is already strong at:
+It makes the release evidence easier to collect, compare, and share.
 
-- ticket inspection across repositories
-- release verification and risk inference
-- remote provider-backed inspection in supported live paths
-- snapshot and manifest generation
-- reusable workareas
-- local Git and SVN fallback flows
-- a guided terminal front door with arrow-key selection when users run `gig`
+## Main Workflow
 
-## Installation Note
+```bash
+gig login
+gig ABC-123
+gig verify ABC-123
+gig packet ABC-123
+```
 
-Use the direct installer until `@hunpeolabs/gig` completes its first bootstrap publish.
-If npm still returns `404`, that publish has not landed yet.
+The same workflow works through the guided front door:
 
-## Product Boundary
+```bash
+gig
+```
 
-`gig` does not try to replace:
+## Product Defaults
 
-- code review systems
-- CI/CD systems
-- issue trackers
-- human release approval on risky changes
-
-It sits between repository history and release decisions.
+- Current-checkout-first: inside a Git checkout, infer the remote provider target from `origin`.
+- Remote-first: prefer live provider access; use `--repo github:owner/name` when outside the checkout.
+- Zero-config-first: start without `gig.yaml`.
+- Topology-aware: use provider branch metadata when it is confident.
+- Safe fallback: if topology is ambiguous, `gig` asks for `--from`, `--to`, `--envs`, or a project instead of guessing.
+- Local-optional: use `--path .` when remote access is not available.
+- AI-optional: use assist commands only after deterministic `gig` evidence works.
 
 ## Best Fit Users
 
-- developers and tech leads tracing the full scope of one ticket
-- QA or UAT coordinators validating what changed since the previous review round
-- release engineers deciding whether the next promotion is safe
-- delivery leads who need a clean audit trail without manually reopening every repository
+- developers checking whether their ticket is fully promoted
+- QA/UAT coordinators validating follow-up changes
+- release engineers preparing release windows
+- delivery leads who need a clean audit trail
 
 ## Success State
 
-The intended product experience is simple:
+A new user should be able to:
 
 1. install `gig`
-2. run `gig`
-3. log in once to the right provider if needed
-4. inspect a ticket or verify the next move
-5. export a release packet or AI brief only when it helps
+2. run `gig login`
+3. inspect one ticket
+4. verify readiness
+5. export a release packet
+6. add a project only when the commands become repetitive
+
+## Next
+
+- [Quick Start](19-quickstart.md)
+- [First Ticket Audit](first-ticket-audit.md)
+- [Release-Day Workflow](release-day-workflow.md)

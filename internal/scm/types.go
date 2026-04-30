@@ -161,3 +161,7 @@ type ProtectedBranchProvider interface {
 type ProviderEvidenceProvider interface {
 	ProviderEvidence(ctx context.Context, repoRoot string, query EvidenceQuery) (ProviderEvidence, error)
 }
+
+type TicketEvidenceProvider interface {
+	TicketEvidence(ctx context.Context, repoRoot, ticketID string) (ProviderEvidence, error)
+}

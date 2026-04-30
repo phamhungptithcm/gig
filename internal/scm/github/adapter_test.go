@@ -151,6 +151,57 @@ func TestAdapterProviderEvidenceIncludesLinkedIssuesAndLatestRelease(t *testing.
 	}
 }
 
+func TestAdapterTicketEvidenceFindsPullRequestWithoutCommits(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := NewAdapter(parser)
+	adapter.run = fakeGitHubRunner(map[string]string{
+		"search/issues?q=repo%3Aacme%2Fpayments+is%3Apr+ABC-123&per_page=100&page=1": `{"items":[{"number":42,"title":"ABC-123 payments fix","body":"Fixes #77","state":"open","html_url":"https://github.com/acme/payments/pull/42","pull_request":{}}]}`,
+		"repos/acme/payments/issues/77":                                              `{"number":77,"title":"Prod validation","state":"open","html_url":"https://github.com/acme/payments/issues/77","labels":[{"name":"release"}]}`,
+	})
+
+	evidence, err := adapter.TicketEvidence(context.Background(), "github:acme/payments", "ABC-123")
+	if err != nil {
+		t.Fatalf("TicketEvidence() error = %v", err)
+	}
+	if len(evidence.PullRequests) != 1 {
+		t.Fatalf("len(PullRequests) = %d, want 1", len(evidence.PullRequests))
+	}
+	if evidence.PullRequests[0].ID != "#42" || evidence.PullRequests[0].State != "open" {
+		t.Fatalf("PullRequests[0] = %#v, want open PR #42", evidence.PullRequests[0])
+	}
+	if len(evidence.Issues) != 1 || evidence.Issues[0].ID != "#77" {
+		t.Fatalf("Issues = %#v, want linked issue #77", evidence.Issues)
+	}
+}
+
+func TestAdapterTicketEvidenceIgnoresUnmatchedSearchNoise(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	adapter := NewAdapter(parser)
+	adapter.run = fakeGitHubRunner(map[string]string{
+		"search/issues?q=repo%3Aacme%2Fpayments+is%3Apr+ABC-123&per_page=100&page=1": `{"items":[{"number":43,"title":"OPS-9 unrelated","state":"open","html_url":"https://github.com/acme/payments/pull/43","pull_request":{}}]}`,
+	})
+
+	evidence, err := adapter.TicketEvidence(context.Background(), "github:acme/payments", "ABC-123")
+	if err != nil {
+		t.Fatalf("TicketEvidence() error = %v", err)
+	}
+	if !evidence.IsZero() {
+		t.Fatalf("TicketEvidence() = %#v, want zero evidence", evidence)
+	}
+}
+
 func fakeGitHubRunner(outputs map[string]string) commandRunner {
 	return func(_ context.Context, args ...string) (string, error) {
 		if len(args) == 0 {

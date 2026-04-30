@@ -33,6 +33,7 @@ type fakeAdapter struct {
 	compare        map[string]scm.CompareResult
 	existingRef    map[string]map[string]bool
 	commitMessages map[string]map[string]string
+	ticketEvidence map[string]scm.ProviderEvidence
 }
 
 func (f fakeAdapter) Type() scm.Type                                        { return f.repoType }
@@ -73,6 +74,13 @@ func (f fakeAdapter) CommitMessages(_ context.Context, repoRoot string, hashes [
 		}
 	}
 	return messages, nil
+}
+
+func (f fakeAdapter) TicketEvidence(_ context.Context, repoRoot, ticketID string) (scm.ProviderEvidence, error) {
+	if f.ticketEvidence == nil {
+		return scm.ProviderEvidence{}, nil
+	}
+	return f.ticketEvidence[repoRoot], nil
 }
 
 func TestInferRiskSignalsClassifiesKnownFiles(t *testing.T) {
@@ -279,5 +287,56 @@ func TestInspectInRepositoriesCollectsDeclaredDependenciesFromGitAndSVN(t *testi
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("DeclaredDependencies = %#v, want %#v", got, want)
+	}
+}
+
+func TestInspectInRepositoriesIncludesTicketEvidenceWithoutCommits(t *testing.T) {
+	t.Parallel()
+
+	parser, err := ticket.NewParser(`\b[A-Z][A-Z0-9]+-\d+\b`)
+	if err != nil {
+		t.Fatalf("NewParser() error = %v", err)
+	}
+
+	repositories := []scm.Repository{
+		{Name: "payments", Root: "github:acme/payments", Type: scm.TypeGitHub},
+	}
+	service := NewService(
+		fakeDiscoverer{repositories: repositories},
+		fakeAdapterProvider{
+			adapters: map[scm.Type]scm.Adapter{
+				scm.TypeGitHub: fakeAdapter{
+					repoType: scm.TypeGitHub,
+					search: map[string]map[string][]scm.Commit{
+						"github:acme/payments": {"": nil},
+					},
+					ticketEvidence: map[string]scm.ProviderEvidence{
+						"github:acme/payments": {
+							PullRequests: []scm.PullRequestEvidence{{
+								ID:    "#42",
+								Title: "ABC-123 payments fix",
+								State: "open",
+								URL:   "https://github.com/acme/payments/pull/42",
+							}},
+						},
+					},
+				},
+			},
+		},
+		parser,
+	)
+
+	results, err := service.InspectInRepositories(context.Background(), repositories, "ABC-123")
+	if err != nil {
+		t.Fatalf("InspectInRepositories() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if len(results[0].Commits) != 0 {
+		t.Fatalf("len(commits) = %d, want 0", len(results[0].Commits))
+	}
+	if results[0].ProviderEvidence == nil || len(results[0].ProviderEvidence.PullRequests) != 1 {
+		t.Fatalf("ProviderEvidence = %#v, want PR-only evidence", results[0].ProviderEvidence)
 	}
 }

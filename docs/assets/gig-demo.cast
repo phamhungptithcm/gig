@@ -7,7 +7,7 @@
 [1.1, "o", "No workarea selected yet.\r\n"]
 [1.18, "o", "\r\n"]
 [1.3, "o", "Start here\r\n"]
-[1.38, "o", "  gig login github\r\n"]
+[1.38, "o", "  gig login\r\n"]
 [1.46, "o", "  gig workarea add --provider github --use\r\n"]
 [1.54, "o", "  gig ABC-123 --repo github:owner/name\r\n"]
 [1.62, "o", "  gig verify ABC-123 --repo github:owner/name\r\n"]

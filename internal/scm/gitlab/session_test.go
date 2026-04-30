@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -27,5 +28,21 @@ func TestSessionListRepositoriesFiltersNamespaceAndArchived(t *testing.T) {
 	}
 	if repositories[0].Root != "gitlab:acme/platform/payments" {
 		t.Fatalf("repositories[0].Root = %q, want gitlab:acme/platform/payments", repositories[0].Root)
+	}
+}
+
+func TestSessionMissingCLIShowsInstallHint(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	err := NewSession(nil, nil, nil).Status(context.Background())
+	if err == nil {
+		t.Fatal("Status() error = nil, want missing glab error")
+	}
+
+	message := err.Error()
+	for _, want := range []string{"glab executable not found", "winget install --id GitLab.cli", "brew install glab", "gig login gitlab"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error = %q, want %q", message, want)
+		}
 	}
 }

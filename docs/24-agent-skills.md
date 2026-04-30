@@ -35,8 +35,8 @@ Use when an agent needs to:
 Main commands:
 
 ```bash
-gig assist audit --ticket ABC-123 --repo github:owner/name --audience qa
-gig assist audit --ticket ABC-123 --path . --from test --to main --audience client
+gig explain ABC-123 --repo github:owner/name --audience qa
+gig explain ABC-123 --path . --from test --to main --audience client
 gig assist release --release rel-2026-04-09 --path . --audience release-manager
 gig assist release --release rel-2026-04-09 --ticket-file tickets.txt --repo github:owner/name --audience release-manager
 ```

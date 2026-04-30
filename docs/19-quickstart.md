@@ -1,47 +1,102 @@
 # Quick Start
 
-This page is for the first few minutes with `gig`.
+This page is the first five minutes with `gig`.
 
-If you only remember one thing, remember this path:
+Remember this path:
 
-`install -> login -> inspect -> verify -> export`
+`install -> login -> inspect -> verify -> packet`
 
 ## 1. Install
 
-Use the direct installer as the default install path:
+Use the direct installer when you want the canonical release binary and self-update path:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
 gig version
 ```
 
-Pin a version when your team wants a reproducible rollout:
+Pin a version for team rollout:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh -s -- --version v2026.04.17
 gig version
 ```
 
-Refresh later with `gig update`.
-Use npm only when your environment already distributes `gig` that way.
+Use npm when your team distributes CLI tools through npm:
 
-## 2. Open The Front Door
+```bash
+npm install -g @hunpeolabs/gig
+gig version
+```
+
+Expected success:
+
+- `gig version` prints the installed version.
+- `gig --help` prints the command summary.
+
+Common failure:
+
+- `gig: command not found`
+
+Next action:
+
+- Reopen the terminal or add the install directory to `PATH`.
+
+## 2. Start In The Repo
+
+```bash
+cd /path/to/repo
+git remote get-url origin
+git branch --show-current
+```
+
+Use the checkout you are already working in. For GitHub, GitLab, Bitbucket, and Azure DevOps origins, `gig` can infer the remote repo target from `origin`.
+
+Expected success:
+
+- `origin` points at the provider repo you want to audit.
+- the current branch is the release source when you are checking a promotion branch such as `staging`, `uat`, or `release/*`.
+
+Common failure:
+
+- the repo has no `origin`, or `origin` points at an unsupported host.
+
+Next action:
+
+- Use `--repo github:owner/name` for remote mode from anywhere.
+- Use `--path .` for local fallback mode.
+
+## 3. Open The Front Door
 
 ```bash
 gig
 ```
 
-If you are in an interactive terminal, `gig` opens a picker-first front door:
+Use this when you are not sure which command or repo target to type.
 
-- use `↑/↓` to move
-- press `Enter` or `Space` to select
-- start with GitHub if you are not sure what to pick
-- use the current folder when you already have a repo checked out locally
-- or type directly into the command palette: `ABC-123`, `inspect ABC-123`, `verify ABC-123`, `manifest ABC-123`, `repo github:owner/name ABC-123`
+Expected success:
 
-The goal is that a new user can get to the first audit without learning repo target syntax first.
+- `gig` shows a focused header, current checkout or provider status, suggested next commands, and a small command prompt.
+- In an interactive terminal, use `↑/↓`, `Enter`, or direct text such as `ABC-123`.
 
-## 3. Log In Once
+Common failure:
+
+- The UI cannot detect a repo or provider.
+
+Next action:
+
+- Type `repo github:owner/name ABC-123`, or run `gig login` first.
+
+## 4. Log In
+
+```bash
+gig setup --provider github
+gig login
+```
+
+Use setup to check local provider tools, then log in once per provider. If you are already inside a supported Git checkout, `gig` tries to infer the matching provider. Otherwise it asks which provider to use.
+
+Provider-specific forms also work:
 
 ```bash
 gig login github
@@ -51,25 +106,35 @@ gig login azure-devops
 gig login svn
 ```
 
-Use the provider that matches the repository you want to audit.
+Expected success:
 
-Provider coverage today:
+- `gig` prints that the provider authentication is ready.
 
-| Provider | Coverage |
-| --- | --- |
-| GitHub | deep release evidence: PRs, deployments, checks, linked issues, releases |
-| GitLab | deep release evidence: merge requests, deployments, checks, linked issues, releases |
-| Bitbucket | basic release evidence: pull requests, deployments, branching model |
-| Azure DevOps | deep release evidence: pull requests, deployments, checks, linked work items |
-| SVN | audit topology only: branch and trunk discovery |
+Common failure:
 
-## 4. Inspect One Ticket
+- `gh executable not found`, `glab executable not found`, `az executable not found`, or `svn executable not found`.
+
+Next action:
+
+- Install the provider CLI shown in the error, reopen the terminal, then rerun `gig login`.
+
+Read-only commands do not start login for you. If `gig ABC-123 --repo github:owner/name` reports missing auth, run the printed `gig login <provider>` command, then retry the original command.
+
+## 5. Inspect One Ticket
+
+```bash
+gig ABC-123
+```
+
+Use this when you want to know what changed for one ticket.
+
+If you are outside the checkout, pass the repo target explicitly:
 
 ```bash
 gig ABC-123 --repo github:owner/name
 ```
 
-Supported remote target forms:
+Supported remote targets:
 
 - `github:owner/name`
 - `gitlab:group/project`
@@ -77,111 +142,161 @@ Supported remote target forms:
 - `azure-devops:org/project/repo`
 - `svn:https://svn.example.com/repos/app/branches/staging/ProductName`
 
-Use `inspect` when you want the full ticket picture in one place:
+Expected output summary:
 
-- repositories touched
-- commits found
-- branches containing those commits
-- risk hints such as DB or config changes
+- ticket commits
+- branches where those commits appear
+- provider evidence such as PRs, merge requests, checks, deployments, issues, or work items when supported
+- risk hints such as database, config, or Mendix changes
 
-## 5. Verify The Next Move
+Common failure:
 
-```bash
-gig verify ABC-123 --repo github:owner/name
-```
+- no commits or evidence are found.
 
-Use `verify` when you want a release decision instead of raw evidence:
+Next action:
 
-- `safe`
-- `warning`
-- `blocked`
+- Confirm the ticket ID and current repo.
+- If the ticket is only in an open PR/MR, make sure the provider has access to that repo.
+- If the repo is local-only, use `gig ABC-123 --path .`.
 
-`gig` will try to infer the likely promotion path before you reach for `--from` or `--to`.
-If provider protected branches are ambiguous, it stops and says it is not sure instead of guessing.
-At that point, pass explicit `--envs`, `--from`, and `--to`, or save them in a workarea.
-
-## 6. Export A Release Packet
+## 6. Verify Release Readiness
 
 ```bash
-gig manifest ABC-123 --repo github:owner/name
-```
-
-Use this when you want release-ready output for QA, release review, or downstream tooling without rewriting the audit by hand.
-
-## 7. Optional: Save A Workarea
-
-```bash
-gig workarea add payments --repo github:owner/name --from staging --to main --use
-gig ABC-123
 gig verify ABC-123
 ```
 
-Use a workarea when you want `gig` to remember project scope and defaults so repeated commands stay short.
-You do not need this on day one because `gig` can also remember successful remote usage automatically.
+Use this when you need a release decision, not just raw evidence.
 
-For release day, the shortest repeatable flow is:
+Expected output summary:
+
+- promotion path such as `staging -> main`
+- verdict: `SAFE`, `WARNING`, or `BLOCKED`
+- missing commits or risky evidence that explain the verdict
+
+Common failure:
+
+- `gig is not sure which branches represent the promotion path`
+
+Next action:
 
 ```bash
-gig workarea use payments
-gig verify --release rel-2026-04-09
-gig manifest --release rel-2026-04-09
-gig assist release --release rel-2026-04-09 --audience release-manager
+gig verify ABC-123 --from staging --to main
 ```
 
-## 8. Optional: Add An AI Briefing Layer
-
-If you want an audience-specific explanation on top of the deterministic audit bundle:
+In an interactive terminal, you can also run the short form and let `gig` ask for the missing promotion path:
 
 ```bash
-gig assist doctor
-gig assist setup
-gig assist audit --ticket ABC-123 --repo github:owner/name --audience release-manager
-gig resume
-gig ask "what is still blocked?"
+gig verify ABC-123
 ```
 
-The AI layer is additive.
-`gig` stays the source of truth.
-`gig resume` and `gig ask` reuse the saved DeerFlow session for the current workarea or remembered repo target, then refresh the deterministic bundle before answering the follow-up question.
-
-## 9. Local Fallback When Needed
-
-Use local mode when remote access is not enough yet:
+If you are outside the checkout:
 
 ```bash
-gig scan --path .
+gig verify ABC-123 --repo github:owner/name --from staging --to main
+```
+
+If this is your normal project, save it:
+
+```bash
+gig project add payments --repo github:owner/name --from staging --to main --use
+gig verify ABC-123
+```
+
+## 7. Generate A Release Packet
+
+```bash
+gig packet ABC-123
+```
+
+Use this when you need a handoff artifact for QA, release review, or automation.
+
+Expected output summary:
+
+- ticket summary
+- repository evidence
+- release readiness notes
+- risk and manual-review hints
+
+Common failure:
+
+- packet output is missing the expected branch path.
+
+Next action:
+
+```bash
+gig packet ABC-123 --from staging --to main
+```
+
+Use JSON for tooling:
+
+```bash
+gig packet ABC-123 --json
+```
+
+## 8. Save A Project When Commands Repeat
+
+```bash
+gig project add payments --repo github:owner/name --from staging --to main --use
+gig ABC-123
+gig verify ABC-123
+gig packet ABC-123
+```
+
+Use a saved project when the same repo and branch defaults are used repeatedly from outside a checkout. Do not create one just to try `gig`.
+
+Common failure:
+
+- wrong current project.
+
+Next action:
+
+```bash
+gig project list
+gig project use payments
+```
+
+The old `gig workarea ...` spelling still works.
+
+## 9. Use Local Fallback Only When Needed
+
+```bash
 gig ABC-123 --path .
-gig verify ABC-123 --path .
-gig manifest ABC-123 --path .
+gig verify ABC-123 --path . --from staging --to main
+gig packet ABC-123 --path . --from staging --to main
 ```
 
-## 10. Only Add Config If Inference Needs Help
+Use local mode when:
+
+- remote provider access is unavailable
+- the repo is not hosted by a supported provider
+- SVN/Mendix release work depends on a local checkout
+
+Local mode can inspect without topology. Local `verify` and `packet` need a promotion path unless a project, config, or interactive prompt supplies it.
+
+## 10. Add Config Only After Inference Needs Help
 
 Most teams should not start with `gig.yaml`.
 
 Add config only when you need:
 
-- branch topology overrides
-- repo metadata such as service names or owners
-- team notes that should appear in output
+- custom environment names
+- branch topology that provider metadata cannot infer
+- repo owner/service metadata in output
+- team-specific notes in release packets
 
-## Demo
-
-For a stable terminal walkthrough that is good for README updates, portfolio clips, or documentation:
-
-```bash
-./scripts/demo/frontdoor.sh
-./scripts/demo/record-frontdoor.sh
-```
-
-See [Demo Guide](25-demo-guide.md) and [Portfolio Guide](26-portfolio-guide.md) for publishing advice.
-
-## Benchmark
-
-To compare a manual repo-by-repo audit against `gig` on the same synthetic workspace:
+## 11. Optional AI Assist
 
 ```bash
-./scripts/benchmark-release-audit.sh --runs 5
+gig assist doctor
+gig assist setup
+gig explain ABC-123 --audience release-manager
+gig ask "what is still blocked?"
 ```
 
-For support or CI traces, set `GIG_DIAGNOSTICS_FILE=/path/to/gig-diagnostics.jsonl` before running `gig`.
+Use AI assist only after the deterministic `gig` audit works. The AI layer explains `gig` evidence; it should not become the source of truth.
+
+## Next
+
+- [First Ticket Audit](first-ticket-audit.md)
+- [Release-Day Workflow](release-day-workflow.md)
+- [Troubleshooting](troubleshooting.md)

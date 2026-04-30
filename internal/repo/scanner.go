@@ -21,6 +21,14 @@ func NewScanner(registry *scm.Registry) *Scanner {
 	return &Scanner{registry: registry}
 }
 
+func (s *Scanner) Current(ctx context.Context, path string) (scm.Repository, bool, error) {
+	basePath, err := normalizePath(path)
+	if err != nil {
+		return scm.Repository{}, false, err
+	}
+	return s.detectEnclosingRepository(ctx, basePath)
+}
+
 func (s *Scanner) Discover(ctx context.Context, path string) ([]scm.Repository, error) {
 	basePath, err := normalizePath(path)
 	if err != nil {

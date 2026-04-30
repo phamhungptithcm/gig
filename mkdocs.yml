@@ -8,38 +8,52 @@ theme:
   name: readthedocs
 
 nav:
-  - Home: index.md
   - Start Here:
+      - Overview: index.md
       - Quick Start: 19-quickstart.md
-      - Demo Guide: 25-demo-guide.md
-      - Portfolio Guide: 26-portfolio-guide.md
-      - Product Overview: 00-product-overview.md
-      - Problem Statement: 01-problem-statement.md
-      - Scope And Phases: 02-scope-and-phases.md
+      - First Ticket Audit: first-ticket-audit.md
+      - Release-Day Workflow: release-day-workflow.md
   - Using gig:
       - CLI Guide: 03-cli-spec.md
-      - Branching And Release: 15-branching-and-release.md
-      - Real-World Release Workflows: 16-real-world-release-workflows.md
-  - How gig Works:
+      - Remote Repositories: remote-repositories.md
+      - Workareas: workareas.md
+      - Local Fallback: local-fallback.md
+      - Manifest / Release Packet: manifest-release-packet.md
+      - Troubleshooting: troubleshooting.md
+  - Optional:
+      - AI Assist: ai-assist.md
+      - Config: 09-config-spec.md
+      - Conflict Resolution: conflict-resolution.md
+  - Reference:
+      - Command Reference: command-reference.md
+      - JSON Output: json-output.md
+      - Branching Model: branching-model.md
+      - Product Overview: 00-product-overview.md
+      - Commit Convention: 08-commit-convention.md
+      - Mendix Considerations: 12-mendix-considerations.md
+  - Internals / Planning:
       - Architecture: 04-architecture.md
       - Domain Model: 05-domain-model.md
       - SCM Abstraction: 06-scm-abstraction.md
       - Promotion Engine: 07-promotion-engine.md
-      - Commit Convention: 08-commit-convention.md
-      - Config Spec: 09-config-spec.md
       - Error Handling And Logging: 10-error-handling-and-logging.md
       - Test Strategy: 11-test-strategy.md
-      - Mendix Considerations: 12-mendix-considerations.md
-  - Direction And Planning:
       - Roadmap: 13-roadmap.md
       - Product Strategy: 17-product-strategy.md
-      - Operating Model: 18-operating-model.md
-      - Engineering Implementation Plan: 14-codex-implementation-plan.md
-      - Dependency Parsing And Missing-Dependency Risk: 20-dependency-risk-slice.md
-      - Conflict Resolution Slice: 21-conflict-resolution-slice.md
       - Product Reset Audit: 22-product-reset-audit.md
-      - AI Assist Slice: 23-ai-assist-slice.md
-      - Agent Skills: 24-agent-skills.md
+      - Planning Notes:
+          - Problem Statement: 01-problem-statement.md
+          - Scope And Phases: 02-scope-and-phases.md
+          - Engineering Implementation Plan: 14-codex-implementation-plan.md
+          - Branching And Release: 15-branching-and-release.md
+          - Real-World Release Workflows: 16-real-world-release-workflows.md
+          - Operating Model: 18-operating-model.md
+          - Dependency Parsing And Missing-Dependency Risk: 20-dependency-risk-slice.md
+          - Conflict Resolution Slice: 21-conflict-resolution-slice.md
+          - AI Assist Slice: 23-ai-assist-slice.md
+          - Agent Skills: 24-agent-skills.md
+          - Demo Guide: 25-demo-guide.md
+          - Portfolio Guide: 26-portfolio-guide.md
 
 markdown_extensions:
   - admonition

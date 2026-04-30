@@ -14,6 +14,7 @@ import (
 
 	"gig/internal/scm"
 	"gig/internal/ticket"
+	"gig/internal/toolcheck"
 )
 
 const defaultCommitPageLimit = 20
@@ -94,12 +95,17 @@ type commitStatusPayload struct {
 type issuePayload struct {
 	Number  int    `json:"number"`
 	Title   string `json:"title"`
+	Body    string `json:"body"`
 	State   string `json:"state"`
 	HTMLURL string `json:"html_url"`
 	Labels  []struct {
 		Name string `json:"name"`
 	} `json:"labels"`
 	PullRequest *struct{} `json:"pull_request,omitempty"`
+}
+
+type issueSearchPayload struct {
+	Items []issuePayload `json:"items"`
 }
 
 type releasePayload struct {
@@ -239,25 +245,12 @@ func (a *Adapter) CompareBranches(ctx context.Context, repoRoot string, query sc
 		return scm.CompareResult{}, err
 	}
 
-	targetByHash := make(map[string]struct{}, len(targetCommits))
-	for _, commit := range targetCommits {
-		targetByHash[commit.Hash] = struct{}{}
-	}
-
-	missingCommits := make([]scm.Commit, 0, len(sourceCommits))
-	for _, commit := range sourceCommits {
-		if _, ok := targetByHash[commit.Hash]; ok {
-			continue
-		}
-		missingCommits = append(missingCommits, commit)
-	}
-
 	return scm.CompareResult{
 		FromBranch:     query.FromBranch,
 		ToBranch:       query.ToBranch,
 		SourceCommits:  sourceCommits,
 		TargetCommits:  targetCommits,
-		MissingCommits: missingCommits,
+		MissingCommits: scm.MissingCommitsByEvidence(sourceCommits, targetCommits),
 	}, nil
 }
 
@@ -492,6 +485,47 @@ func (a *Adapter) ProviderEvidence(ctx context.Context, repoRoot string, query s
 	}, nil
 }
 
+func (a *Adapter) TicketEvidence(ctx context.Context, repoRoot, ticketID string) (scm.ProviderEvidence, error) {
+	if err := a.parser.Validate(ticketID); err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	owner, name, err := parseOwnerRepo(repoRoot)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+
+	pullRequestsByID := map[string]scm.PullRequestEvidence{}
+	issuesByID := map[string]scm.IssueEvidence{}
+	pullRequests, err := a.pullRequestsForTicket(ctx, owner, name, ticketID)
+	if err != nil {
+		return scm.ProviderEvidence{}, err
+	}
+	for _, item := range pullRequests {
+		id := fmt.Sprintf("#%d", item.Number)
+		linkedIssues, err := a.linkedIssuesForPullRequest(ctx, owner, name, item)
+		if err != nil {
+			return scm.ProviderEvidence{}, err
+		}
+		for _, issue := range linkedIssues {
+			issuesByID[strings.TrimSpace(issue.ID)] = issue
+		}
+		pullRequestsByID[id] = scm.PullRequestEvidence{
+			ID:           id,
+			Title:        strings.TrimSpace(item.Title),
+			State:        strings.TrimSpace(item.State),
+			SourceBranch: strings.TrimSpace(item.Head.Ref),
+			TargetBranch: strings.TrimSpace(item.Base.Ref),
+			URL:          strings.TrimSpace(item.HTMLURL),
+			LinkedIssues: linkedIssues,
+		}
+	}
+
+	return scm.ProviderEvidence{
+		PullRequests: mapPullRequestEvidence(pullRequestsByID),
+		Issues:       mapIssueEvidence(issuesByID),
+	}, nil
+}
+
 func (a *Adapter) searchBranchCommits(ctx context.Context, repoRoot, branch, ticketID string) ([]scm.Commit, error) {
 	owner, name, err := parseOwnerRepo(repoRoot)
 	if err != nil {
@@ -571,6 +605,41 @@ func (a *Adapter) pullRequestsForCommit(ctx context.Context, owner, name, hash s
 		}
 		pullRequests = append(pullRequests, payload...)
 		if len(payload) < 100 {
+			break
+		}
+	}
+	return pullRequests, nil
+}
+
+func (a *Adapter) pullRequestsForTicket(ctx context.Context, owner, name, ticketID string) ([]pullRequestPayload, error) {
+	pullRequests := make([]pullRequestPayload, 0)
+	query := fmt.Sprintf("repo:%s/%s is:pr %s", owner, name, strings.TrimSpace(ticketID))
+	for page := 1; page <= 5; page++ {
+		var payload issueSearchPayload
+		endpoint := fmt.Sprintf("search/issues?q=%s&per_page=100&page=%d", url.QueryEscape(query), page)
+		if err := a.api(ctx, endpoint, &payload); err != nil {
+			return nil, err
+		}
+		if len(payload.Items) == 0 {
+			break
+		}
+		for _, item := range payload.Items {
+			if item.PullRequest == nil {
+				continue
+			}
+			text := strings.TrimSpace(item.Title) + "\n" + strings.TrimSpace(item.Body)
+			if !a.parser.Matches(ticketID, text) {
+				continue
+			}
+			pullRequests = append(pullRequests, pullRequestPayload{
+				Number:  item.Number,
+				Title:   item.Title,
+				Body:    item.Body,
+				State:   item.State,
+				HTMLURL: item.HTMLURL,
+			})
+		}
+		if len(payload.Items) < 100 {
 			break
 		}
 	}
@@ -723,7 +792,7 @@ func (a *Adapter) runGH(ctx context.Context, args ...string) (string, error) {
 		return a.run(ctx, args...)
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
-		return "", fmt.Errorf("gh executable not found: %w", err)
+		return "", toolcheck.MissingTool(toolcheck.GitHubCLI(), err)
 	}
 
 	cmd := exec.CommandContext(ctx, "gh", args...)
