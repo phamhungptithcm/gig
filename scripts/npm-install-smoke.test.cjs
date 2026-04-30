@@ -31,6 +31,10 @@ const smokeCommands = [
   { args: ["version"], expect: /^gig /m }
 ];
 
+function commandName(name) {
+	return isWindows ? `${name}.cmd` : name;
+}
+
 let fixtureRoot;
 let packageDir;
 let distDir;
@@ -250,13 +254,14 @@ test("local npm install can run gig from the local shim path", async () => {
   );
 
   run(
-    "npm",
+    commandName("npm"),
     ["install", "--no-audit", "--no-fund", packageDir],
     {
       cwd: projectDir,
       env: {
         GIG_RELEASE_BASE_URL: releaseBaseURL
-      }
+      },
+      shell: isWindows
     }
   );
 
@@ -285,12 +290,13 @@ test("global npm install can run gig from the shim path", async () => {
   await fsp.mkdir(prefixDir, { recursive: true });
 
   run(
-    "npm",
+    commandName("npm"),
     ["install", "-g", "--no-audit", "--no-fund", "--prefix", prefixDir, packageDir],
     {
       env: {
         GIG_RELEASE_BASE_URL: releaseBaseURL
-      }
+      },
+      shell: isWindows
     }
   );
 
