@@ -7,7 +7,9 @@ func (a *App) printRootUsage() {
 	printHelpUsage(a.stderr, "gig [ticket-id | command] [flags]")
 	printHelpBullets(a.stderr, "First-time users",
 		"Run `gig` in a real terminal to open the guided picker.",
+		"The guided prompt stays open after each command; type `exit` or `quit` when done.",
 		"From inside a Git checkout, gig can infer the remote repo from origin.",
+		"Inside the prompt, `repo payments`, `gh owner/name`, or a pasted repo URL resolves the remote target.",
 		"When a short command is missing a ticket or promotion path, gig asks for it interactively.",
 		"Learn `inspect`, `verify`, and `packet` first.",
 	)
@@ -20,10 +22,19 @@ func (a *App) printRootUsage() {
 		"gig resume",
 		"gig ask \"what is still blocked?\"",
 	)
-	printHelpCommands(a.stderr, "Core workflows",
+	printHelpCommands(a.stderr, "Inside prompt",
+		"repo payments",
+		"gh owner/name",
+		"ABC-123",
+		"verify ABC-123",
+		"packet ABC-123",
+	)
+	printHelpCommands(a.stderr, "Scriptable form",
 		"gig ABC-123",
 		"gig verify ABC-123",
 		"gig packet ABC-123",
+	)
+	printHelpCommands(a.stderr, "Fallback",
 		"gig ABC-123 --path .",
 	)
 	printHelpRows(a.stderr, "Provider coverage", providerCoverageHelpRows()...)
@@ -61,16 +72,25 @@ func (a *App) printLoginUsage() {
 }
 
 func (a *App) printScanUsage() {
+	printHelpHeading(a.stderr, "gig repos", "Find local repositories under a path.")
 	printHelpUsage(a.stderr, "gig repos --path .")
 	printHelpRows(a.stderr, "Alias", helpRow{Label: "scan", Value: "gig scan --path ."})
 }
 
 func (a *App) printFindUsage() {
+	printHelpHeading(a.stderr, "gig commits", "List raw commits for one ticket.")
 	printHelpUsage(a.stderr, "gig commits <ticket-id> [--project name] [--path . | --repo <provider-target>]")
+	printHelpCommands(a.stderr, "Start here",
+		"gig ABC-123",
+		"gig commits ABC-123",
+		"gig commits ABC-123 --project payments",
+	)
+	printHelpRows(a.stderr, "Tip", helpRow{Label: "inspect", Value: "Use gig ABC-123 first when you want the full ticket story"})
 	printHelpRows(a.stderr, "Alias", helpRow{Label: "find", Value: "gig find <ticket-id> ..."})
 }
 
 func (a *App) printDiffUsage() {
+	printHelpHeading(a.stderr, "gig diff", "Compare one branch to another for a ticket.")
 	printHelpUsage(a.stderr, "gig diff --ticket <ticket-id> --from <branch> --to <branch> --path .")
 }
 
@@ -78,9 +98,10 @@ func (a *App) printInspectUsage() {
 	printHelpHeading(a.stderr, "gig inspect", "Show the full ticket story across repositories.")
 	printHelpUsage(a.stderr, "gig inspect <ticket-id> [--project name] [--path . | --repo <provider-target>]")
 	printHelpCommands(a.stderr, "Start here",
+		"gig",
 		"gig inspect ABC-123",
-		"gig ABC-123 --repo github:owner/name",
 		"gig inspect ABC-123 --project payments",
+		"gig inspect ABC-123 --repo github:owner/name",
 	)
 	printHelpRows(a.stderr, "Common flags",
 		helpRow{Label: "--repo", Value: "Inspect a live remote repository without cloning first"},
@@ -96,7 +117,13 @@ func (a *App) printInspectUsage() {
 }
 
 func (a *App) printEnvUsage() {
+	printHelpHeading(a.stderr, "gig where", "Show where a ticket is present or behind.")
 	printHelpUsage(a.stderr, "gig where <ticket-id> [--project name] [--path . | --repo <provider-target>] [--envs dev=dev,test=test,prod=main]")
+	printHelpCommands(a.stderr, "Start here",
+		"gig where ABC-123",
+		"gig where ABC-123 --project payments",
+	)
+	printHelpRows(a.stderr, "Tip", helpRow{Label: "verify", Value: "Use gig verify ABC-123 when you need a release verdict"})
 	printHelpRows(a.stderr, "Alias", helpRow{Label: "env status", Value: "gig env status <ticket-id> ..."})
 }
 
@@ -136,6 +163,7 @@ func (a *App) printVerifyUsage() {
 		"gig verify ABC-123 [--repo github:owner/name | --project payments | --path .]",
 		"gig verify --ticket-file tickets.txt [--repo github:owner/name | --project payments | --path .]",
 		"gig verify --release rel-2026-04-09 --path .",
+		"gig verify ABC-123 --out verify.xlsx",
 	)
 	printHelpCommands(a.stderr, "Start here",
 		"gig verify ABC-123",
@@ -147,7 +175,8 @@ func (a *App) printVerifyUsage() {
 		helpRow{Label: "--project", Value: "Reuse remembered repo scope and branch defaults"},
 		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
 		helpRow{Label: "--json", Value: "Print JSON for automation"},
-		helpRow{Label: "--format", Value: "Add json output for automation"},
+		helpRow{Label: "--format", Value: "Use json for automation, xlsx for sharing, or csv for import"},
+		helpRow{Label: "--out", Value: "Write xlsx, csv, or json export to a file"},
 	)
 	printHelpCommands(a.stderr, "Next commands",
 		"gig plan ABC-123",
@@ -161,6 +190,7 @@ func (a *App) printManifestUsage() {
 		"gig packet ABC-123 [--repo github:owner/name | --project payments | --path .]",
 		"gig packet --ticket-file tickets.txt [--repo github:owner/name | --project payments | --path .]",
 		"gig packet --release rel-2026-04-09 --path .",
+		"gig packet ABC-123 --out release-packet.xlsx",
 	)
 	printHelpCommands(a.stderr, "Start here",
 		"gig packet ABC-123",
@@ -171,7 +201,8 @@ func (a *App) printManifestUsage() {
 		helpRow{Label: "--repo", Value: "Generate a packet directly from a live remote repository"},
 		helpRow{Label: "--project", Value: "Reuse remembered repo scope and branch defaults"},
 		helpRow{Label: "--json", Value: "Print JSON for tooling"},
-		helpRow{Label: "--format", Value: "Keep markdown for handoff or use json for tooling"},
+		helpRow{Label: "--format", Value: "Use markdown, json, xlsx, or csv"},
+		helpRow{Label: "--out", Value: "Write xlsx/json to a file or csv to a directory"},
 		helpRow{Label: "--from/--to", Value: "Only add these when gig cannot infer the promotion path"},
 		helpRow{Label: "Alias", Value: "`gig manifest ...` and `gig manifest generate ...` still work for existing scripts"},
 	)
@@ -186,7 +217,19 @@ func (a *App) printManifestGenerateUsage() {
 }
 
 func (a *App) printSnapshotUsage() {
-	printHelpUsage(a.stderr, "gig snapshot create <ticket-id> [--project name] [--from <branch>] [--to <branch>] [--path . | --repo <provider-target>] [--release <release-id>] [--envs dev=dev,test=test,prod=main] [--format human|json] [--json] [--output snapshot.json]")
+	printHelpHeading(a.stderr, "gig snapshot", "Save a repeatable ticket baseline for audit and re-check.")
+	printHelpUsage(a.stderr, "gig snapshot create <ticket-id> [--project name] [--path . | --repo <target>] [--release <release-id>] [--output snapshot.json]")
+	printHelpCommands(a.stderr, "Start here",
+		"gig snapshot create ABC-123",
+		"gig snapshot create ABC-123 --project payments",
+		"gig snapshot create ABC-123 --release rel-2026-04-09",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--release", Value: "Group snapshots under a saved release ID"},
+		helpRow{Label: "--from/--to", Value: "Optional promotion path when inference needs help"},
+		helpRow{Label: "--output", Value: "Write the snapshot JSON file"},
+		helpRow{Label: "--json", Value: "Print JSON for automation"},
+	)
 }
 
 func (a *App) printSnapshotCreateUsage() {

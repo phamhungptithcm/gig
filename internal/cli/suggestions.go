@@ -39,88 +39,119 @@ func buildSmartSuggestions(ctx suggestionContext) []output.FrontDoorSuggestion {
 		command = "inspect"
 	}
 
-	suggestions := make([]output.FrontDoorSuggestion, 0, 6)
-	addCommand := func(command string) {
+	suggestions := make([]output.FrontDoorSuggestion, 0, 8)
+	addCommand := func(label, command string) {
 		command = strings.TrimSpace(command)
 		if command == "" || hasSuggestion(suggestions, command) {
 			return
 		}
-		suggestions = append(suggestions, output.FrontDoorSuggestion{Command: command})
+		suggestions = append(suggestions, output.FrontDoorSuggestion{
+			Label:   strings.TrimSpace(label),
+			Command: command,
+		})
 	}
-	addNote := func(note string) {
+	addNote := func(label, note string) {
 		note = strings.TrimSpace(note)
 		if note == "" {
 			return
 		}
-		suggestions = append(suggestions, output.FrontDoorSuggestion{Note: note})
+		suggestions = append(suggestions, output.FrontDoorSuggestion{
+			Label: strings.TrimSpace(label),
+			Note:  note,
+		})
 	}
 
 	if loginCommand := authLoginSuggestion(ctx); loginCommand != "" {
-		addCommand(loginCommand)
+		addCommand("login", loginCommand)
 		if ctx.AuthStatus != nil && ctx.AuthStatus.Detail != "" {
 			switch strings.TrimSpace(ctx.AuthStatus.Detail) {
 			case "cli missing":
-				addNote("provider CLI missing; install it before login")
+				addNote("why", "provider CLI missing; install it before login")
 			default:
-				addNote("provider " + ctx.AuthStatus.Detail + "; login before running live remote commands")
+				addNote("why", "provider "+ctx.AuthStatus.Detail+"; login before running live remote commands")
 			}
 		}
 	}
 
 	if ctx.NeedsBranches || topologyNeedsExplicitBranches(ctx.Topology) {
 		scopeFlag := suggestionScopeFlag(ctx)
-		addCommand(fmt.Sprintf("gig %s %s%s --from <source> --to <target>", commandName(command), ticketID, scopeFlag))
+		addCommand("clarify", fmt.Sprintf("gig %s %s%s --from <source> --to <target>", commandName(command), ticketID, scopeFlag))
 		if strings.TrimSpace(ctx.RepoTarget) != "" {
-			addCommand(fmt.Sprintf("gig project add%s --from <source> --to <target> --use", scopeFlag))
+			addCommand("remember", fmt.Sprintf("gig project add%s --from <source> --to <target> --use", scopeFlag))
 		}
-		addNote("add --envs only when the detected branch order is ambiguous")
+		addNote("why", "gig could not prove the promotion path from topology alone")
+		addNote("tip", "add --envs only when the branch order itself is ambiguous")
 		return suggestions
 	}
 
 	switch {
 	case ctx.Current != nil:
-		addCommand("gig " + ticketID)
-		addCommand("gig verify " + ticketID)
-		addCommand("gig packet " + ticketID)
+		addCommand("now", "gig "+ticketID)
+		addCommand("verify", "gig verify "+ticketID)
+		addCommand("packet", "gig packet "+ticketID)
 		if ctx.HasAssist {
-			addCommand("gig ask \"what is still blocked?\"")
+			addCommand("ask", "gig ask \"what is still blocked?\"")
 		}
+		addNote("inside", "type "+ticketID+", verify "+ticketID+", packet "+ticketID+", or exit")
 		if promotion := suggestionWorkareaPromotion(*ctx.Current); promotion != "" {
-			addNote("promotion " + promotion)
+			addNote("context", "saved project keeps "+promotion+" attached to short commands")
+		} else {
+			addNote("context", "saved project keeps repo scope attached to short commands")
+		}
+		if strings.TrimSpace(ctx.Current.FromBranch) != "" {
+			addNote("branch", strings.TrimSpace(ctx.Current.FromBranch)+" is the remembered source branch")
+		}
+		if strings.TrimSpace(ctx.Current.ToBranch) != "" {
+			addNote("target", strings.TrimSpace(ctx.Current.ToBranch)+" is the remembered release target")
 		}
 	case ctx.Detected != nil:
 		if suggestionDetectedIsRemote(*ctx.Detected) {
-			addCommand("gig " + ticketID)
-			addCommand("gig verify " + ticketID)
-			addCommand("gig packet " + ticketID)
-			addNote("remote checkout detected from origin; use --repo only when running outside this folder")
-		} else {
-			addCommand("gig " + ticketID + " --path .")
-			if fromBranch, toBranch, ok := suggestionDetectedPromotionBranches(*ctx.Detected); ok {
-				addCommand(fmt.Sprintf("gig verify %s --path . --from %s --to %s", ticketID, fromBranch, toBranch))
-				addCommand(fmt.Sprintf("gig packet %s --path . --from %s --to %s", ticketID, fromBranch, toBranch))
-			} else {
-				addCommand("gig project add local --path . --from <source> --to <target> --use")
+			addCommand("now", "gig "+ticketID)
+			addCommand("verify", "gig verify "+ticketID)
+			addCommand("packet", "gig packet "+ticketID)
+			if root := strings.TrimSpace(ctx.Detected.Root); root != "" {
+				addCommand("save", "save "+inferFrontDoorSaveName(root))
 			}
-			addNote("local " + strings.ToLower(suggestionBlankAsDefault(ctx.Detected.Type, "repository")) + " detected; add a project when this becomes daily context")
+			addNote("scope", "origin already maps this checkout to "+suggestionBlankAsDefault(ctx.Detected.Root, "a remote repo"))
+			if strings.TrimSpace(ctx.Detected.Branch) != "" {
+				addNote("branch", strings.TrimSpace(ctx.Detected.Branch)+" is the current checkout branch")
+			}
+			addNote("inside", "type "+ticketID+", verify "+ticketID+", packet "+ticketID+", or exit")
+		} else {
+			addCommand("now", "gig "+ticketID)
+			if fromBranch, toBranch, ok := suggestionDetectedPromotionBranches(*ctx.Detected); ok {
+				addCommand("verify", fmt.Sprintf("gig verify %s --path . --from %s --to %s", ticketID, fromBranch, toBranch))
+				addCommand("packet", fmt.Sprintf("gig packet %s --path . --from %s --to %s", ticketID, fromBranch, toBranch))
+				addCommand("save", fmt.Sprintf("gig project add local --path . --from %s --to %s --use", fromBranch, toBranch))
+				addNote("branch", fromBranch+" looks like the release source")
+				addNote("target", toBranch+" is the default release target")
+			} else {
+				addCommand("verify", "gig verify "+ticketID)
+				addCommand("packet", "gig packet "+ticketID)
+			}
+			addNote("scope", "local "+strings.ToLower(suggestionBlankAsDefault(ctx.Detected.Type, "repository"))+" detected; save a project when this becomes daily context")
+			addNote("inside", "type local "+ticketID+", verify "+ticketID+", packet "+ticketID+", or exit")
 		}
 	default:
 		if len(suggestions) == 0 {
-			addCommand("gig login github")
+			addCommand("connect", "gig login github")
 		}
 		if repo := strings.TrimSpace(ctx.RepoTarget); repo != "" {
-			addCommand("gig " + ticketID + " --repo " + repo)
+			addCommand("audit", "gig "+ticketID+" --repo "+repo)
 		} else {
-			addCommand("gig " + ticketID + " --repo github:owner/name")
+			addCommand("repo", "repo payments")
+			addCommand("pick", "repo")
+			addCommand("alias", "gh owner/name")
 		}
-		addCommand("gig project add --provider github --use")
-		addNote("paste a repo target when you already know it; use --path . for local Git or SVN")
+		addCommand("save", "save payments")
+		addNote("habit", "after saving a project, start with gig and keep commands short")
+		addNote("inside", "type repo, repo payments, gh owner/name, paste a URL, or local "+ticketID)
 	}
 
 	if strings.TrimSpace(ctx.ConfigPath) != "" {
-		addNote("using config overrides from " + strings.TrimSpace(ctx.ConfigPath))
+		addNote("config", "using overrides from "+strings.TrimSpace(ctx.ConfigPath))
 	} else if ctx.ConfigDetected {
-		addNote("config detected; keep --from and --to only when inference is wrong")
+		addNote("config", "config detected; keep --from and --to only when inference is wrong")
 	}
 
 	return suggestions

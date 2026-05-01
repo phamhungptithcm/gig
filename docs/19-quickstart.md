@@ -77,7 +77,15 @@ Use this when you are not sure which command or repo target to type.
 Expected success:
 
 - `gig` shows a focused header, current checkout or provider status, suggested next commands, and a small command prompt.
+- Suggestions are ranked as a workflow, such as `now`, `verify`, `packet`, and `save`, so you can keep moving without memorizing flags.
 - In an interactive terminal, use `↑/↓`, `Enter`, or direct text such as `ABC-123`.
+- The prompt stays open after a command completes or fails; type `exit` or `quit` when you are done.
+- After one ticket command, `verify`, `packet`, `explain`, `next`, and `last` reuse the remembered ticket and scope.
+- Use prompt aliases when you want speed: `i ABC-123`, `v`, `p`, `r`, `?`, `gh owner/name`, `gl group/project`, `bb workspace/repo`, and `ado org/project/repo`.
+- Type `repo payments` to search saved, recent, and logged-in provider repos by short name.
+- Paste normal URLs or remotes instead of memorizing canonical targets.
+- Type `save payments` after a repo is remembered so future sessions can use `use payments`, `ABC-123`, `verify`, and `packet`.
+- When a `run?` row appears, press Enter to run that suggested command immediately.
 
 Common failure:
 
@@ -85,7 +93,7 @@ Common failure:
 
 Next action:
 
-- Type `repo github:owner/name ABC-123`, or run `gig login` first.
+- Type `repo`, `repo payments`, `gh owner/name`, or paste the repo URL. If auth is missing, run `gig login` first.
 
 ## 4. Log In
 
@@ -118,7 +126,7 @@ Next action:
 
 - Install the provider CLI shown in the error, reopen the terminal, then rerun `gig login`.
 
-Read-only commands do not start login for you. If `gig ABC-123 --repo github:owner/name` reports missing auth, run the printed `gig login <provider>` command, then retry the original command.
+Read-only commands do not start login for you. If `gig ABC-123` or `gig ABC-123 --repo github:owner/name` reports missing auth, run the printed `gig login <provider>` command, then retry the original command.
 
 ## 5. Inspect One Ticket
 
@@ -141,6 +149,8 @@ Supported remote targets:
 - `bitbucket:workspace/repo`
 - `azure-devops:org/project/repo`
 - `svn:https://svn.example.com/repos/app/branches/staging/ProductName`
+
+You can also pass provider URLs and common Git remotes, for example `https://github.com/owner/name`, `git@github.com:owner/name.git`, `https://dev.azure.com/org/project/_git/repo`, or a plain SVN URL. Inside the prompt, use shorter aliases such as `gh owner/name` or `repo payments`.
 
 Expected output summary:
 
@@ -189,17 +199,34 @@ In an interactive terminal, you can also run the short form and let `gig` ask fo
 gig verify ABC-123
 ```
 
-If you are outside the checkout:
+If you are outside the checkout, pass the repo and let provider topology infer the path first:
 
 ```bash
-gig verify ABC-123 --repo github:owner/name --from staging --to main
+gig verify ABC-123 --repo github:owner/name
 ```
+
+Add `--from staging --to main` only when `gig` says the topology is ambiguous, or use an interactive terminal and answer the branch prompts.
 
 If this is your normal project, save it:
 
 ```bash
-gig project add payments --repo github:owner/name --from staging --to main --use
+gig
+# ask gig > repo payments
+# ask gig > save payments
 gig verify ABC-123
+```
+
+For a shareable release-management artifact:
+
+```bash
+gig verify ABC-123 --out verify.xlsx
+```
+
+Use CSV when another spreadsheet or reporting system needs one verification
+table:
+
+```bash
+gig verify ABC-123 --out verify.csv
 ```
 
 ## 7. Generate A Release Packet
@@ -233,9 +260,38 @@ Use JSON for tooling:
 gig packet ABC-123 --json
 ```
 
+Use XLSX when the packet will be shared with QA, release managers, engineering
+leads, or compliance reviewers:
+
+```bash
+gig packet ABC-123 --out release-packet.xlsx
+```
+
+Packet CSV export writes a directory because a release packet has multiple
+tables:
+
+```bash
+gig packet ABC-123 --format csv --out release-packet/
+```
+
+The XLSX packet includes Cover, Release Decision, Scope, Risks, Missing Changes,
+Commits, Manual Steps, Verification, Approvals, Evidence, and Metadata sheets.
+The CSV directory includes matching import tables such as `summary.csv`,
+`release-decision.csv`, `risks.csv`, `commits.csv`, and `metadata.csv`.
+
+Decision values are conservative: `ready` only when evidence is complete and no
+blocking risk remains, `needs_review` when manual review is still required,
+`blocked` when a required release check fails or changes are missing, and
+`unknown` when setup or provider access prevents a reliable answer.
+
 ## 8. Save A Project When Commands Repeat
 
 ```bash
+gig
+# ask gig > repo payments
+# ask gig > save payments
+
+# Scriptable form:
 gig project add payments --repo github:owner/name --from staging --to main --use
 gig ABC-123
 gig verify ABC-123

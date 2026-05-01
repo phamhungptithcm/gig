@@ -93,9 +93,9 @@ Build a promotion plan with risks, blockers, and manual steps.
 
 Run pre-release checks and emit `safe / warning / blocked` outcomes.
 
-### `gig manifest`
+### `gig packet`
 
-Produce a Markdown or JSON release packet for QA, client review, and release managers.
+Produce a release packet for QA, client review, and release managers. `gig manifest` remains a compatibility alias.
 
 ### `gig snapshot create --release <release-id>`
 

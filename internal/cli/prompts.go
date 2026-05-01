@@ -32,6 +32,9 @@ func (a *App) commandPromptEnabled() bool {
 	if file, ok := a.stdin.(*os.File); ok {
 		return term.IsTerminal(int(file.Fd()))
 	}
+	if _, ok := a.stdin.(*bufio.Reader); ok {
+		return true
+	}
 
 	type lenReader interface {
 		Len() int
@@ -55,6 +58,26 @@ func (a *App) promptForRequiredCommandValue(reader *bufio.Reader, label string) 
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return "", fmt.Errorf("%s is required", strings.ToLower(label))
+	}
+	return line, nil
+}
+
+func (a *App) promptForCommandValueWithDefault(reader *bufio.Reader, label, fallback string) (string, error) {
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		return a.promptForRequiredCommandValue(reader, label)
+	}
+	if reader == nil {
+		return "", fmt.Errorf("%s is required", strings.ToLower(label))
+	}
+	fmt.Fprintf(a.stderr, "%s [%s]: ", label, fallback)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return fallback, nil
 	}
 	return line, nil
 }
@@ -95,21 +118,31 @@ func (a *App) resolveOperationContextWithPrompt(ctx context.Context, reader *buf
 	}
 
 	var topologyErr *topologyResolutionError
-	if errors.As(err, &topologyErr) && strings.TrimSpace(topologyErr.Inference.Summary) != "" {
-		fmt.Fprintln(a.stderr, topologyErr.Inference.Summary)
+	suggestedFrom, suggestedTo := "", ""
+	if errors.As(err, &topologyErr) {
+		if strings.TrimSpace(topologyErr.Inference.Summary) != "" {
+			fmt.Fprintln(a.stderr, topologyErr.Inference.Summary)
+		}
+		suggestedFrom, suggestedTo = promotionPromptDefaultsFromInference(topologyErr.Inference)
 	}
 	fmt.Fprintf(a.stderr, "Promotion path for %s\n", commandName(command))
 
 	fromBranch = strings.TrimSpace(fromBranch)
 	toBranch = strings.TrimSpace(toBranch)
+	if fromBranch == "" && suggestedFrom != "" {
+		fmt.Fprintf(a.stderr, "Suggested source: %s\n", suggestedFrom)
+	}
+	if toBranch == "" && suggestedTo != "" {
+		fmt.Fprintf(a.stderr, "Suggested target: %s\n", suggestedTo)
+	}
 	if fromBranch == "" {
-		fromBranch, err = a.promptForRequiredCommandValue(reader, "Source branch")
+		fromBranch, err = a.promptForCommandValueWithDefault(reader, "Source branch", suggestedFrom)
 		if err != nil {
 			return nil, "", "", err
 		}
 	}
 	if toBranch == "" {
-		toBranch, err = a.promptForRequiredCommandValue(reader, "Target branch")
+		toBranch, err = a.promptForCommandValueWithDefault(reader, "Target branch", suggestedTo)
 		if err != nil {
 			return nil, "", "", err
 		}

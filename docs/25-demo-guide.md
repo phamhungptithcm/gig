@@ -73,7 +73,7 @@ This script renders the repo's SVG demo states into PNG frames with `qlmanage`, 
 For a 45 to 60 second product demo, keep the flow tight:
 
 1. show `gig` with no arguments
-2. show the command palette idea: `ABC-123` or `repo github:owner/name ABC-123`
+2. show the command palette idea: `repo payments`, `gh owner/name`, `ABC-123`, then `verify`
 3. show one remote-style project being saved
 4. show `gig inspect` or the guided shortcut path
 5. close with `gig verify`, `gig packet`, or `gig assist audit`

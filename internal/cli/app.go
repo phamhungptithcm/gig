@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"gig/internal/diagnostics"
 	diffsvc "gig/internal/diff"
 	doctorsvc "gig/internal/doctor"
+	exportsvc "gig/internal/export"
 	inspectsvc "gig/internal/inspect"
 	manifestsvc "gig/internal/manifest"
 	"gig/internal/output"
@@ -375,7 +377,7 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 	promptReader := a.commandPromptReader()
 	ticketID, err := a.resolveRequiredTicketArg(promptReader, "inspect", fs.Args())
 	if err != nil {
-		printUsageFailure(a.stderr, "inspect", "provide exactly one ticket ID.", "gig inspect ABC-123", "gig ABC-123 --repo github:owner/name")
+		printUsageFailure(a.stderr, "inspect", "provide exactly one ticket ID.", "gig inspect ABC-123", "gig", "gig inspect ABC-123 --project payments")
 		a.printInspectUsage()
 		return usageExitCode
 	}
@@ -730,6 +732,7 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 }
 
 func (a *App) runVerify(ctx context.Context, args []string) int {
+	originalArgs := append([]string(nil), args...)
 	reorderedArgs, err := reorderArgsWithSinglePositional(args,
 		"-path", "--path",
 		"-config", "--config",
@@ -742,6 +745,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		"-to", "--to",
 		"-envs", "--envs",
 		"-format", "--format",
+		"-out", "--out",
 	)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
@@ -770,8 +774,9 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
-	format := fs.String("format", string(outputFormatHuman), "Output format: human or json")
+	format := fs.String("format", string(outputFormatHuman), "Output format: human, json, xlsx, or csv")
 	jsonOutput := fs.Bool("json", false, "Print JSON output")
+	outPath := fs.String("out", "", "Write an XLSX, CSV, or JSON export to this path")
 
 	if err := fs.Parse(args); err != nil {
 		a.printVerifyUsage()
@@ -792,8 +797,22 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	}
 	promptReader := a.commandPromptReader()
 
-	outputFormat, err := parseOutputFormat(resolveFormatAlias(*format, *jsonOutput))
+	selectedOutput, err := exportsvc.ResolveOutputFormat(exportsvc.ResolveOptions{
+		RawFormat:      *format,
+		FormatExplicit: flagProvided(fs, "format"),
+		JSONOutput:     *jsonOutput,
+		OutputPath:     *outPath,
+		DefaultFormat:  exportsvc.FormatHuman,
+	})
 	if err != nil {
+		if conflict := exportFormatConflict(err); conflict != nil {
+			a.printExportFormatConflict("verify", exampleTicketID(*ticketID), conflict)
+			return usageExitCode
+		}
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return usageExitCode
+	}
+	if err := validateVerifyOutput(selectedOutput); err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return usageExitCode
 	}
@@ -843,18 +862,29 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 			return 1
 		}
 
+		promotionPlans := make([]plansvc.PromotionPlan, 0, len(snapshots))
 		verifications := make([]plansvc.Verification, 0, len(snapshots))
 		for _, snapshot := range snapshots {
+			promotionPlans = append(promotionPlans, snapshot.Plan)
 			verifications = append(verifications, snapshot.Verification)
 		}
 
-		switch outputFormat {
-		case outputFormatHuman:
+		if selectedOutput.Target != exportsvc.TargetStdout {
+			exportOptions := a.buildExportOptions("gig verify", originalArgs, scope, scope.WorkspacePath, runtime, nil)
+			if err := a.writeVerificationExport(selectedOutput, *outPath, promotionPlans, verifications, exportOptions); err != nil {
+				fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+
+		switch selectedOutput.Format {
+		case exportsvc.FormatHuman:
 			if err := output.RenderReleaseVerificationBatch(a.stdout, normalizedReleaseID, snapshotDir, verifications); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 				return 1
 			}
-		case outputFormatJSON:
+		case exportsvc.FormatJSON:
 			if err := output.RenderJSON(a.stdout, struct {
 				Command       string                 `json:"command"`
 				Workspace     string                 `json:"workspace"`
@@ -895,6 +925,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
+	promotionPlans := make([]plansvc.PromotionPlan, 0, len(ticketIDs))
 	verifications := make([]plansvc.Verification, 0, len(ticketIDs))
 	for _, ticketID := range ticketIDs {
 		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
@@ -902,11 +933,21 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 			return 1
 		}
+		promotionPlans = append(promotionPlans, promotionPlan)
 		verifications = append(verifications, plansvc.BuildVerification(promotionPlan))
 	}
 
-	switch outputFormat {
-	case outputFormatHuman:
+	if selectedOutput.Target != exportsvc.TargetStdout {
+		exportOptions := a.buildExportOptions("gig verify", originalArgs, scope, scopeLabel, runtime, repositories)
+		if err := a.writeVerificationExport(selectedOutput, *outPath, promotionPlans, verifications, exportOptions); err != nil {
+			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	switch selectedOutput.Format {
+	case exportsvc.FormatHuman:
 		if len(verifications) == 1 {
 			if err := output.RenderVerification(a.stdout, verifications[0]); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
@@ -918,7 +959,7 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 				return 1
 			}
 		}
-	case outputFormatJSON:
+	case exportsvc.FormatJSON:
 		if len(verifications) == 1 {
 			if err := output.RenderJSON(a.stdout, struct {
 				Command      string               `json:"command"`
@@ -971,6 +1012,7 @@ func (a *App) runManifest(ctx context.Context, args []string) int {
 }
 
 func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
+	originalArgs := append([]string(nil), args...)
 	reorderedArgs, err := reorderArgsWithSinglePositional(args,
 		"-path", "--path",
 		"-config", "--config",
@@ -983,6 +1025,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		"-to", "--to",
 		"-envs", "--envs",
 		"-format", "--format",
+		"-out", "--out",
 	)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
@@ -1011,8 +1054,9 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	fromBranch := fs.String("from", "", "Source branch")
 	toBranch := fs.String("to", "", "Target branch")
 	envsSpec := fs.String("envs", "", "Comma-separated environment mapping, for example dev=dev,test=test,prod=main")
-	format := fs.String("format", string(manifestFormatMarkdown), "Output format: markdown or json")
+	format := fs.String("format", string(manifestFormatMarkdown), "Output format: markdown, json, xlsx, or csv")
 	jsonOutput := fs.Bool("json", false, "Print JSON output")
+	outPath := fs.String("out", "", "Write an XLSX, CSV directory, or JSON export to this path")
 
 	if err := fs.Parse(args); err != nil {
 		a.printManifestGenerateUsage()
@@ -1033,8 +1077,26 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	}
 	promptReader := a.commandPromptReader()
 
-	selectedFormat, err := parseManifestFormat(resolveManifestFormatAlias(*format, *jsonOutput))
+	selectedOutput, err := exportsvc.ResolveOutputFormat(exportsvc.ResolveOptions{
+		RawFormat:      *format,
+		FormatExplicit: flagProvided(fs, "format"),
+		JSONOutput:     *jsonOutput,
+		OutputPath:     *outPath,
+		DefaultFormat:  exportsvc.FormatMarkdown,
+	})
 	if err != nil {
+		if conflict := exportFormatConflict(err); conflict != nil {
+			a.printExportFormatConflict("packet", exampleTicketID(*ticketID), conflict)
+			return usageExitCode
+		}
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
+		return usageExitCode
+	}
+	if err := validatePacketOutput(selectedOutput); err != nil {
+		if isPacketSingleCSVError(err) {
+			a.printPacketSingleCSVError(exampleTicketID(*ticketID))
+			return usageExitCode
+		}
 		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return usageExitCode
 	}
@@ -1089,13 +1151,22 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 			packets = append(packets, manifestsvc.BuildReleasePacket(scope.WorkspacePath, runtime.loaded, snapshot.Plan))
 		}
 
-		switch selectedFormat {
-		case manifestFormatMarkdown:
+		if selectedOutput.Target != exportsvc.TargetStdout {
+			exportOptions := a.buildExportOptions("gig packet", originalArgs, scope, scope.WorkspacePath, runtime, nil)
+			if err := a.writePacketExport(selectedOutput, *outPath, packets, exportOptions); err != nil {
+				fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+
+		switch selectedOutput.Format {
+		case exportsvc.FormatMarkdown:
 			if err := output.RenderReleasePacketBundleMarkdownForRelease(a.stdout, normalizedReleaseID, snapshotDir, packets); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 				return 1
 			}
-		case manifestFormatJSON:
+		case exportsvc.FormatJSON:
 			if err := output.RenderJSON(a.stdout, struct {
 				Command     string                      `json:"command"`
 				Workspace   string                      `json:"workspace"`
@@ -1146,8 +1217,17 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		packets = append(packets, manifestsvc.BuildReleasePacket(scopeLabel, runtime.loaded, promotionPlan))
 	}
 
-	switch selectedFormat {
-	case manifestFormatMarkdown:
+	if selectedOutput.Target != exportsvc.TargetStdout {
+		exportOptions := a.buildExportOptions("gig packet", originalArgs, scope, scopeLabel, runtime, repositories)
+		if err := a.writePacketExport(selectedOutput, *outPath, packets, exportOptions); err != nil {
+			fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	switch selectedOutput.Format {
+	case exportsvc.FormatMarkdown:
 		if len(packets) == 1 {
 			if err := output.RenderReleasePacketMarkdown(a.stdout, packets[0]); err != nil {
 				fmt.Fprintf(a.stderr, "render failed: %v\n", err)
@@ -1159,7 +1239,7 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 				return 1
 			}
 		}
-	case manifestFormatJSON:
+	case exportsvc.FormatJSON:
 		if len(packets) == 1 {
 			if err := output.RenderJSON(a.stdout, struct {
 				Command string                    `json:"command"`
@@ -2698,6 +2778,340 @@ func writeJSONFile(path string, value any) error {
 	}
 
 	return os.WriteFile(path, buffer.Bytes(), 0o644)
+}
+
+func validateVerifyOutput(output exportsvc.ResolvedOutput) error {
+	switch output.Format {
+	case exportsvc.FormatHuman, exportsvc.FormatJSON, exportsvc.FormatXLSX, exportsvc.FormatCSV:
+	default:
+		return fmt.Errorf("unsupported format %q", output.Format)
+	}
+	if output.Target == exportsvc.TargetStdout {
+		switch output.Format {
+		case exportsvc.FormatXLSX, exportsvc.FormatCSV:
+			return fmt.Errorf("--out is required when --format %s is used", output.Format)
+		default:
+			return nil
+		}
+	}
+	if output.Format == exportsvc.FormatHuman {
+		return fmt.Errorf("--out requires --format xlsx, csv, or json")
+	}
+	if output.Target == exportsvc.TargetDirectory && output.Format != exportsvc.FormatCSV {
+		return fmt.Errorf("export format %q cannot be written to a directory", output.Format)
+	}
+	return nil
+}
+
+var errPacketSingleCSV = errors.New("packet CSV file target is not supported")
+
+func validatePacketOutput(output exportsvc.ResolvedOutput) error {
+	switch output.Format {
+	case exportsvc.FormatMarkdown, exportsvc.FormatJSON, exportsvc.FormatXLSX, exportsvc.FormatCSV:
+	default:
+		return fmt.Errorf("unsupported format %q", output.Format)
+	}
+	if output.Target == exportsvc.TargetStdout {
+		switch output.Format {
+		case exportsvc.FormatXLSX, exportsvc.FormatCSV:
+			return fmt.Errorf("--out is required when --format %s is used", output.Format)
+		default:
+			return nil
+		}
+	}
+	if output.Format == exportsvc.FormatMarkdown {
+		return fmt.Errorf("--out requires --format xlsx, csv, or json")
+	}
+	if output.Target == exportsvc.TargetDirectory && output.Format != exportsvc.FormatCSV {
+		return fmt.Errorf("export format %q cannot be written to a directory", output.Format)
+	}
+	if output.Format == exportsvc.FormatCSV && output.Target == exportsvc.TargetFile {
+		return errPacketSingleCSV
+	}
+	return nil
+}
+
+func isPacketSingleCSVError(err error) bool {
+	return errors.Is(err, errPacketSingleCSV)
+}
+
+func exportFormatConflict(err error) *exportsvc.FormatConflictError {
+	var conflict *exportsvc.FormatConflictError
+	if errors.As(err, &conflict) {
+		return conflict
+	}
+	return nil
+}
+
+func (a *App) printExportFormatConflict(command, ticketID string, conflict *exportsvc.FormatConflictError) {
+	outputFile := filepath.Base(conflict.OutputPath)
+	base := strings.TrimSuffix(outputFile, filepath.Ext(outputFile))
+	if base == "" {
+		base = command
+	}
+	fmt.Fprintf(a.stderr, "Export format %q does not match output file %q.\n\n", conflict.Requested, outputFile)
+	fmt.Fprintln(a.stderr, "Try:")
+	switch command {
+	case "packet":
+		fmt.Fprintf(a.stderr, "  gig packet %s --format xlsx --out %s.xlsx\n", ticketID, base)
+		fmt.Fprintf(a.stderr, "  gig packet %s --format csv --out %s/\n", ticketID, base)
+	default:
+		fmt.Fprintf(a.stderr, "  gig verify %s --format xlsx --out %s.xlsx\n", ticketID, base)
+		fmt.Fprintf(a.stderr, "  gig verify %s --format csv --out %s.csv\n", ticketID, base)
+	}
+}
+
+func (a *App) printPacketSingleCSVError(ticketID string) {
+	fmt.Fprintln(a.stderr, "A release packet contains multiple tables, so it cannot be written as one CSV file.")
+	fmt.Fprintln(a.stderr)
+	fmt.Fprintln(a.stderr, "Try:")
+	fmt.Fprintf(a.stderr, "  gig packet %s --format csv --out release-packet/\n", ticketID)
+	fmt.Fprintf(a.stderr, "  gig packet %s --out release-packet.xlsx\n", ticketID)
+}
+
+func exampleTicketID(ticketID string) string {
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return "ABC-123"
+	}
+	return ticketID
+}
+
+func (a *App) writeVerificationExport(selected exportsvc.ResolvedOutput, displayPath string, plans []plansvc.PromotionPlan, verifications []plansvc.Verification, options exportsvc.Options) error {
+	outputPath, err := normalizeCLIPath(selected.Path)
+	if err != nil {
+		return err
+	}
+	releaseExport := exportsvc.BuildVerificationExport(plans, verifications, options)
+	switch selected.Format {
+	case exportsvc.FormatXLSX:
+		if err := exportsvc.WriteXLSXFile(outputPath, releaseExport); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "Wrote verification export: %s\n", exportDisplayPath(displayPath, outputPath))
+	case exportsvc.FormatCSV:
+		if selected.Target == exportsvc.TargetDirectory {
+			if err := exportsvc.WriteCSVDirectory(outputPath, releaseExport); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.stdout, "Wrote verification CSV export: %s\n", exportDisplayPath(displayPath, outputPath))
+			return nil
+		}
+		if err := exportsvc.WriteSingleCSVFile(outputPath, releaseExport.SingleCSV); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "Wrote verification export: %s\n", exportDisplayPath(displayPath, outputPath))
+	case exportsvc.FormatJSON:
+		if len(verifications) == 1 {
+			if err := writeJSONFile(outputPath, struct {
+				Command      string               `json:"command"`
+				Workspace    string               `json:"workspace"`
+				Verification plansvc.Verification `json:"verification"`
+			}{
+				Command:      "verify",
+				Workspace:    options.ScopeLabel,
+				Verification: verifications[0],
+			}); err != nil {
+				return err
+			}
+		} else if err := writeJSONFile(outputPath, struct {
+			Command       string                 `json:"command"`
+			Workspace     string                 `json:"workspace"`
+			Verifications []plansvc.Verification `json:"verifications"`
+		}{
+			Command:       "verify",
+			Workspace:     options.ScopeLabel,
+			Verifications: verifications,
+		}); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "Wrote verification export: %s\n", exportDisplayPath(displayPath, outputPath))
+	default:
+		return fmt.Errorf("unsupported export format %q", selected.Format)
+	}
+	return nil
+}
+
+func (a *App) writePacketExport(selected exportsvc.ResolvedOutput, displayPath string, packets []manifestsvc.ReleasePacket, options exportsvc.Options) error {
+	outputPath, err := normalizeCLIPath(selected.Path)
+	if err != nil {
+		return err
+	}
+	releaseExport := exportsvc.BuildReleasePacketExport(packets, options)
+	switch selected.Format {
+	case exportsvc.FormatXLSX:
+		if err := exportsvc.WriteXLSXFile(outputPath, releaseExport); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "Wrote release packet export: %s\n", exportDisplayPath(displayPath, outputPath))
+	case exportsvc.FormatCSV:
+		if err := exportsvc.WriteCSVDirectory(outputPath, releaseExport); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "Wrote release packet CSV export: %s\n", exportDisplayPath(displayPath, outputPath))
+	case exportsvc.FormatJSON:
+		if len(packets) == 1 {
+			if err := writeJSONFile(outputPath, struct {
+				Command string                    `json:"command"`
+				Packet  manifestsvc.ReleasePacket `json:"packet"`
+			}{
+				Command: "manifest generate",
+				Packet:  packets[0],
+			}); err != nil {
+				return err
+			}
+		} else if err := writeJSONFile(outputPath, struct {
+			Command string                      `json:"command"`
+			Packets []manifestsvc.ReleasePacket `json:"packets"`
+		}{
+			Command: "manifest generate",
+			Packets: packets,
+		}); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "Wrote release packet export: %s\n", exportDisplayPath(displayPath, outputPath))
+	default:
+		return fmt.Errorf("unsupported export format %q", selected.Format)
+	}
+	return nil
+}
+
+func exportDisplayPath(rawPath, resolvedPath string) string {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath != "" {
+		return rawPath
+	}
+	return resolvedPath
+}
+
+func (a *App) buildExportOptions(commandRoot string, originalArgs []string, scope commandScope, scopeLabel string, runtime commandRuntime, repositories []scm.Repository) exportsvc.Options {
+	provider := exportProvider(scope, repositories)
+	mode := "local"
+	if strings.TrimSpace(scope.RepoSpec) != "" || providerIsRemote(provider) {
+		mode = "remote"
+	}
+	authSource := "local checkout"
+	if mode == "remote" {
+		authSource = provider + " session (redacted)"
+	}
+	return exportsvc.Options{
+		GeneratedBy:       currentUserName(),
+		Command:           formatExportCommand(commandRoot, originalArgs),
+		ScopeLabel:        scopeLabel,
+		Mode:              mode,
+		Provider:          provider,
+		ConfigPath:        runtime.loaded.Path,
+		AuthSource:        authSource,
+		WorkingDirectory:  scopeLabel,
+		JSONSchemaVersion: "1",
+		ToolVersions:      exportToolVersions(provider, repositories),
+	}
+}
+
+func currentUserName() string {
+	current, err := user.Current()
+	if err == nil && strings.TrimSpace(current.Username) != "" {
+		return current.Username
+	}
+	for _, key := range []string{"USER", "USERNAME"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func formatExportCommand(root string, args []string) string {
+	parts := []string{root}
+	for _, arg := range args {
+		parts = append(parts, shellQuoteForDisplay(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuoteForDisplay(arg string) string {
+	if arg == "" {
+		return "''"
+	}
+	if strings.ContainsAny(arg, " \t\n'\"") {
+		return "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+	}
+	return arg
+}
+
+func exportProvider(scope commandScope, repositories []scm.Repository) string {
+	if spec := strings.TrimSpace(scope.RepoSpec); spec != "" {
+		if index := strings.Index(spec, ":"); index > 0 {
+			provider := strings.TrimSpace(spec[:index])
+			if provider == "svn" {
+				return "svn"
+			}
+			return provider
+		}
+	}
+	for _, repository := range repositories {
+		if repository.Type == scm.TypeRemoteSVN {
+			return "svn"
+		}
+		if repository.Type != "" {
+			return string(repository.Type)
+		}
+	}
+	return "local"
+}
+
+func providerIsRemote(provider string) bool {
+	switch provider {
+	case "github", "gitlab", "bitbucket", "azure-devops", "remote-svn":
+		return true
+	default:
+		return false
+	}
+}
+
+func exportToolVersions(provider string, repositories []scm.Repository) map[string]string {
+	tools := map[string]string{}
+	needsGit := provider == "git"
+	needsSVN := provider == "svn"
+	for _, repository := range repositories {
+		switch repository.Type {
+		case scm.TypeGit:
+			needsGit = true
+		case scm.TypeSVN, scm.TypeRemoteSVN:
+			needsSVN = true
+		}
+	}
+	if needsGit {
+		tools["git"] = commandVersion("git", "--version")
+	}
+	if needsSVN {
+		tools["svn"] = commandVersion("svn", "--version", "--quiet")
+	}
+	switch provider {
+	case "github":
+		tools["gh"] = commandVersion("gh", "--version")
+	case "gitlab":
+		tools["glab"] = commandVersion("glab", "--version")
+	case "azure-devops":
+		tools["az"] = commandVersion("az", "version")
+	}
+	return tools
+}
+
+func commandVersion(name string, args ...string) string {
+	if _, err := exec.LookPath(name); err != nil {
+		return ""
+	}
+	command := exec.Command(name, args...)
+	output, err := command.Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(lines[0])
 }
 
 func newRegistry(parser ticketsvc.Parser) *scm.Registry {

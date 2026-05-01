@@ -24,9 +24,9 @@ func ParseProvider(raw string) (scm.Type, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "github", "gh":
 		return scm.TypeGitHub, nil
-	case "gitlab", "glab":
+	case "gitlab", "gl", "glab":
 		return scm.TypeGitLab, nil
-	case "bitbucket":
+	case "bitbucket", "bb":
 		return scm.TypeBitbucket, nil
 	case "azure-devops", "azuredevops", "ado", "azdo":
 		return scm.TypeAzureDevOps, nil
