@@ -107,12 +107,23 @@ func (m *pickerModel) visibleRange(limit int) (int, int) {
 }
 
 func (a *App) terminalPickerEnabled() bool {
-	input, inputOK := a.stdin.(*os.File)
 	output, outputOK := a.stdout.(*os.File)
-	if !inputOK || !outputOK {
+	if !outputOK || !fileIsTerminal(output) {
 		return false
 	}
-	return term.IsTerminal(int(input.Fd())) && term.IsTerminal(int(output.Fd()))
+	_, ok := a.terminalInputFile()
+	return ok
+}
+
+func (a *App) terminalInputFile() (*os.File, bool) {
+	if fileIsTerminal(a.terminalStdin) {
+		return a.terminalStdin, true
+	}
+	if input, ok := a.stdin.(*os.File); ok && fileIsTerminal(input) {
+		a.terminalStdin = input
+		return input, true
+	}
+	return nil, false
 }
 
 func (a *App) runPicker(reader *bufio.Reader, heading string, items []pickerItem) (pickerItem, error) {
@@ -121,6 +132,9 @@ func (a *App) runPicker(reader *bufio.Reader, heading string, items []pickerItem
 	}
 	if a.terminalPickerEnabled() {
 		return a.runTerminalPicker(heading, items)
+	}
+	if reader == nil {
+		return pickerItem{}, fmt.Errorf("interactive selection needs a terminal; rerun `gig` or provide a more specific value")
 	}
 	return a.runTextPicker(reader, heading, items)
 }
@@ -167,7 +181,10 @@ func (a *App) runTextPicker(reader *bufio.Reader, heading string, items []picker
 }
 
 func (a *App) runTerminalPicker(heading string, items []pickerItem) (pickerItem, error) {
-	input := a.stdin.(*os.File)
+	input, ok := a.terminalInputFile()
+	if !ok {
+		return pickerItem{}, fmt.Errorf("terminal input is not available")
+	}
 	state, err := term.MakeRaw(int(input.Fd()))
 	if err != nil {
 		return pickerItem{}, err

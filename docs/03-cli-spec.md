@@ -56,7 +56,26 @@ The front door can:
 - remember the last ticket and scope inside the session, so `verify`, `packet`, `explain`, `next`, and `last` can stay short
 - support prompt aliases: `i`, `v`, `p`, `r`, `?`, `last`, and provider aliases such as `gh`, `gl`, `bb`, `ado`, and `svn`
 - let Enter run the suggested next command when a `run?` hint is shown
+- show a small loading bar below the command for long-running human output, without changing JSON stdout
 - show confidence hints such as remembered scope, source branch, and release target
+
+## `gig repo`
+
+```bash
+gig repo payments
+gig repo github:owner/name
+gig repo gh owner/name
+gig repo https://github.com/owner/name
+```
+
+Resolves a human-friendly repository name, provider target, URL, or remote into
+the canonical target `gig` uses internally. It records the selection as a recent
+repo and prints the `gig project add ... --use` command when the user wants to
+save it for shorter future commands.
+
+Use `gig repo` outside the prompt when you want the same resolver without
+opening a long-lived session. Inside the prompt, `repo payments` is still the
+shortest form.
 
 ## `gig login`
 

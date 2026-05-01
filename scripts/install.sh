@@ -5,10 +5,11 @@ set -eu
 repo="${GIG_REPO:-phamhungptithcm/gig}"
 install_dir="${GIG_INSTALL_DIR:-}"
 version="${GIG_VERSION:-latest}"
+release_base_url="${GIG_RELEASE_BASE_URL:-}"
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--version vYYYY.MM.DD] [--repo owner/name] [--install-dir /path/to/bin]
+Usage: install.sh [--version vYYYY.M.MICRO] [--repo owner/name] [--install-dir /path/to/bin]
 EOF
 }
 
@@ -140,13 +141,22 @@ case "${uname_m}" in
     ;;
 esac
 
-release_api="https://api.github.com/repos/${repo}/releases/latest"
-if [ "${version}" != "latest" ]; then
-  release_api="https://api.github.com/repos/${repo}/releases/tags/${version}"
-fi
+if [ -n "${release_base_url}" ]; then
+  if [ "${version}" = "latest" ]; then
+    echo "GIG_RELEASE_BASE_URL requires --version or GIG_VERSION." >&2
+    exit 1
+  fi
+  release_base_url="${release_base_url%/}"
+  resolved_version="${version}"
+else
+  release_api="https://api.github.com/repos/${repo}/releases/latest"
+  if [ "${version}" != "latest" ]; then
+    release_api="https://api.github.com/repos/${repo}/releases/tags/${version}"
+  fi
 
-release_json="$(fetch_text "${release_api}")"
-resolved_version="$(printf '%s' "${release_json}" | tr -d '\n' | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')"
+  release_json="$(fetch_text "${release_api}")"
+  resolved_version="$(printf '%s' "${release_json}" | tr -d '\n' | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')"
+fi
 
 if [ -z "${resolved_version}" ]; then
   echo "Failed to resolve the requested gig release from GitHub." >&2
@@ -155,7 +165,10 @@ fi
 
 stable_asset="gig_${os}_${arch}.tar.gz"
 versioned_asset="gig_${resolved_version#v}_${os}_${arch}.tar.gz"
-checksums_url="https://github.com/${repo}/releases/download/${resolved_version}/gig_${resolved_version#v}_checksums.txt"
+if [ -z "${release_base_url}" ]; then
+  release_base_url="https://github.com/${repo}/releases/download/${resolved_version}"
+fi
+checksums_url="${release_base_url}/gig_${resolved_version#v}_checksums.txt"
 checksums="$(fetch_text "${checksums_url}")"
 
 choose_install_dir() {
@@ -189,16 +202,93 @@ choose_install_dir() {
   printf '%s\n' "$HOME/.local/bin"
 }
 
+shell_profile_for_path() {
+  if [ -n "${GIG_SHELL_PROFILE:-}" ]; then
+    printf '%s\n' "${GIG_SHELL_PROFILE}"
+    return
+  fi
+
+  shell_name="$(basename "${SHELL:-}")"
+  case "${shell_name}" in
+    zsh) printf '%s\n' "$HOME/.zshrc" ;;
+    bash) printf '%s\n' "$HOME/.bashrc" ;;
+    fish) printf '%s\n' "$HOME/.config/fish/conf.d/gig.fish" ;;
+    *) printf '%s\n' "$HOME/.profile" ;;
+  esac
+}
+
+single_quote_escape() {
+  printf "%s" "$1" | sed "s/'/'\\\\''/g"
+}
+
+append_path_update() {
+  profile_path="${1}"
+  escaped_dir="$(single_quote_escape "${install_dir}")"
+  shell_name="$(basename "${SHELL:-}")"
+  if [ "${shell_name}" = "fish" ]; then
+    {
+      echo
+      echo "# Added by gig installer"
+      echo "fish_add_path '${escaped_dir}'"
+    } >> "${profile_path}"
+    return
+  fi
+
+  {
+    echo
+    echo "# Added by gig installer"
+    echo "export PATH='${escaped_dir}':\"\$PATH\""
+  } >> "${profile_path}"
+}
+
+ensure_path_for_future_shells() {
+  case ":$PATH:" in
+    *":${install_dir}:"*)
+      echo "Run: gig"
+      return
+      ;;
+  esac
+
+  profile_path="$(shell_profile_for_path)"
+  if [ "${GIG_SKIP_PATH_UPDATE:-}" = "1" ]; then
+    echo "Add ${install_dir} to your PATH to run 'gig' from anywhere."
+    echo "Example:"
+    echo "  export PATH=\"${install_dir}:\$PATH\""
+    return
+  fi
+  if ! mkdir -p "$(dirname "${profile_path}")" || ! touch "${profile_path}"; then
+    echo "Add ${install_dir} to your PATH to run 'gig' from anywhere."
+    echo "Example:"
+    echo "  export PATH=\"${install_dir}:\$PATH\""
+    return
+  fi
+
+  if grep -F "${install_dir}" "${profile_path}" >/dev/null 2>&1; then
+    echo "Open a new terminal if 'gig' is not available in the current session."
+    return
+  fi
+
+  if ! append_path_update "${profile_path}"; then
+    echo "Add ${install_dir} to your PATH to run 'gig' from anywhere."
+    echo "Example:"
+    echo "  export PATH=\"${install_dir}:\$PATH\""
+    return
+  fi
+
+  echo "Added ${install_dir} to PATH in ${profile_path}."
+  echo "Open a new terminal if 'gig' is not available in the current session."
+}
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT INT TERM
 
 archive_asset="${stable_asset}"
-archive_url="https://github.com/${repo}/releases/download/${resolved_version}/${archive_asset}"
+archive_url="${release_base_url}/${archive_asset}"
 archive_path="${tmpdir}/${archive_asset}"
 
 if ! download_file "${archive_url}" "${archive_path}"; then
   archive_asset="${versioned_asset}"
-  archive_url="https://github.com/${repo}/releases/download/${resolved_version}/${archive_asset}"
+  archive_url="${release_base_url}/${archive_asset}"
   archive_path="${tmpdir}/${archive_asset}"
   download_file "${archive_url}" "${archive_path}"
 fi
@@ -236,13 +326,4 @@ echo
 "${target_path}" version
 echo
 
-case ":$PATH:" in
-  *":${install_dir}:"*)
-    echo "Run: gig scan --path ."
-    ;;
-  *)
-    echo "Add ${install_dir} to your PATH to run 'gig' from anywhere."
-    echo "Example:"
-    echo "  export PATH=\"${install_dir}:\$PATH\""
-    ;;
-esac
+ensure_path_for_future_shells

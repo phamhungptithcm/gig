@@ -7,17 +7,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 
 	inspectsvc "gig/internal/inspect"
 	"gig/internal/scm"
 	ticketsvc "gig/internal/ticket"
-
-	"golang.org/x/term"
 )
 
 func (a *App) commandPromptReader() *bufio.Reader {
-	if !a.commandPromptEnabled() {
+	if !a.ensureInteractiveStdin() {
 		return nil
 	}
 	if reader, ok := a.stdin.(*bufio.Reader); ok {
@@ -29,8 +28,16 @@ func (a *App) commandPromptReader() *bufio.Reader {
 }
 
 func (a *App) commandPromptEnabled() bool {
+	return a.ensureInteractiveStdin()
+}
+
+func (a *App) ensureInteractiveStdin() bool {
 	if file, ok := a.stdin.(*os.File); ok {
-		return term.IsTerminal(int(file.Fd()))
+		if fileIsTerminal(file) {
+			a.terminalStdin = file
+			return true
+		}
+		return false
 	}
 	if _, ok := a.stdin.(*bufio.Reader); ok {
 		return true
@@ -43,7 +50,23 @@ func (a *App) commandPromptEnabled() bool {
 		return reader.Len() > 0
 	}
 
-	return false
+	if !writerIsTerminal(a.stdout) && !writerIsTerminal(a.stderr) {
+		return false
+	}
+	tty, err := os.OpenFile(interactiveInputPath(runtime.GOOS), os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	a.terminalStdin = tty
+	a.stdin = tty
+	return true
+}
+
+func interactiveInputPath(goos string) string {
+	if goos == "windows" {
+		return "CONIN$"
+	}
+	return "/dev/tty"
 }
 
 func (a *App) promptForRequiredCommandValue(reader *bufio.Reader, label string) (string, error) {

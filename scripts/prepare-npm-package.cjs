@@ -12,15 +12,19 @@ function usage() {
 
 function normalizeReleaseTag(input) {
   const value = String(input || "").trim();
-  if (!/^v\d{4}\.\d{2}\.\d{2}$/.test(value)) {
-    throw new Error(`release tag ${JSON.stringify(value)} must use vYYYY.MM.DD`);
+  if (!/^v\d+\.\d+\.\d+$/.test(value)) {
+    throw new Error(`release tag ${JSON.stringify(value)} must use vYYYY.M.MICRO`);
   }
   return value;
 }
 
 function releaseTagToPackageVersion(tag) {
-  const [, year, month, day] = tag.match(/^v(\d{4})\.(\d{2})\.(\d{2})$/);
-  return `${year}.${Number(month)}.${Number(day)}`;
+  const [, year, month, micro] = tag.match(/^v(\d+)\.(\d+)\.(\d+)$/);
+  const monthNumber = Number(month);
+  if (monthNumber < 1 || monthNumber > 12) {
+    throw new Error(`release tag ${JSON.stringify(tag)} must use a month from 1 to 12`);
+  }
+  return `${Number(year)}.${monthNumber}.${Number(micro)}`;
 }
 
 async function copyDirectory(sourceDir, targetDir) {

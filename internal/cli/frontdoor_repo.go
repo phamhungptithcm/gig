@@ -66,6 +66,82 @@ func (a *App) resolveFrontDoorPromptRepository(ctx context.Context, reader *bufi
 	return a.selectFrontDoorRepositoryCandidate(reader, query, matches)
 }
 
+func (a *App) runRepo(ctx context.Context, args []string) int {
+	if hasHelpFlag(args) {
+		a.printRepoUsage()
+		return 0
+	}
+
+	reader := a.commandPromptReader()
+	query, target, err := repoCommandQueryAndTarget(args)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "repo failed: %v\n", err)
+		a.printRepoUsage()
+		return usageExitCode
+	}
+	if query == "" && target == "" && reader == nil {
+		printUsageFailure(a.stderr, "repo", "provide a repository name, provider target, or URL outside the prompt.", "gig repo payments", "gig repo github:owner/name", "gig")
+		return usageExitCode
+	}
+
+	store, err := workarea.NewStore()
+	if err != nil {
+		fmt.Fprintf(a.stderr, "repo failed: %v\n", err)
+		return 1
+	}
+	repository, err := a.resolveFrontDoorPromptRepository(ctx, reader, store, query, target)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "repo failed: %v\n", err)
+		return 1
+	}
+	if err := store.RecordRepositorySelection(repository); err != nil {
+		fmt.Fprintf(a.stderr, "repo failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(a.stdout, "found %s\n", repository.Root)
+	saveName := inferFrontDoorSaveName(repository.Root)
+	if saveName != "" {
+		fmt.Fprintf(a.stdout, "save  gig project add %s --repo %s --use\n", saveName, repository.Root)
+	} else {
+		fmt.Fprintf(a.stdout, "save  gig project add --repo %s --use\n", repository.Root)
+	}
+	fmt.Fprintf(a.stdout, "next  gig ABC-123 --repo %s\n", repository.Root)
+	return 0
+}
+
+func repoCommandQueryAndTarget(args []string) (string, string, error) {
+	trimmed := make([]string, 0, len(args))
+	for _, arg := range args {
+		if token := strings.TrimSpace(arg); token != "" {
+			trimmed = append(trimmed, token)
+		}
+	}
+	if len(trimmed) == 0 {
+		return "", "", nil
+	}
+
+	first := strings.ToLower(trimmed[0])
+	if first == "gh" || first == "gl" || first == "bb" || first == "ado" || first == "azdo" || first == "svn" {
+		if len(trimmed) != 2 {
+			return "", "", fmt.Errorf("%s requires exactly one repository value", trimmed[0])
+		}
+		target, err := frontDoorProviderAliasTarget(first, trimmed[1])
+		return "", target, err
+	}
+
+	if len(trimmed) == 1 {
+		if repository, ok, err := parseFrontDoorSingleRepository(trimmed[0]); err != nil || ok {
+			if err != nil {
+				return "", "", err
+			}
+			return "", repository.Root, nil
+		}
+	}
+
+	return strings.Join(trimmed, " "), "", nil
+}
+
 func parseFrontDoorSingleRepository(raw string) (scm.Repository, bool, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

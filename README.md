@@ -41,6 +41,7 @@ gig
   Bitbucket, Azure DevOps, or remote SVN audits.
 - Zero-config local mode still works from an existing Git or SVN checkout.
 - Smart suggestions print exact next commands instead of vague advice.
+- Long human commands show a small loading bar on stderr so users know `gig` is still working.
 - Missing tools and auth failures explain what is needed and how to install it.
 - Human output is terminal-friendly; JSON output stays clean for CI.
 
@@ -50,8 +51,13 @@ macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
-gig version
 ```
+
+On macOS and Linux, the installer now mirrors the Windows installer behavior:
+when it has to use a user-local install directory, it adds that directory to
+your zsh, bash, fish, or profile PATH setup and tells you to open a new terminal.
+The installer verifies the downloaded binary directly; open a new terminal
+before running `gig version` if it added a new PATH entry.
 
 Windows PowerShell:
 
@@ -70,8 +76,11 @@ gig version
 Pin a release when you need a reproducible rollout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh -s -- --version vYYYY.MM.DD
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh -s -- --version vYYYY.M.MICRO
 ```
+
+Release tags use the same CalVer version as npm with a `v` prefix, for example `v2026.5.0`.
+Older padded date tags such as `v2026.04.17` remain installable when you pin an existing release.
 
 Refresh later with:
 
@@ -94,6 +103,7 @@ From anywhere, let the prompt find or remember the remote target:
 ```bash
 gig setup --provider github
 gig login github
+gig repo payments
 gig
 # ask gig > repo payments
 # ask gig > ABC-123

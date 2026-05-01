@@ -17,7 +17,8 @@
 
 When code is pushed to `main`:
 
-- the next release tag is calculated in `vYYYY.MM.DD` format
+- the next release tag is calculated in `vYYYY.M.MICRO` format
+- `MICRO` starts at `0` each month and increments for each additional release in that month
 - release archives are built for macOS, Linux, and Windows
 - release notes are generated from the commits since the previous tag
 - release notes are grouped by area instead of one flat commit list
@@ -25,7 +26,8 @@ When code is pushed to `main`:
 - a compare link is added when the repository remote can be resolved to GitHub
 - GitHub Release assets are published
 - the npm package `@hunpeolabs/gig` is published from this same repository
-- the release tag is mapped to npm package version `YYYY.M.D` for registry compatibility
+- the release tag and npm package version stay synchronized, for example `v2026.5.1` and `2026.5.1`
+- older padded date tags remain supported only when retrying or installing an existing historical release
 
 The release workflow is split into:
 
@@ -74,7 +76,7 @@ Bootstrap note:
 Recovery note:
 
 - if a GitHub Release already exists but npm publication failed, do not push a no-op commit just to retry
-- open the `Release` workflow in GitHub Actions and run it manually with `release_tag=vYYYY.MM.DD`
+- open the `Release` workflow in GitHub Actions and run it manually with `release_tag=vYYYY.M.MICRO`, for example `release_tag=v2026.5.1`
 - the workflow will re-run verification from the current `main` workflow, skip GitHub Release creation if it already exists, and only retry the missing npm publish work for that release tag
 
 ## Easiest Bootstrap Commands
