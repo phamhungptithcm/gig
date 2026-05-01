@@ -17,8 +17,9 @@ repository and one promotion path.
 
 - Keep existing one-ticket commands working.
 - Keep existing plain text `--ticket-file` files working.
-- Add a standard CSV ticket file shape that spreadsheet users can edit easily.
-- Let users generate a sample ticket file from the CLI.
+- Add a standard ticket table shape that spreadsheet users can edit easily.
+- Let users generate a fill-in template from the CLI, preferably as XLSX and
+  also as CSV for scripts.
 - Surface batch release commands in smart suggestions and front-door help.
 - Keep the first usable slice scoped to one repository and one source-to-target
   promotion path.
@@ -36,21 +37,28 @@ repository and one promotion path.
 
 ## User Workflow
 
-The recommended flow is:
+The easiest non-technical flow is:
+
+```bash
+gig ticket-file sample --out tickets.xlsx
+gig verify --ticket-file tickets.xlsx --repo github:owner/name --from staging --to main --out release-audit.xlsx
+gig packet --ticket-file tickets.xlsx --repo github:owner/name --from staging --to main --out release-packet.xlsx
+```
+
+The script-friendly flow is:
 
 ```bash
 gig ticket-file sample --out tickets.csv
 gig verify --ticket-file tickets.csv --repo github:owner/name --from staging --to main --out release-audit.xlsx
-gig packet --ticket-file tickets.csv --repo github:owner/name --from staging --to main --out release-packet.xlsx
 ```
 
 When a project remembers the repo and branch path, commands become shorter:
 
 ```bash
 gig project add payments --repo github:owner/name --from staging --to main --use
-gig ticket-file sample --out tickets.csv
-gig verify --ticket-file tickets.csv --out release-audit.xlsx
-gig packet --ticket-file tickets.csv --out release-packet.xlsx
+gig ticket-file sample --out tickets.xlsx
+gig verify --ticket-file tickets.xlsx --out release-audit.xlsx
+gig packet --ticket-file tickets.xlsx --out release-packet.xlsx
 ```
 
 ## Ticket File Format
@@ -63,13 +71,22 @@ ABC-123
 XYZ-456
 ```
 
-CSV becomes the standard spreadsheet-friendly format:
+CSV and XLSX use the same logical table:
 
 ```csv
 ticket,summary,owner,notes
 ABC-123,Login validation,Backend Team,QA approved on dev
 XYZ-456,Checkout fix,Frontend Team,Needs smoke test
 ```
+
+The generated XLSX template should be the default recommendation for people who
+will fill the file manually. It contains:
+
+- a `Tickets` sheet with frozen headers, filters, and example rows
+- a `Help` sheet explaining required and optional columns
+- stable column widths so the file opens cleanly in Excel, Numbers, and
+  LibreOffice
+- the same headers as CSV so users can save as CSV later if needed
 
 Rules:
 
@@ -79,6 +96,7 @@ Rules:
 - UTF-8 BOM and CRLF line endings are accepted.
 - Blank rows are ignored.
 - Duplicate tickets are de-duplicated by normalized ticket ID.
+- For XLSX, only the `Tickets` sheet is read in this slice.
 - Formula-like cell values in generated exports continue to be escaped by the
   existing export layer.
 
@@ -87,14 +105,17 @@ Rules:
 Add:
 
 ```bash
+gig ticket-file sample --out tickets.xlsx
 gig ticket-file sample --out tickets.csv
-gig ticket-file sample --out tickets.csv --force
+gig ticket-file sample --out tickets.xlsx --force
 ```
 
 Behavior:
 
 - `--out` is required.
-- The sample command writes CSV in this slice and recommends a `.csv` path.
+- The sample command infers the template format from `.xlsx` or `.csv`.
+- `.xlsx` is recommended in human suggestions because it is easiest to open and
+  fill on macOS and Windows.
 - Existing files are not overwritten unless `--force` is provided.
 - The generated sample uses stable example IDs such as `ABC-123` and `XYZ-456`.
   Validation still uses the configured ticket pattern when commands read the
@@ -103,10 +124,10 @@ Behavior:
 Keep the existing command flags:
 
 ```bash
-gig plan --ticket-file tickets.csv ...
-gig verify --ticket-file tickets.csv ...
-gig packet --ticket-file tickets.csv ...
-gig assist release --release rel-2026-04-09 --ticket-file tickets.csv ...
+gig plan --ticket-file tickets.xlsx ...
+gig verify --ticket-file tickets.xlsx ...
+gig packet --ticket-file tickets.xlsx ...
+gig assist release --release rel-2026-04-09 --ticket-file tickets.xlsx ...
 ```
 
 ## Parser Design
@@ -128,6 +149,7 @@ Error examples:
 ticket file tickets.csv row 4: missing ticket
 ticket file tickets.csv row 7: invalid ticket "abc"
 ticket file tickets.csv: missing required column "ticket"
+ticket file tickets.xlsx: sheet "Tickets" was not found
 ```
 
 ## Smart Suggestions
@@ -135,9 +157,9 @@ ticket file tickets.csv: missing required column "ticket"
 Front-door and post-command suggestions should teach the batch path:
 
 ```text
-sample   gig ticket-file sample --out tickets.csv
-audit    gig verify --ticket-file tickets.csv --out release-audit.xlsx
-packet   gig packet --ticket-file tickets.csv --out release-packet.xlsx
+sample   gig ticket-file sample --out tickets.xlsx
+audit    gig verify --ticket-file tickets.xlsx --out release-audit.xlsx
+packet   gig packet --ticket-file tickets.xlsx --out release-packet.xlsx
 ```
 
 When the current project has repo and branch defaults, omit `--repo`, `--from`,
@@ -146,8 +168,8 @@ the inferred remote scope. When topology is ambiguous, keep the existing
 explicit branch suggestion and show the batch command with `<source>` and
 `<target>` placeholders.
 
-Prompt help should mention that `verify --ticket-file tickets.csv` and
-`packet --ticket-file tickets.csv` are preferred for release batches.
+Prompt help should mention that `verify --ticket-file tickets.xlsx` and
+`packet --ticket-file tickets.xlsx` are preferred for release batches.
 
 ## Output And Export
 
@@ -158,9 +180,10 @@ verifications, or packets.
 Recommended output commands:
 
 ```bash
+gig verify --ticket-file tickets.xlsx --out release-audit.xlsx
 gig verify --ticket-file tickets.csv --out release-audit.xlsx
 gig verify --ticket-file tickets.csv --out release-audit.csv
-gig packet --ticket-file tickets.csv --out release-packet.xlsx
+gig packet --ticket-file tickets.xlsx --out release-packet.xlsx
 gig packet --ticket-file tickets.csv --format csv --out release-packet/
 ```
 
@@ -169,10 +192,12 @@ Metadata sheets after the deterministic command path is stable.
 
 ## Cross-Platform Behavior
 
-Use Go standard library file and CSV handling:
+Use Go standard library file handling plus existing workbook support:
 
 - `os.OpenFile` with exclusive-create semantics for safe sample generation.
 - `encoding/csv` for CSV parsing.
+- `excelize`, already used by release export, for XLSX template generation and
+  reading.
 - `filepath` for display and path handling.
 - no shell-dependent commands.
 - accept Windows CRLF line endings.
@@ -186,10 +211,13 @@ Add focused tests for:
 
 - plain text ticket files still work
 - CSV ticket files with header work
+- XLSX ticket files with a `Tickets` sheet work
 - UTF-8 BOM and CRLF are accepted
 - duplicate tickets are de-duplicated
 - missing `ticket` column errors clearly
+- missing XLSX `Tickets` sheet errors clearly
 - invalid ticket errors include row number
+- `gig ticket-file sample --out tickets.xlsx` creates a readable workbook
 - `gig ticket-file sample --out tickets.csv` creates expected CSV
 - `--force` overwrites and default mode refuses overwrite
 - smart suggestions include sample, audit, and packet batch commands
