@@ -85,6 +85,23 @@ function Get-ExpectedHash {
     return $null
 }
 
+function Get-SHA256Hash {
+    param([string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hash = $sha256.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($hash) -replace "-", "").ToLowerInvariant()
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 if (-not $Version) {
     $Version = if ($env:GIG_VERSION) { $env:GIG_VERSION } else { "latest" }
 }
@@ -104,6 +121,7 @@ switch ($arch.ToString()) {
     "Arm64" { $stableAsset = "gig_windows_arm64.zip" }
     default { throw "Unsupported Windows architecture: $arch" }
 }
+$releaseBaseUrl = if ($env:GIG_RELEASE_BASE_URL) { $env:GIG_RELEASE_BASE_URL.TrimEnd('/') } else { "" }
 
 if ($WaitForPid -gt 0) {
     for ($attempt = 0; $attempt -lt 240; $attempt++) {
@@ -114,19 +132,56 @@ if ($WaitForPid -gt 0) {
     }
 }
 
-$release = Get-ReleaseMetadata -RepoName $Repo -RequestedVersion $Version
-$resolvedVersion = $release.tag_name
-if (-not $resolvedVersion) {
-    throw "Failed to resolve the requested gig release from GitHub."
+if ($releaseBaseUrl) {
+    if ($Version -eq "latest") {
+        throw "GIG_RELEASE_BASE_URL requires -Version or GIG_VERSION."
+    }
+    $resolvedVersion = $Version
+} else {
+    $release = Get-ReleaseMetadata -RepoName $Repo -RequestedVersion $Version
+    $resolvedVersion = $release.tag_name
+    if (-not $resolvedVersion) {
+        throw "Failed to resolve the requested gig release from GitHub."
+    }
 }
 
 $versionedAsset = "gig_$($resolvedVersion.TrimStart('v'))_$($stableAsset.Substring(4))"
-$asset = Get-ReleaseAsset -Release $release -Names @($stableAsset, $versionedAsset)
-if (-not $asset) {
-    throw "No Windows asset matched $stableAsset or $versionedAsset in $resolvedVersion."
+if ($releaseBaseUrl) {
+    $checksumUrl = "$releaseBaseUrl/gig_$($resolvedVersion.TrimStart('v'))_checksums.txt"
+    $checksums = Invoke-RestMethod -Uri $checksumUrl
+    $expectedHash = $null
+    $assetName = $null
+    foreach ($candidateName in @($stableAsset, $versionedAsset)) {
+        foreach ($line in ($checksums -split "`n")) {
+            $trimmed = $line.Trim()
+            if (-not $trimmed) {
+                continue
+            }
+            $parts = $trimmed -split "\s+", 2
+            if ($parts.Count -eq 2 -and $parts[1] -eq $candidateName) {
+                $assetName = $candidateName
+                $expectedHash = $parts[0].ToLowerInvariant()
+                break
+            }
+        }
+        if ($assetName) {
+            break
+        }
+    }
+    if (-not $assetName) {
+        throw "No Windows checksum matched $stableAsset or $versionedAsset."
+    }
+    $asset = [PSCustomObject]@{
+        name = $assetName
+        browser_download_url = "$releaseBaseUrl/$assetName"
+    }
+} else {
+    $asset = Get-ReleaseAsset -Release $release -Names @($stableAsset, $versionedAsset)
+    if (-not $asset) {
+        throw "No Windows asset matched $stableAsset or $versionedAsset in $resolvedVersion."
+    }
+    $expectedHash = Get-ExpectedHash -Release $release -Asset $asset -ResolvedVersion $resolvedVersion
 }
-
-$expectedHash = Get-ExpectedHash -Release $release -Asset $asset -ResolvedVersion $resolvedVersion
 
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("gig-install-" + [Guid]::NewGuid().ToString("N"))
 $archivePath = Join-Path $tmpRoot $asset.name
@@ -140,7 +195,7 @@ try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath
 
     if ($expectedHash) {
-        $actualHash = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
+        $actualHash = Get-SHA256Hash -Path $archivePath
         if ($actualHash -ne $expectedHash) {
             throw "Checksum verification failed for $($asset.name). Expected $expectedHash but got $actualHash."
         }
@@ -160,7 +215,9 @@ try {
         $pathEntries = $userPath.Split(';') | Where-Object { $_ -ne "" }
     }
 
-    if ($pathEntries -notcontains $InstallDir) {
+    if ($env:GIG_SKIP_PATH_UPDATE -eq "1") {
+        Write-Host "Add $InstallDir to the user PATH to run 'gig' from anywhere."
+    } elseif ($pathEntries -notcontains $InstallDir) {
         $newUserPath = if ($userPath) { "$userPath;$InstallDir" } else { $InstallDir }
         [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
         $env:Path = "$env:Path;$InstallDir"

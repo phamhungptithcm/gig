@@ -75,8 +75,8 @@ function releaseTagFromPackageVersion(version) {
     );
   }
 
-  const [, year, month, day] = match;
-  return `v${year}.${month.padStart(2, "0")}.${day.padStart(2, "0")}`;
+  const [, year, month, micro] = match;
+  return `v${Number(year)}.${Number(month)}.${Number(micro)}`;
 }
 
 function resolvePlatform() {
@@ -261,6 +261,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  releaseTagFromPackageVersion,
   resolvePackageRoot,
   resolveReleaseBaseURL,
   resolveVendorDir

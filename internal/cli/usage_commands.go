@@ -16,6 +16,7 @@ func (a *App) printRootUsage() {
 	printHelpCommands(a.stderr, "Start here",
 		"gig",
 		"gig login",
+		"gig repo payments",
 		"gig ABC-123",
 		"gig verify ABC-123",
 		"gig packet ABC-123",
@@ -39,6 +40,7 @@ func (a *App) printRootUsage() {
 	)
 	printHelpRows(a.stderr, "Provider coverage", providerCoverageHelpRows()...)
 	printHelpRows(a.stderr, "Commands",
+		helpRow{Label: "repo", Value: "Find or select a remote repository target"},
 		helpRow{Label: "project", Value: "Remember a project so later commands stay short"},
 		helpRow{Label: "login", Value: "Authenticate to a live provider such as GitHub"},
 		helpRow{Label: "inspect", Value: "Show the full ticket picture across repositories"},
@@ -61,6 +63,31 @@ func (a *App) printRootUsage() {
 	)
 	a.printCurrentWorkareaHint()
 	printHelpCommands(a.stderr, "More help", "gig <command> --help")
+}
+
+func (a *App) printRepoUsage() {
+	printHelpHeading(a.stderr, "gig repo", "Find or select a repository target.")
+	printHelpUsage(a.stderr,
+		"gig repo [name | provider-target | URL]",
+		"gig repo gh owner/name",
+		"gig repo gl group/project",
+		"gig repo ado org/project/repo",
+	)
+	printHelpCommands(a.stderr, "Start here",
+		"gig repo payments",
+		"gig repo github:owner/name",
+		"gig repo https://github.com/owner/name",
+	)
+	printHelpRows(a.stderr, "Inside prompt",
+		helpRow{Label: "repo payments", Value: "search saved, recent, and logged-in provider repos"},
+		helpRow{Label: "gh owner/name", Value: "use a short GitHub target"},
+		helpRow{Label: "save payments", Value: "remember the found repo for future short commands"},
+	)
+	printHelpCommands(a.stderr, "Next commands",
+		"gig project add payments --repo github:owner/name --use",
+		"gig ABC-123",
+		"gig verify ABC-123",
+	)
 }
 
 func (a *App) printLoginUsage() {
@@ -348,6 +375,6 @@ func (a *App) printResolveStartUsage() {
 }
 
 func (a *App) printUpdateUsage() {
-	printHelpUsage(a.stderr, "gig update [<version>] [--version vYYYY.MM.DD] [--install-dir /path/to/bin] [--repo owner/name]")
+	printHelpUsage(a.stderr, "gig update [<version>] [--version vYYYY.M.MICRO] [--install-dir /path/to/bin] [--repo owner/name]")
 	printHelpBullets(a.stderr, "Tip", "The direct installer path is the canonical install and update flow.")
 }

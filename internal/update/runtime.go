@@ -37,14 +37,17 @@ func NormalizeNPMVersion(version string) (string, error) {
 
 	parts := strings.Split(strings.TrimPrefix(normalized, "v"), ".")
 	if len(parts) != 3 {
-		return "", fmt.Errorf("release version %q must use vYYYY.MM.DD", normalized)
+		return "", fmt.Errorf("release version %q must use vYYYY.M.MICRO", normalized)
 	}
 
-	npmParts := make([]string, 0, len(parts))
-	for _, part := range parts {
+	npmParts := make([]string, 0, 3)
+	for index, part := range parts {
 		value, err := strconv.Atoi(part)
 		if err != nil {
-			return "", fmt.Errorf("release version %q must use vYYYY.MM.DD", normalized)
+			return "", fmt.Errorf("release version %q must use vYYYY.M.MICRO", normalized)
+		}
+		if index == 1 && (value < 1 || value > 12) {
+			return "", fmt.Errorf("release version %q must use a month from 1 to 12", normalized)
 		}
 		npmParts = append(npmParts, strconv.Itoa(value))
 	}

@@ -450,6 +450,40 @@ func TestAppWorkareaUseInteractive(t *testing.T) {
 	}
 }
 
+func TestAppRepoHelp(t *testing.T) {
+	stdout, stderr, exitCode := runApp(t, "repo", "--help")
+	if exitCode != 0 {
+		t.Fatalf("repo help exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty help stdout", stdout)
+	}
+	if !strings.Contains(stderr, "gig repo") || !strings.Contains(stderr, "repo payments") || !strings.Contains(stderr, "gh owner/name") {
+		t.Fatalf("stderr = %q, want compact repo help", stderr)
+	}
+}
+
+func TestAppRepoTargetRecordsRecentRepository(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "", workareaFile, "repo", "github:acme/payments")
+	if exitCode != 0 {
+		t.Fatalf("repo target exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "found github:acme/payments") || !strings.Contains(stdout, "save") {
+		t.Fatalf("stdout = %q, want found repo and save hint", stdout)
+	}
+
+	store := workarea.NewStoreAt(workareaFile)
+	recent, err := store.RecentRepositories("", 1)
+	if err != nil {
+		t.Fatalf("RecentRepositories() error = %v", err)
+	}
+	if len(recent) != 1 || recent[0].Root != "github:acme/payments" {
+		t.Fatalf("recent repositories = %#v, want github:acme/payments", recent)
+	}
+}
+
 func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
 	chdir(t, t.TempDir())

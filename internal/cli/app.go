@@ -46,10 +46,13 @@ const usageExitCode = 2
 const optionalOverrideFileHelp = "Optional gig override file"
 
 type App struct {
-	stdin   io.Reader
-	stdout  io.Writer
-	stderr  io.Writer
-	scanner *repo.Scanner
+	stdin           io.Reader
+	terminalStdin   *os.File
+	stdout          io.Writer
+	stderr          io.Writer
+	progressWriter  io.Writer
+	progressEnabled bool
+	scanner         *repo.Scanner
 }
 
 func NewApp(stdout, stderr io.Writer) (*App, error) {
@@ -61,12 +64,19 @@ func NewAppWithIO(stdin io.Reader, stdout, stderr io.Writer) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	var terminalStdin *os.File
+	if file, ok := stdin.(*os.File); ok && fileIsTerminal(file) {
+		terminalStdin = file
+	}
 
 	return &App{
-		stdin:   stdin,
-		stdout:  stdout,
-		stderr:  stderr,
-		scanner: repo.NewScanner(newRegistry(parser)),
+		stdin:           stdin,
+		terminalStdin:   terminalStdin,
+		stdout:          stdout,
+		stderr:          stderr,
+		progressWriter:  stderr,
+		progressEnabled: shouldEnableProgress(stderr),
+		scanner:         repo.NewScanner(newRegistry(parser)),
 	}, nil
 }
 
@@ -93,6 +103,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 
 	var exitCode int
 	switch args[0] {
+	case "repo":
+		exitCode = a.runRepo(ctx, args[1:])
 	case "scan", "repos":
 		exitCode = a.runScan(ctx, args[1:])
 	case "find", "commits":
@@ -396,14 +408,23 @@ func (a *App) runInspect(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
-	if err != nil {
+	var repositories []scm.Repository
+	var scopeLabel string
+	if err := a.runWithProgress("load repositories", func() error {
+		var err error
+		repositories, scopeLabel, err = a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
 	}
 
-	results, err := runtime.inspect.InspectInRepositories(ctx, repositories, ticketID)
-	if err != nil {
+	var results []inspectsvc.RepositoryInspection
+	if err := a.runWithProgress(progressTicketLabel("inspect", []string{ticketID}), func() error {
+		var err error
+		results, err = runtime.inspect.InspectInRepositories(ctx, repositories, ticketID)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "inspect failed: %v\n", err)
 		return 1
 	}
@@ -484,8 +505,13 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
-	if err != nil {
+	var repositories []scm.Repository
+	var scopeLabel string
+	if err := a.runWithProgress("load repositories", func() error {
+		var err error
+		repositories, scopeLabel, err = a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
@@ -496,8 +522,12 @@ func (a *App) runEnvStatus(ctx context.Context, args []string) int {
 	}
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, "", "")
 
-	results, err := runtime.inspect.EnvironmentStatusInRepositories(ctx, repositories, ticketID, environments)
-	if err != nil {
+	var results []inspectsvc.RepositoryEnvironmentStatus
+	if err := a.runWithProgress(progressTicketLabel("where", []string{ticketID}), func() error {
+		var err error
+		results, err = runtime.inspect.EnvironmentStatusInRepositories(ctx, repositories, ticketID, environments)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "env status failed: %v\n", err)
 		return 1
 	}
@@ -660,8 +690,13 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
-	if err != nil {
+	var repositories []scm.Repository
+	var scopeLabel string
+	if err := a.runWithProgress("load repositories", func() error {
+		var err error
+		repositories, scopeLabel, err = a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
 		return 1
 	}
@@ -674,13 +709,18 @@ func (a *App) runPlan(ctx context.Context, args []string) int {
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	promotionPlans := make([]plansvc.PromotionPlan, 0, len(ticketIDs))
-	for _, ticketID := range ticketIDs {
-		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
-		if err != nil {
-			fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
-			return 1
+	if err := a.runWithProgress(progressTicketLabel("plan", ticketIDs), func() error {
+		for _, ticketID := range ticketIDs {
+			promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
+			if err != nil {
+				return err
+			}
+			promotionPlans = append(promotionPlans, promotionPlan)
 		}
-		promotionPlans = append(promotionPlans, promotionPlan)
+		return nil
+	}); err != nil {
+		fmt.Fprintf(a.stderr, "plan failed: %v\n", err)
+		return 1
 	}
 
 	switch outputFormat {
@@ -912,8 +952,13 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
-	if err != nil {
+	var repositories []scm.Repository
+	var scopeLabel string
+	if err := a.runWithProgress("load repositories", func() error {
+		var err error
+		repositories, scopeLabel, err = a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
 		return 1
 	}
@@ -927,14 +972,19 @@ func (a *App) runVerify(ctx context.Context, args []string) int {
 
 	promotionPlans := make([]plansvc.PromotionPlan, 0, len(ticketIDs))
 	verifications := make([]plansvc.Verification, 0, len(ticketIDs))
-	for _, ticketID := range ticketIDs {
-		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
-		if err != nil {
-			fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
-			return 1
+	if err := a.runWithProgress(progressTicketLabel("verify", ticketIDs), func() error {
+		for _, ticketID := range ticketIDs {
+			promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
+			if err != nil {
+				return err
+			}
+			promotionPlans = append(promotionPlans, promotionPlan)
+			verifications = append(verifications, plansvc.BuildVerification(promotionPlan))
 		}
-		promotionPlans = append(promotionPlans, promotionPlan)
-		verifications = append(verifications, plansvc.BuildVerification(promotionPlan))
+		return nil
+	}); err != nil {
+		fmt.Fprintf(a.stderr, "verify failed: %v\n", err)
+		return 1
 	}
 
 	if selectedOutput.Target != exportsvc.TargetStdout {
@@ -1194,8 +1244,13 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 		return usageExitCode
 	}
 
-	repositories, scopeLabel, err := a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
-	if err != nil {
+	var repositories []scm.Repository
+	var scopeLabel string
+	if err := a.runWithProgress("load repositories", func() error {
+		var err error
+		repositories, scopeLabel, err = a.resolveCommandRepositories(ctx, scope.WorkspacePath, scope.RepoSpec, runtime)
+		return err
+	}); err != nil {
 		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
 		return 1
 	}
@@ -1208,13 +1263,18 @@ func (a *App) runManifestGenerate(ctx context.Context, args []string) int {
 	a.rememberProjectMemory(scope, defaults, runtime, repositories, environments, resolvedFromBranch, resolvedToBranch)
 
 	packets := make([]manifestsvc.ReleasePacket, 0, len(ticketIDs))
-	for _, ticketID := range ticketIDs {
-		promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
-		if err != nil {
-			fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
-			return 1
+	if err := a.runWithProgress(progressTicketLabel("packet", ticketIDs), func() error {
+		for _, ticketID := range ticketIDs {
+			promotionPlan, err := runtime.planner.BuildPromotionPlanInRepositories(ctx, repositories, ticketID, resolvedFromBranch, resolvedToBranch, environments)
+			if err != nil {
+				return err
+			}
+			packets = append(packets, manifestsvc.BuildReleasePacket(scopeLabel, runtime.loaded, promotionPlan))
 		}
-		packets = append(packets, manifestsvc.BuildReleasePacket(scopeLabel, runtime.loaded, promotionPlan))
+		return nil
+	}); err != nil {
+		fmt.Fprintf(a.stderr, "manifest failed: %v\n", err)
+		return 1
 	}
 
 	if selectedOutput.Target != exportsvc.TargetStdout {

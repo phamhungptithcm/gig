@@ -7,7 +7,12 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const { resolvePackageRoot, resolveReleaseBaseURL, resolveVendorDir } = require("./install.cjs");
+const {
+  releaseTagFromPackageVersion,
+  resolvePackageRoot,
+  resolveReleaseBaseURL,
+  resolveVendorDir
+} = require("./install.cjs");
 
 test("resolve source-layout package root and vendor dir", async () => {
   const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "gig-install-source-"));
@@ -40,8 +45,8 @@ test("resolve release base URL from the GitHub repository", () => {
   delete process.env.GIG_RELEASE_BASE_URL;
 
   assert.equal(
-    resolveReleaseBaseURL("git+https://github.com/phamhungptithcm/gig.git", "v2026.04.20"),
-    "https://github.com/phamhungptithcm/gig/releases/download/v2026.04.20"
+    resolveReleaseBaseURL("git+https://github.com/phamhungptithcm/gig.git", "v2026.4.20"),
+    "https://github.com/phamhungptithcm/gig/releases/download/v2026.4.20"
   );
 });
 
@@ -50,10 +55,14 @@ test("resolve release base URL from environment override", () => {
 
   try {
     assert.equal(
-      resolveReleaseBaseURL("git+https://github.com/phamhungptithcm/gig.git", "v2026.04.20"),
+      resolveReleaseBaseURL("git+https://github.com/phamhungptithcm/gig.git", "v2026.4.20"),
       "http://127.0.0.1:8787/releases"
     );
   } finally {
     delete process.env.GIG_RELEASE_BASE_URL;
   }
+});
+
+test("resolve canonical release tag from npm CalVer version", () => {
+  assert.equal(releaseTagFromPackageVersion("2026.5.2"), "v2026.5.2");
 });

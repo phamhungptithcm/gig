@@ -81,7 +81,8 @@ gig assist resolve --path . --ticket ABC-123
 ```bash
 gig version
 gig update
-gig update v2026.04.09
+gig update v2026.5.0
+gig update v2026.5.1
 ```
 
 ## Common Flags

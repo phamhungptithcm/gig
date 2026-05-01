@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"gig/internal/buildinfo"
@@ -16,8 +15,6 @@ import (
 	sessionstore "gig/internal/session"
 	"gig/internal/sourcecontrol"
 	"gig/internal/workarea"
-
-	"golang.org/x/term"
 )
 
 func (a *App) runFrontDoor(ctx context.Context) int {
@@ -42,9 +39,7 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 		fmt.Fprintf(a.stderr, "render failed: %v\n", err)
 		return 1
 	}
-	if a.frontDoorPromptEnabled() {
-		reader := bufio.NewReader(a.stdin)
-		a.stdin = reader
+	if reader := a.commandPromptReader(); reader != nil {
 		return a.runFrontDoorSession(ctx, reader, store)
 	}
 
@@ -118,18 +113,7 @@ func (a *App) runFrontDoorSession(ctx context.Context, reader *bufio.Reader, sto
 }
 
 func (a *App) frontDoorPromptEnabled() bool {
-	if file, ok := a.stdin.(*os.File); ok {
-		return term.IsTerminal(int(file.Fd()))
-	}
-
-	type lenReader interface {
-		Len() int
-	}
-	if reader, ok := a.stdin.(lenReader); ok {
-		return reader.Len() > 0
-	}
-
-	return false
+	return a.ensureInteractiveStdin()
 }
 
 func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definition, workareas []workarea.Definition, assistSession sessionstore.Session, hasAssistSession bool) output.FrontDoorState {

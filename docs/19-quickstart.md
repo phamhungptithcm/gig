@@ -12,15 +12,23 @@ Use the direct installer when you want the canonical release binary and self-upd
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh
-gig version
 ```
+
+On macOS and Linux, the installer adds the selected user-local install
+directory to your shell profile when it is not already on `PATH`, matching the
+Windows installer habit of making `gig` available from the next terminal. It
+handles zsh, bash, fish, and `.profile` fallback files. The installer prints the
+installed version directly; if it added a PATH entry, open a new terminal before
+running `gig version`.
 
 Pin a version for team rollout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh -s -- --version v2026.04.17
-gig version
+curl -fsSL https://raw.githubusercontent.com/phamhungptithcm/gig/main/scripts/install.sh | sh -s -- --version v2026.5.0
 ```
+
+Release tags use the same CalVer version as npm with a `v` prefix. The `MICRO`
+number starts at `0` each month and increments for additional releases.
 
 Use npm when your team distributes CLI tools through npm:
 
@@ -86,6 +94,7 @@ Expected success:
 - Paste normal URLs or remotes instead of memorizing canonical targets.
 - Type `save payments` after a repo is remembered so future sessions can use `use payments`, `ABC-123`, `verify`, and `packet`.
 - When a `run?` row appears, press Enter to run that suggested command immediately.
+- If a remote scan or release check takes time, `gig` shows a small loading bar below the command so you know it is still working. JSON stdout stays clean.
 
 Common failure:
 
@@ -94,6 +103,7 @@ Common failure:
 Next action:
 
 - Type `repo`, `repo payments`, `gh owner/name`, or paste the repo URL. If auth is missing, run `gig login` first.
+- Outside the prompt, `gig repo payments` uses the same resolver and prints a save command for the selected target.
 
 ## 4. Log In
 
