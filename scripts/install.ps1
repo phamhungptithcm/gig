@@ -85,6 +85,23 @@ function Get-ExpectedHash {
     return $null
 }
 
+function Get-SHA256Hash {
+    param([string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hash = $sha256.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($hash) -replace "-", "").ToLowerInvariant()
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 if (-not $Version) {
     $Version = if ($env:GIG_VERSION) { $env:GIG_VERSION } else { "latest" }
 }
@@ -178,7 +195,7 @@ try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath
 
     if ($expectedHash) {
-        $actualHash = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
+        $actualHash = Get-SHA256Hash -Path $archivePath
         if ($actualHash -ne $expectedHash) {
             throw "Checksum verification failed for $($asset.name). Expected $expectedHash but got $actualHash."
         }
