@@ -11,8 +11,8 @@ const test = require("node:test");
 const { spawn, spawnSync } = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
-const releaseTag = "v2099.01.01";
-const npmVersion = "2099.1.1";
+const releaseTag = "v2099.1.0";
+const npmVersion = "2099.1.0";
 const serverHost = "127.0.0.1";
 const isWindows = process.platform === "win32";
 const binaryName = isWindows ? "gig.exe" : "gig";

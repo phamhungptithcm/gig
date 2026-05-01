@@ -10,7 +10,7 @@ import (
 	releasenotes "gig/internal/releasenotes"
 )
 
-var dateTagPattern = regexp.MustCompile(`^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}$`)
+var dateTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {

@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,21 @@ func TestReadPickerEvent(t *testing.T) {
 				t.Fatalf("event.Text = %q, want %q", event.Text, test.text)
 			}
 		})
+	}
+}
+
+func TestRunPickerWithoutInteractiveInputReturnsActionableError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	app, err := NewAppWithIO(strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("NewAppWithIO() error = %v", err)
+	}
+
+	_, err = app.runPicker(nil, "Pick one:", []pickerItem{{Value: "payments", Title: "payments"}})
+	if err == nil {
+		t.Fatal("runPicker() error = nil, want interactive input error")
+	}
+	if !strings.Contains(err.Error(), "interactive selection needs a terminal") {
+		t.Fatalf("runPicker() error = %v, want terminal guidance", err)
 	}
 }

@@ -39,8 +39,10 @@ func TestNormalizeNPMVersion(t *testing.T) {
 		expectErr bool
 	}{
 		{name: "latest stays latest", input: "latest", expects: "latest"},
-		{name: "strip padded month and day", input: "v2026.04.09", expects: "2026.4.9"},
+		{name: "strip tag prefix from canonical CalVer", input: "v2026.4.9", expects: "2026.4.9"},
+		{name: "support legacy padded date tag", input: "v2026.04.09", expects: "2026.4.9"},
 		{name: "accept unprefixed version", input: "2026.4.9", expects: "2026.4.9"},
+		{name: "reject old same-day suffix format", input: "v2026.04.09.02", expectErr: true},
 		{name: "reject invalid format", input: "2026.4", expectErr: true},
 	}
 

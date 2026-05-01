@@ -13,15 +13,20 @@ if [ -z "${package_name}" ] || [ -z "${release_tag}" ]; then
   exit 1
 fi
 
-if [[ ! "${release_tag}" =~ ^v([0-9]{4})\.([0-9]{2})\.([0-9]{2})$ ]]; then
-  echo "release tag must use vYYYY.MM.DD: ${release_tag}" >&2
+if [[ ! "${release_tag}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  echo "release tag must use vYYYY.M.MICRO: ${release_tag}" >&2
   exit 1
 fi
 
 year="${BASH_REMATCH[1]}"
 month="${BASH_REMATCH[2]}"
-day="${BASH_REMATCH[3]}"
-expected_version="${year}.$((10#${month})).$((10#${day}))"
+micro="${BASH_REMATCH[3]}"
+month_number="$((10#${month}))"
+if [ "${month_number}" -lt 1 ] || [ "${month_number}" -gt 12 ]; then
+  echo "release tag month must be between 1 and 12: ${release_tag}" >&2
+  exit 1
+fi
+expected_version="$((10#${year})).${month_number}.$((10#${micro}))"
 package_ref="${package_name}@${expected_version}"
 
 attempt=1

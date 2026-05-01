@@ -18,9 +18,10 @@ Usage:
   ./scripts/npm-release.sh verify
 
 Examples:
-  ./scripts/npm-release.sh prepare v2026.04.13
+  ./scripts/npm-release.sh prepare v2026.4.0
+  ./scripts/npm-release.sh prepare v2026.4.1
   ./scripts/npm-release.sh prepare
-  ./scripts/npm-release.sh bootstrap v2026.04.13
+  ./scripts/npm-release.sh bootstrap v2026.4.0
   ./scripts/npm-release.sh bootstrap
   ./scripts/npm-release.sh verify
 EOF
@@ -149,7 +150,7 @@ resolve_release_tag() {
 
   tags="$(load_release_tags)"
   if [ -z "${tags}" ]; then
-    echo "No release tags were found. Pass a tag explicitly, for example: v2026.04.13" >&2
+    echo "No release tags were found. Pass a tag explicitly, for example: v2026.4.0" >&2
     exit 1
   fi
 

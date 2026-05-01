@@ -36,7 +36,7 @@ if (args[0] !== "view") {
 }
 
 const packageArg = args[1];
-const expectedVersion = "2026.4.20";
+const expectedVersion = process.env.FAKE_NPM_EXPECTED_VERSION || "2026.4.20";
 
 if (scenario === "exact-version-visible") {
   if (packageArg === "@hunpeolabs/gig@" + expectedVersion) {
@@ -105,8 +105,8 @@ function readCalls(logPath) {
     .map((line) => JSON.parse(line));
 }
 
-function runVerifier(pathEnv, extraEnv = {}) {
-  return spawnSync("bash", [verifyScript, "@hunpeolabs/gig", "v2026.04.20"], {
+function runVerifier(pathEnv, extraEnv = {}, releaseTag = "v2026.4.20") {
+  return spawnSync("bash", [verifyScript, "@hunpeolabs/gig", releaseTag], {
     cwd: repoRoot,
     encoding: "utf8",
     env: {
@@ -162,5 +162,32 @@ test("verify script retries until the exact npm version becomes visible", async 
         "--registry=https://registry.npmjs.org/"
       ]);
     }
+  });
+});
+
+test("verify script checks the canonical CalVer npm version", async () => {
+  await withFakeNpm("exact-version-visible", async ({ logPath, pathEnv, statePath }) => {
+    const result = runVerifier(
+      pathEnv,
+      {
+        FAKE_NPM_SCENARIO: "exact-version-visible",
+        FAKE_NPM_LOG: logPath,
+        FAKE_NPM_STATE: statePath,
+        FAKE_NPM_EXPECTED_VERSION: "2026.5.2"
+      },
+      "v2026.5.2"
+    );
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /Published @hunpeolabs\/gig@2026\.5\.2/);
+
+    const calls = readCalls(logPath);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], [
+      "view",
+      "@hunpeolabs/gig@2026.5.2",
+      "version",
+      "--registry=https://registry.npmjs.org/"
+    ]);
   });
 });
