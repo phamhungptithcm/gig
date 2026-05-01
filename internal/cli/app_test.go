@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/xuri/excelize/v2"
+
 	"gig/internal/cli"
 	sessionstore "gig/internal/session"
 	"gig/internal/workarea"
@@ -266,7 +268,7 @@ func TestAppRootHelpGroupsCommonFlows(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "First-time users") || !strings.Contains(stderr, "Core workflows") || !strings.Contains(stderr, "Commands") {
+	if !strings.Contains(stderr, "First-time users") || !strings.Contains(stderr, "Inside prompt") || !strings.Contains(stderr, "Scriptable form") || !strings.Contains(stderr, "Commands") {
 		t.Fatalf("stderr = %q, want grouped help sections", stderr)
 	}
 	if !strings.Contains(stderr, "gig ABC-123") || !strings.Contains(stderr, "gig packet ABC-123") {
@@ -306,6 +308,106 @@ func TestAppVerifyPositionalTicketWorks(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Verify ABC-123") {
 		t.Fatalf("stdout = %q, want verification output", stdout)
+	}
+}
+
+func TestAppVerifyWritesXLSXExport(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	outputPath := filepath.Join(t.TempDir(), "verify.xlsx")
+
+	stdout, stderr, exitCode := runApp(t, "verify", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--out", outputPath)
+	if exitCode != 0 {
+		t.Fatalf("verify xlsx exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stdout != "Wrote verification export: "+outputPath+"\n" {
+		t.Fatalf("stdout = %q, want xlsx success message", stdout)
+	}
+	workbook, err := excelize.OpenFile(outputPath)
+	if err != nil {
+		t.Fatalf("OpenFile(%q) error = %v", outputPath, err)
+	}
+	defer workbook.Close()
+	if got := strings.Join(workbook.GetSheetList(), ","); got != "Summary,Decision,Risks,Missing Changes,Commits,Manual Steps,Evidence,Metadata" {
+		t.Fatalf("sheets = %q, want verification export sheets", got)
+	}
+}
+
+func TestAppVerifyWritesCSVExport(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	outputPath := filepath.Join(t.TempDir(), "verify.csv")
+
+	stdout, stderr, exitCode := runApp(t, "verify", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--envs", "dev=dev,test=test,prod=main", "--out", outputPath)
+	if exitCode != 0 {
+		t.Fatalf("verify csv exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stdout != "Wrote verification export: "+outputPath+"\n" {
+		t.Fatalf("stdout = %q, want csv success message", stdout)
+	}
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", outputPath, err)
+	}
+	if !strings.HasPrefix(string(content), "Ticket,Repository,Check,Result,Details,Evidence,Next action\n") {
+		t.Fatalf("verify.csv = %q, want stable header", string(content))
+	}
+}
+
+func TestAppVerifyExportFormatConflictIsActionable(t *testing.T) {
+	t.Parallel()
+
+	stdout, stderr, exitCode := runApp(t, "verify", "ABC-123", "--format", "csv", "--out", "verify.xlsx")
+	if exitCode != 2 {
+		t.Fatalf("verify conflict exit code = %d, stdout = %q, stderr = %q", exitCode, stdout, stderr)
+	}
+	want := "Export format \"csv\" does not match output file \"verify.xlsx\".\n\nTry:\n  gig verify ABC-123 --format xlsx --out verify.xlsx\n  gig verify ABC-123 --format csv --out verify.csv\n"
+	if stderr != want {
+		t.Fatalf("stderr = %q, want actionable conflict", stderr)
+	}
+}
+
+func TestAppPacketCSVSingleFileError(t *testing.T) {
+	t.Parallel()
+
+	stdout, stderr, exitCode := runApp(t, "packet", "ABC-123", "--out", "release-packet.csv")
+	if exitCode != 2 {
+		t.Fatalf("packet csv file exit code = %d, stdout = %q, stderr = %q", exitCode, stdout, stderr)
+	}
+	want := "A release packet contains multiple tables, so it cannot be written as one CSV file.\n\nTry:\n  gig packet ABC-123 --format csv --out release-packet/\n  gig packet ABC-123 --out release-packet.xlsx\n"
+	if stderr != want {
+		t.Fatalf("stderr = %q, want packet csv directory guidance", stderr)
+	}
+}
+
+func TestAppPacketCSVDirectoryExport(t *testing.T) {
+	t.Parallel()
+
+	workspace := createPromotionFixture(t)
+	outputDir := filepath.Join(t.TempDir(), "release-packet")
+
+	stdout, stderr, exitCode := runApp(t, "packet", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--format", "csv", "--out", outputDir+string(os.PathSeparator))
+	if exitCode != 0 {
+		t.Fatalf("packet csv directory exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stdout != "Wrote release packet CSV export: "+outputDir+string(os.PathSeparator)+"\n" {
+		t.Fatalf("stdout = %q, want packet csv success message", stdout)
+	}
+	for _, name := range []string{"summary.csv", "release-decision.csv", "scope.csv", "risks.csv", "missing-changes.csv", "commits.csv", "manual-steps.csv", "verification.csv", "approvals.csv", "evidence.csv", "metadata.csv"} {
+		if _, err := os.Stat(filepath.Join(outputDir, name)); err != nil {
+			t.Fatalf("Stat(%s) error = %v", name, err)
+		}
+	}
+
+	inferredDir := filepath.Join(t.TempDir(), "release-packet-inferred")
+	stdout, stderr, exitCode = runApp(t, "packet", "ABC-123", "--from", "test", "--to", "main", "--path", workspace, "--out", inferredDir+string(os.PathSeparator))
+	if exitCode != 0 {
+		t.Fatalf("packet inferred csv directory exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if stdout != "Wrote release packet CSV export: "+inferredDir+string(os.PathSeparator)+"\n" {
+		t.Fatalf("stdout = %q, want inferred packet csv success message", stdout)
 	}
 }
 
@@ -362,10 +464,10 @@ func TestAppFrontDoorWithoutWorkarea(t *testing.T) {
 	if !strings.Contains(stdout, "docs   https://phamhungptithcm.github.io/gig") {
 		t.Fatalf("stdout = %q, want docs link in hero", stdout)
 	}
-	if !strings.Contains(stdout, "Suggested next") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > repo github:owner/name ABC-123") {
+	if !strings.Contains(stdout, "Suggested next") || !strings.Contains(stdout, "Try one line") || !strings.Contains(stdout, "ask gig > repo") {
 		t.Fatalf("stdout = %q, want focused suggestions and prompt box", stdout)
 	}
-	if !strings.Contains(stdout, "gig login") || !strings.Contains(stdout, "gig ABC-123 --repo github:owner/name") {
+	if !strings.Contains(stdout, "gig login") || !strings.Contains(stdout, "repo payments") || !strings.Contains(stdout, "gh owner/name") {
 		t.Fatalf("stdout = %q, want remote-first suggestions", stdout)
 	}
 	if !strings.Contains(stdout, "Provider coverage") || !strings.Contains(stdout, "GitHub") || !strings.Contains(stdout, "deep release evidence") {
@@ -393,7 +495,7 @@ func TestAppFrontDoorDetectsCurrentGitRepository(t *testing.T) {
 	if !strings.Contains(stdout, "source  Git repository") || !strings.Contains(stdout, "branch") || !strings.Contains(stdout, "main") {
 		t.Fatalf("stdout = %q, want detected git repository and branch", stdout)
 	}
-	if !strings.Contains(stdout, "gig ABC-123 --path .") || !strings.Contains(stdout, "gig project add local --path . --from <source> --to <target> --use") || !strings.Contains(stdout, "ask gig > local ABC-123") {
+	if !strings.Contains(stdout, "gig ABC-123") || !strings.Contains(stdout, "gig verify ABC-123") || !strings.Contains(stdout, "ask gig > local ABC-123") {
 		t.Fatalf("stdout = %q, want local path suggestions", stdout)
 	}
 }
@@ -2045,6 +2147,34 @@ func TestAppVerifyRemoteGitHubUsesExplicitBranchesForAmbiguousProtectedBranches(
 	}
 }
 
+func TestAppVerifyRemoteGitHubPromptsWithTopologyDefaults(t *testing.T) {
+	ghDir := installFakeGitHubCLI(t, map[string]string{
+		"repos/acme/payments": `{"default_branch":"main"}`,
+		"repos/acme/payments/branches?protected=true&per_page=100&page=1":       `[{"name":"release/2026.04","protected":true},{"name":"rc/2026.04","protected":true},{"name":"main","protected":true}]`,
+		"repos/acme/payments/branches/release%2F2026.04":                        `{"name":"release/2026.04","protected":true}`,
+		"repos/acme/payments/branches/rc%2F2026.04":                             `{"name":"rc/2026.04","protected":true}`,
+		"repos/acme/payments/branches/main":                                     `{"name":"main","protected":true}`,
+		"repos/acme/payments/commits?sha=release%2F2026.04&per_page=100&page=1": `[{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"}}]`,
+		"repos/acme/payments/commits?sha=rc%2F2026.04&per_page=100&page=1":      `[]`,
+		"repos/acme/payments/commits?sha=main&per_page=100&page=1":              `[]`,
+		"repos/acme/payments/commits/abc123456789":                              `{"sha":"abc123456789","commit":{"message":"ABC-123 fix payments"},"files":[{"filename":"service/app.txt"}]}`,
+		"repos/acme/payments/commits/abc123456789/pulls?per_page=100&page=1":    `[]`,
+		"repos/acme/payments/deployments?sha=abc123456789&per_page=100&page=1":  `[]`,
+	})
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	stdout, stderr, exitCode := runAppWithInput(t, "release/2026.04\n\n", "verify", "--ticket", "ABC-123", "--repo", "github:acme/payments")
+	if exitCode != 0 {
+		t.Fatalf("verify remote exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "Suggested target: main") || !strings.Contains(stderr, "Target branch [main]:") {
+		t.Fatalf("stderr = %q, want topology-backed target default", stderr)
+	}
+	if !strings.Contains(stdout, "release/2026.04 -> main") {
+		t.Fatalf("stdout = %q, want prompted promotion path with default target", stdout)
+	}
+}
+
 func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
 	chdir(t, t.TempDir())
@@ -2097,7 +2227,7 @@ func TestAppVerifyRemoteWorkareaRemembersInferredTopology(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("front door exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if !strings.Contains(stdout, "promotion staging -> main") || !strings.Contains(stdout, "branch  staging") || !strings.Contains(stdout, "release main") {
+	if !strings.Contains(stdout, "saved project keeps staging -> main attached") || !strings.Contains(stdout, "branch  staging") || !strings.Contains(stdout, "release main") {
 		t.Fatalf("stdout = %q, want remembered promotion on front door", stdout)
 	}
 }
@@ -2174,6 +2304,111 @@ func TestAppFrontDoorPaletteRepoCommandInspects(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+}
+
+func TestAppFrontDoorSessionContinuesAfterParseError(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "resume\nexit\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door session exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "no saved assist session was found") {
+		t.Fatalf("stderr = %q, want resume error", stderr)
+	}
+	if strings.Count(stdout, "ask gig >") < 2 {
+		t.Fatalf("stdout = %q, want another prompt after the parse error", stdout)
+	}
+	if !strings.Contains(stdout, "bye") {
+		t.Fatalf("stdout = %q, want explicit exit confirmation", stdout)
+	}
+}
+
+func TestAppFrontDoorSessionReturnsLastExitCodeOnEOF(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	_, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "resume\n", workareaFile)
+	if exitCode != 1 {
+		t.Fatalf("front door session exit code = %d, want last error", exitCode)
+	}
+	if !strings.Contains(stderr, "no saved assist session was found") {
+		t.Fatalf("stderr = %q, want resume error", stderr)
+	}
+}
+
+func TestAppFrontDoorSessionReusesLastTicketForVerify(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "staging")
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "payments fix\n")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 fix payments")
+	chdir(t, repoRoot)
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "ABC-123\nverify\nexit\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door session exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Verify ABC-123") || !strings.Contains(stdout, "staging -> main") {
+		t.Fatalf("stdout = %q, want verify to reuse last ticket and local promotion", stdout)
+	}
+	if !strings.Contains(stdout, "memory  remembering ABC-123") {
+		t.Fatalf("stdout = %q, want follow-up memory suggestion", stdout)
+	}
+}
+
+func TestAppFrontDoorSessionEnterRunsSuggestedNext(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	repoRoot := filepath.Join(t.TempDir(), "payments")
+	initRepository(t, repoRoot)
+	runGit(t, repoRoot, "checkout", "-b", "staging")
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "payments fix\n")
+	runGit(t, repoRoot, "add", "app.txt")
+	runGit(t, repoRoot, "commit", "-m", "ABC-123 fix payments")
+	chdir(t, repoRoot)
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "ABC-123\n\nexit\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door session exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "run?    press Enter to run verify") || !strings.Contains(stdout, "running verify") || !strings.Contains(stdout, "Verify ABC-123") {
+		t.Fatalf("stdout = %q, want Enter to run suggested verify", stdout)
+	}
+}
+
+func TestAppFrontDoorSessionPromptsForAmbiguousPromotion(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+	workspace := createPromotionFixture(t)
+	repoRoot := filepath.Join(workspace, "a-service")
+	runGit(t, repoRoot, "checkout", "main")
+	chdir(t, repoRoot)
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "verify ABC-123\ndev\nmain\nexit\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door session exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "Source branch:") || !strings.Contains(stderr, "Target branch:") {
+		t.Fatalf("stderr = %q, want immediate promotion prompts", stderr)
+	}
+	if !strings.Contains(stdout, "Verify ABC-123") || !strings.Contains(stdout, "dev -> main") {
+		t.Fatalf("stdout = %q, want verification from prompted promotion", stdout)
+	}
+}
+
+func TestAppFrontDoorPromptHelp(t *testing.T) {
+	workareaFile := filepath.Join(t.TempDir(), "workareas.json")
+
+	stdout, stderr, exitCode := runAppWithInputAndWorkareaFile(t, "?\nexit\n", workareaFile)
+	if exitCode != 0 {
+		t.Fatalf("front door help exit code = %d, stderr = %q", exitCode, stderr)
+	}
+	if !strings.Contains(stdout, "Prompt help") ||
+		!strings.Contains(stdout, "inspect") ||
+		!strings.Contains(stdout, "last") ||
+		!strings.Contains(stdout, "exit") {
+		t.Fatalf("stdout = %q, want compact prompt help", stdout)
 	}
 }
 

@@ -53,7 +53,7 @@ Why
   - Target branch already contains the ticket commits from the selected source.
 
 Recommended next step
-  - Run gig manifest XYZ-999 with the same scope to prepare handoff and release notes.
+  - Run gig packet XYZ-999 with the same scope to prepare handoff and release notes.
 
 Repository b-service
   Scope         <WORKSPACE>/b-service (git)

@@ -19,7 +19,7 @@ If the error says a CLI is missing, install the provider CLI shown in the messag
 
 Then reopen the terminal and rerun `gig login`.
 
-Read-only commands do not start interactive login. If `gig ABC-123 --repo github:owner/name` cannot access the provider, it prints the exact login command to run, for example:
+Read-only commands do not start interactive login. If `gig ABC-123` or `gig ABC-123 --repo github:owner/name` cannot access the provider, it prints the exact login command to run, for example:
 
 ```bash
 gig login github
@@ -53,7 +53,15 @@ Common install commands:
 
 ## Repo Target Is Unknown
 
-Use a full target:
+Inside the prompt, use the shortest input first:
+
+```bash
+repo
+repo payments
+gh owner/name
+```
+
+You can also paste a normal provider URL or Git remote. For scripts, use a full target:
 
 ```bash
 gig ABC-123 --repo github:owner/name
@@ -80,6 +88,11 @@ gig verify ABC-123 --repo github:owner/name --from staging --to main
 If this is the normal path, save it:
 
 ```bash
+gig
+# ask gig > repo payments
+# ask gig > save payments
+
+# Scriptable form:
 gig project add payments --repo github:owner/name --from staging --to main --use
 ```
 
@@ -119,6 +132,34 @@ Try:
 gig inspect ABC-123 --repo github:owner/name
 gig inspect ABC-123 --path .
 ```
+
+## Export Format Errors
+
+`gig` infers export format from `--out` when possible:
+
+```bash
+gig verify ABC-123 --out verify.xlsx
+gig verify ABC-123 --out verify.csv
+gig packet ABC-123 --out release-packet.xlsx
+```
+
+If `--format` and `--out` disagree, use matching values:
+
+```bash
+gig verify ABC-123 --format xlsx --out verify.xlsx
+gig verify ABC-123 --format csv --out verify.csv
+```
+
+Release packets have multiple tables. They cannot be written as one CSV file.
+Use a CSV directory or XLSX workbook instead:
+
+```bash
+gig packet ABC-123 --format csv --out release-packet/
+gig packet ABC-123 --out release-packet.xlsx
+```
+
+Use XLSX for human release review, CSV for spreadsheet or reporting import, and
+JSON for automation.
 
 ## SVN Credentials
 

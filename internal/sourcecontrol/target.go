@@ -50,10 +50,16 @@ func ParseRepositoryTarget(raw string) (scm.Repository, error) {
 		return parseGitSSHRepository(raw)
 	case strings.HasPrefix(lower, "github:"):
 		return parseGitHubRepository(strings.TrimSpace(raw[len("github:"):]))
+	case strings.HasPrefix(lower, "gh:"):
+		return parseGitHubRepository(strings.TrimSpace(raw[len("gh:"):]))
 	case strings.HasPrefix(lower, "gitlab:"):
 		return parseGitLabRepository(strings.TrimSpace(raw[len("gitlab:"):]))
+	case strings.HasPrefix(lower, "gl:"):
+		return parseGitLabRepository(strings.TrimSpace(raw[len("gl:"):]))
 	case strings.HasPrefix(lower, "bitbucket:"):
 		return parseBitbucketRepository(strings.TrimSpace(raw[len("bitbucket:"):]))
+	case strings.HasPrefix(lower, "bb:"):
+		return parseBitbucketRepository(strings.TrimSpace(raw[len("bb:"):]))
 	case strings.HasPrefix(lower, "azure-devops:"):
 		return parseAzureDevOpsRepository(strings.TrimSpace(raw[len("azure-devops:"):]))
 	case strings.HasPrefix(lower, "azuredevops:"):
@@ -84,6 +90,8 @@ func ParseRepositoryTarget(raw string) (scm.Repository, error) {
 		return parseBitbucketRepository(strings.TrimPrefix(path.Clean(u.Path), "/"))
 	case strings.HasPrefix(lower, "https://dev.azure.com/"), strings.HasPrefix(lower, "http://dev.azure.com/"), strings.Contains(lower, ".visualstudio.com/"):
 		return parseAzureDevOpsRepositoryURL(raw)
+	case strings.HasPrefix(lower, "https://"), strings.HasPrefix(lower, "http://"):
+		return parseSVNRepository(raw)
 	default:
 		return scm.Repository{}, fmt.Errorf("unsupported repository target %q", raw)
 	}

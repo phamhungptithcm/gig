@@ -248,6 +248,25 @@ func topologyInferenceError(repositories []scm.Repository, inference sourcecontr
 	}
 }
 
+func promotionPromptDefaultsFromInference(inference sourcecontrol.TopologyInference) (string, string) {
+	fromBranch := strings.TrimSpace(inference.FromBranch)
+	toBranch := strings.TrimSpace(inference.ToBranch)
+	if fromBranch != "" || toBranch != "" {
+		return fromBranch, toBranch
+	}
+
+	for i := len(inference.Environments) - 1; i >= 0; i-- {
+		branch := strings.TrimSpace(inference.Environments[i].Branch)
+		if branch == "" || promotionEnvironmentName(branch) != "prod" {
+			continue
+		}
+		toBranch = branch
+		break
+	}
+
+	return "", toBranch
+}
+
 type topologyResolutionError struct {
 	Repositories []scm.Repository
 	Inference    sourcecontrol.TopologyInference

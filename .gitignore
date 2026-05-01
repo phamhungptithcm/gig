@@ -4,6 +4,7 @@
 /gig
 /.tmp-docs-venv/
 /.venv-docs/
+/.gocache/
 
 coverage.out
 *.out
