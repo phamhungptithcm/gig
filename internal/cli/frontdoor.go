@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,14 +35,7 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 		return 1
 	}
 
-	var current *workarea.Definition
-	if definition, ok, err := store.Current(); err == nil && ok {
-		current = &definition
-	}
-	if _, _, ok := a.inferRemoteRepositoryFromCurrentCheckout(ctx); ok {
-		current = nil
-	}
-
+	current := a.frontDoorCurrentWorkarea(ctx, store)
 	assistSession, hasAssistSession, _ := a.currentAssistSessionForWorkarea(current)
 	state := a.buildFrontDoorState(ctx, current, workareas, assistSession, hasAssistSession)
 	if err := output.RenderFrontDoor(a.stdout, state); err != nil {
@@ -50,17 +44,77 @@ func (a *App) runFrontDoor(ctx context.Context) int {
 	}
 	if a.frontDoorPromptEnabled() {
 		reader := bufio.NewReader(a.stdin)
-		exitCode, err := a.runFrontDoorPalette(ctx, reader, store, current, workareas, hasAssistSession)
+		a.stdin = reader
+		return a.runFrontDoorSession(ctx, reader, store)
+	}
+
+	return 0
+}
+
+func (a *App) frontDoorCurrentWorkarea(ctx context.Context, store *workarea.Store) *workarea.Definition {
+	var current *workarea.Definition
+	if definition, ok, err := store.Current(); err == nil && ok {
+		current = &definition
+	}
+	if _, _, ok := a.inferRemoteRepositoryFromCurrentCheckout(ctx); ok {
+		current = nil
+	}
+	return current
+}
+
+type frontDoorTurnResult struct {
+	ExitCode     int
+	ExitSession  bool
+	RanCommand   bool
+	Command      frontDoorCommand
+	Stdout       string
+	Stderr       string
+	ResolvedLine string
+}
+
+type frontDoorSessionState struct {
+	LastTicketID   string
+	LastRepoTarget string
+	LastPath       string
+	LastFromBranch string
+	LastToBranch   string
+	LastAction     frontDoorAction
+	LastVerdict    string
+	LastCommand    *frontDoorCommand
+	DefaultInput   string
+	DefaultReason  string
+	RepoUses       map[string]int
+}
+
+func (a *App) runFrontDoorSession(ctx context.Context, reader *bufio.Reader, store *workarea.Store) int {
+	lastExitCode := 0
+	session := frontDoorSessionState{RepoUses: make(map[string]int)}
+	for {
+		workareas, _, err := store.List()
 		if err != nil {
 			fmt.Fprintf(a.stderr, "front door failed: %v\n", err)
 			return 1
 		}
-		if exitCode >= 0 {
-			return exitCode
-		}
-	}
+		current := a.frontDoorCurrentWorkarea(ctx, store)
+		_, hasAssistSession, _ := a.currentAssistSessionForWorkarea(current)
 
-	return 0
+		result, err := a.runFrontDoorPalette(ctx, reader, store, current, workareas, hasAssistSession, &session)
+		if errors.Is(err, io.EOF) {
+			return lastExitCode
+		}
+		if err != nil {
+			fmt.Fprintf(a.stderr, "front door failed: %v\n", err)
+			lastExitCode = 1
+			a.renderFrontDoorSessionSuggestions(&session, current, hasAssistSession)
+			continue
+		}
+		if result.ExitSession {
+			return result.ExitCode
+		}
+		a.rememberFrontDoorTurn(&session, result)
+		a.renderFrontDoorSessionSuggestions(&session, current, hasAssistSession)
+		lastExitCode = result.ExitCode
+	}
 }
 
 func (a *App) frontDoorPromptEnabled() bool {
@@ -129,12 +183,12 @@ func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definit
 		}
 	} else {
 		if detected, ok := a.detectFrontDoorRepository(ctx); ok {
-			command := "gig ABC-123 --path ."
+			command := "gig ABC-123"
 			prompt := "ask gig > local ABC-123"
 			examples := []string{
 				"local ABC-123",
-				"project add local --path . --from <source> --to <target> --use",
-				"repo github:owner/name ABC-123",
+				"verify ABC-123",
+				"packet ABC-123",
 			}
 			if detected.Type.IsRemote() {
 				command = "gig ABC-123"
@@ -169,14 +223,16 @@ func (a *App) buildFrontDoorState(ctx context.Context, current *workarea.Definit
 				output.KeyValue{Label: "Mode", Value: "new session"},
 				output.KeyValue{Label: "Provider", Value: formatFrontDoorProviderStatus(sourcecontrol.ProviderLabel(scm.TypeGitHub), githubStatus)},
 			)
-			state.Prompt = "ask gig > repo github:owner/name ABC-123"
+			state.Prompt = "ask gig > repo"
 			state.Examples = []string{
-				"repo github:owner/name ABC-123",
+				"repo",
+				"repo payments",
+				"gh owner/name",
 				"login",
 				"local ABC-123",
 			}
 			if githubStatus.Ready {
-				state.Prompt = "ask gig > repo github:owner/name ABC-123"
+				state.Prompt = "ask gig > repo"
 			}
 		}
 	}
@@ -293,97 +349,548 @@ const (
 	frontDoorActionSwitchWorkarea        frontDoorAction = "switch-workarea"
 	frontDoorActionAsk                   frontDoorAction = "ask"
 	frontDoorActionResume                frontDoorAction = "resume"
+	frontDoorActionExit                  frontDoorAction = "exit"
+	frontDoorActionPlan                  frontDoorAction = "plan"
+	frontDoorActionExplain               frontDoorAction = "explain"
+	frontDoorActionHelp                  frontDoorAction = "help"
+	frontDoorActionLast                  frontDoorAction = "last"
+	frontDoorActionNext                  frontDoorAction = "next"
+	frontDoorActionProject               frontDoorAction = "project"
+	frontDoorActionRepo                  frontDoorAction = "repo"
+	frontDoorActionSave                  frontDoorAction = "save"
 )
 
 type frontDoorCommand struct {
 	Action     frontDoorAction
 	TicketID   string
 	RepoTarget string
+	Path       string
+	FromBranch string
+	ToBranch   string
 	Provider   string
 	Message    string
+	Args       []string
+	ExtraArgs  []string
+	RepoQuery  string
 }
 
-func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, store *workarea.Store, current *workarea.Definition, workareas []workarea.Definition, hasAssistSession bool) (int, error) {
+func (a *App) runFrontDoorPalette(ctx context.Context, reader *bufio.Reader, store *workarea.Store, current *workarea.Definition, workareas []workarea.Definition, hasAssistSession bool, session *frontDoorSessionState) (frontDoorTurnResult, error) {
 	fmt.Fprintln(a.stdout)
 	fmt.Fprint(a.stdout, "ask gig > ")
 
 	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return -1, err
+	if errors.Is(err, io.EOF) && strings.TrimSpace(line) == "" {
+		return frontDoorTurnResult{}, io.EOF
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		return frontDoorTurnResult{}, err
+	}
+	line = strings.TrimSpace(line)
+	if line == "" && session != nil && strings.TrimSpace(session.DefaultInput) != "" {
+		line = session.DefaultInput
+		fmt.Fprintf(a.stdout, "running %s\n", line)
 	}
 
 	command, err := parseFrontDoorCommand(line, current != nil, len(workareas) > 0, hasAssistSession)
 	if err != nil {
-		return -1, err
+		return frontDoorTurnResult{}, err
+	}
+	if command.Action == frontDoorActionNext {
+		if session == nil || strings.TrimSpace(session.DefaultInput) == "" {
+			return frontDoorTurnResult{}, fmt.Errorf("no suggested next command is ready yet")
+		}
+		command, err = parseFrontDoorCommand(session.DefaultInput, current != nil, len(workareas) > 0, hasAssistSession)
+		if err != nil {
+			return frontDoorTurnResult{}, err
+		}
+	}
+	if command.Action == frontDoorActionLast {
+		if session == nil || session.LastCommand == nil {
+			return frontDoorTurnResult{}, fmt.Errorf("no previous command is ready to rerun yet")
+		}
+		command = *session.LastCommand
 	}
 
 	switch command.Action {
+	case frontDoorActionExit:
+		fmt.Fprintln(a.stdout, "bye")
+		return frontDoorTurnResult{ExitSession: true}, nil
+	case frontDoorActionHelp:
+		a.renderFrontDoorPromptHelp(current != nil, len(workareas) > 0, hasAssistSession, session)
+		return frontDoorTurnResult{}, nil
 	case frontDoorActionPicker:
 		if current != nil {
-			return a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
+			exitCode, err := a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
+			return frontDoorTurnResult{ExitCode: exitCode}, err
 		}
-		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, "")
+		exitCode, err := a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, "")
+		return frontDoorTurnResult{ExitCode: exitCode}, err
 	case frontDoorActionLogin:
 		args := []string{}
 		if strings.TrimSpace(command.Provider) != "" {
 			args = append(args, command.Provider)
 		}
-		return a.runLoginWithReader(ctx, reader, args), nil
+		execution := a.captureFrontDoorExecution(func() int {
+			return a.runLoginWithReader(ctx, reader, args)
+		})
+		return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
 	case frontDoorActionResume:
-		return a.runAssistResume(nil), nil
+		execution := a.captureFrontDoorExecution(func() int {
+			return a.runAssistResume(nil)
+		})
+		return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
 	case frontDoorActionAsk:
-		return a.runAsk(ctx, []string{command.Message}), nil
+		execution := a.captureFrontDoorExecution(func() int {
+			return a.runAsk(ctx, []string{command.Message})
+		})
+		return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
+	case frontDoorActionProject:
+		execution := a.captureFrontDoorExecution(func() int {
+			return a.runWorkarea(ctx, command.Args)
+		})
+		return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
+	case frontDoorActionRepo:
+		repository, err := a.resolveFrontDoorPromptRepository(ctx, reader, store, command.RepoQuery, command.RepoTarget)
+		if err != nil {
+			return frontDoorTurnResult{}, err
+		}
+		_ = store.RecordRepositorySelection(repository)
+		fmt.Fprintf(a.stdout, "found %s\n", repository.Root)
+		command.RepoTarget = repository.Root
+		command.RepoQuery = ""
+		return frontDoorTurnResult{RanCommand: true, Command: command, ResolvedLine: line}, nil
+	case frontDoorActionSave:
+		repoTarget := strings.TrimSpace(command.RepoTarget)
+		if repoTarget == "" && session != nil {
+			repoTarget = strings.TrimSpace(session.LastRepoTarget)
+		}
+		if repoTarget == "" {
+			return frontDoorTurnResult{}, fmt.Errorf("no repository scope is ready to save yet; use repo <name> first")
+		}
+		name := strings.TrimSpace(command.Message)
+		if name == "" {
+			name = inferFrontDoorSaveName(repoTarget)
+		}
+		args := []string{"add"}
+		if name != "" {
+			args = append(args, name)
+		}
+		args = append(args, "--repo", repoTarget, "--use")
+		command.RepoTarget = repoTarget
+		command.Args = args
+		execution := a.captureFrontDoorExecution(func() int {
+			return a.runWorkarea(ctx, args)
+		})
+		return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
 	case frontDoorActionDiscoverGitHub, frontDoorActionEnterTarget, frontDoorActionUseCurrentFolder, frontDoorActionDiscoverOtherProvider, frontDoorActionSavedWorkarea:
-		return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, command.TicketID, command.Action)
+		exitCode, err := a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, frontDoorActionInspect, command.TicketID, command.Action)
+		return frontDoorTurnResult{ExitCode: exitCode}, err
 	case frontDoorActionSwitchWorkarea:
 		if current == nil {
 			if len(workareas) == 0 {
-				return -1, fmt.Errorf("no saved projects are available yet")
+				return frontDoorTurnResult{}, fmt.Errorf("no saved projects are available yet")
 			}
 			name, err := a.promptForWorkareaSelectionWithReader(reader, store)
 			if err != nil {
 				if errors.Is(err, errPickerCancelled) {
-					return 0, nil
+					return frontDoorTurnResult{}, nil
 				}
-				return -1, err
+				return frontDoorTurnResult{}, err
 			}
 			if _, err := store.Use(name); err != nil {
-				return -1, err
+				return frontDoorTurnResult{}, err
 			}
 			fmt.Fprintf(a.stdout, "Current project switched to %s.\n", name)
-			return 0, nil
+			return frontDoorTurnResult{}, nil
 		}
-		return a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
-	case frontDoorActionInspect, frontDoorActionVerify, frontDoorActionManifest:
-		if current == nil && strings.TrimSpace(command.RepoTarget) == "" {
-			if detected, ok := a.detectFrontDoorRepository(ctx); ok {
-				ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
-				if err != nil {
-					return -1, err
-				}
-				path := "."
-				if detected.Type.IsRemote() {
-					path = ""
-				}
-				return a.executeFrontDoorAction(ctx, command.Action, ticketID, "", path), nil
+		exitCode, err := a.runFrontDoorCurrentProjectActionWithReader(ctx, reader)
+		return frontDoorTurnResult{ExitCode: exitCode}, err
+	case frontDoorActionInspect, frontDoorActionVerify, frontDoorActionManifest, frontDoorActionPlan, frontDoorActionExplain:
+		command = a.resolveFrontDoorSessionCommand(ctx, command, session, current)
+		if strings.TrimSpace(command.RepoTarget) == "" && strings.TrimSpace(command.RepoQuery) != "" {
+			repository, err := a.resolveFrontDoorPromptRepository(ctx, reader, store, command.RepoQuery, "")
+			if err != nil {
+				return frontDoorTurnResult{}, err
 			}
-			return a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, command.Action, command.TicketID)
+			_ = store.RecordRepositorySelection(repository)
+			fmt.Fprintf(a.stdout, "found %s\n", repository.Root)
+			command.RepoTarget = repository.Root
+			command.RepoQuery = ""
 		}
-		ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
-		if err != nil {
-			return -1, err
+		if current == nil && strings.TrimSpace(command.RepoTarget) == "" && strings.TrimSpace(command.Path) == "" {
+			if detected, ok := a.detectFrontDoorRepository(ctx); ok {
+				if frontDoorCommandNeedsTicketPrompt(command) {
+					ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
+					if err != nil {
+						return frontDoorTurnResult{}, err
+					}
+					command.TicketID = ticketID
+				}
+				command.RepoTarget = strings.TrimSpace(command.RepoTarget)
+				command.Path = "."
+				if detected.Type.IsRemote() {
+					command.Path = ""
+					command.RepoTarget = detected.Root
+				}
+				execution := a.captureFrontDoorExecution(func() int {
+					return a.executeFrontDoorCommand(ctx, command)
+				})
+				return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
+			}
+			exitCode, err := a.runFrontDoorActionWithoutCurrentProject(ctx, reader, store, workareas, command.Action, command.TicketID)
+			return frontDoorTurnResult{ExitCode: exitCode}, err
 		}
-		if strings.TrimSpace(command.RepoTarget) != "" {
-			return a.executeFrontDoorAction(ctx, command.Action, ticketID, command.RepoTarget, ""), nil
+		if frontDoorCommandNeedsTicketPrompt(command) {
+			ticketID, err := a.resolveFrontDoorTicketID(reader, command.TicketID)
+			if err != nil {
+				return frontDoorTurnResult{}, err
+			}
+			command.TicketID = ticketID
 		}
-		return a.executeFrontDoorAction(ctx, command.Action, ticketID, "", ""), nil
+		execution := a.captureFrontDoorExecution(func() int {
+			return a.executeFrontDoorCommand(ctx, command)
+		})
+		return frontDoorTurnResult{ExitCode: execution.ExitCode, RanCommand: true, Command: command, Stdout: execution.Stdout, Stderr: execution.Stderr, ResolvedLine: line}, nil
 	default:
-		return -1, fmt.Errorf("unsupported front-door action %q", command.Action)
+		return frontDoorTurnResult{}, fmt.Errorf("unsupported front-door action %q", command.Action)
 	}
 }
 
 func (a *App) runFrontDoorQuickStart(ctx context.Context, store *workarea.Store, workareas []workarea.Definition) (int, error) {
 	return a.runFrontDoorActionWithoutCurrentProject(ctx, bufio.NewReader(a.stdin), store, workareas, frontDoorActionInspect, "")
+}
+
+type frontDoorExecution struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+func (a *App) captureFrontDoorExecution(run func() int) frontDoorExecution {
+	previousStdout := a.stdout
+	previousStderr := a.stderr
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	a.stdout = io.MultiWriter(previousStdout, &stdout)
+	a.stderr = io.MultiWriter(previousStderr, &stderr)
+	exitCode := run()
+	a.stdout = previousStdout
+	a.stderr = previousStderr
+	return frontDoorExecution{
+		ExitCode: exitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+	}
+}
+
+func (a *App) resolveFrontDoorSessionCommand(ctx context.Context, command frontDoorCommand, session *frontDoorSessionState, current *workarea.Definition) frontDoorCommand {
+	if session != nil {
+		if strings.TrimSpace(command.TicketID) == "" {
+			command.TicketID = session.LastTicketID
+		}
+		if strings.TrimSpace(command.RepoTarget) == "" && strings.TrimSpace(command.Path) == "" {
+			command.RepoTarget = session.LastRepoTarget
+			command.Path = session.LastPath
+		}
+		if strings.TrimSpace(command.FromBranch) == "" {
+			command.FromBranch = session.LastFromBranch
+		}
+		if strings.TrimSpace(command.ToBranch) == "" {
+			command.ToBranch = session.LastToBranch
+		}
+	}
+	if strings.TrimSpace(command.RepoTarget) == "" && strings.TrimSpace(command.Path) == "" && current == nil {
+		if detected, ok := a.detectFrontDoorRepository(ctx); ok {
+			if detected.Type.IsRemote() {
+				command.RepoTarget = detected.Root
+			} else {
+				command.Path = "."
+			}
+		}
+	}
+	return command
+}
+
+func (a *App) rememberFrontDoorTurn(session *frontDoorSessionState, result frontDoorTurnResult) {
+	if session == nil || !result.RanCommand {
+		return
+	}
+	command := result.Command
+	if frontDoorCommandUsesTicket(command.Action) && strings.TrimSpace(command.TicketID) != "" {
+		session.LastTicketID = normalizeTicketID(command.TicketID)
+	}
+	if strings.TrimSpace(command.RepoTarget) != "" {
+		session.LastRepoTarget = canonicalFrontDoorRepoTarget(command.RepoTarget)
+		session.LastPath = ""
+		session.RepoUses[session.LastRepoTarget]++
+	}
+	if strings.TrimSpace(command.Path) != "" {
+		session.LastPath = strings.TrimSpace(command.Path)
+		if strings.TrimSpace(command.RepoTarget) == "" {
+			session.LastRepoTarget = ""
+		}
+	}
+	if strings.TrimSpace(command.FromBranch) != "" {
+		session.LastFromBranch = strings.TrimSpace(command.FromBranch)
+	}
+	if strings.TrimSpace(command.ToBranch) != "" {
+		session.LastToBranch = strings.TrimSpace(command.ToBranch)
+	}
+	session.LastAction = command.Action
+	session.LastVerdict = extractFrontDoorVerdict(result.Stdout)
+	stored := command
+	session.LastCommand = &stored
+	session.DefaultInput, session.DefaultReason = frontDoorDefaultAfterTurn(session, result)
+}
+
+func frontDoorCommandUsesTicket(action frontDoorAction) bool {
+	switch action {
+	case frontDoorActionInspect, frontDoorActionVerify, frontDoorActionManifest, frontDoorActionPlan, frontDoorActionExplain:
+		return true
+	default:
+		return false
+	}
+}
+
+func frontDoorCommandNeedsTicketPrompt(command frontDoorCommand) bool {
+	if !frontDoorCommandUsesTicket(command.Action) {
+		return false
+	}
+	if strings.TrimSpace(command.TicketID) != "" {
+		return false
+	}
+	return !frontDoorArgsProvideTicketScope(command.ExtraArgs)
+}
+
+func frontDoorArgsProvideTicketScope(args []string) bool {
+	for _, arg := range args {
+		token := strings.TrimSpace(arg)
+		switch {
+		case token == "--ticket" || token == "-ticket" ||
+			token == "--ticket-file" || token == "-ticket-file" ||
+			token == "--release" || token == "-release":
+			return true
+		case strings.HasPrefix(token, "--ticket=") ||
+			strings.HasPrefix(token, "-ticket=") ||
+			strings.HasPrefix(token, "--ticket-file=") ||
+			strings.HasPrefix(token, "-ticket-file=") ||
+			strings.HasPrefix(token, "--release=") ||
+			strings.HasPrefix(token, "-release="):
+			return true
+		}
+	}
+	return false
+}
+
+func frontDoorDefaultAfterTurn(session *frontDoorSessionState, result frontDoorTurnResult) (string, string) {
+	if login := frontDoorLoginInputFromOutput(result.Stderr); login != "" {
+		return login, "login fixes the last provider access error"
+	}
+	if result.ExitCode != 0 {
+		return "", ""
+	}
+	switch result.Command.Action {
+	case frontDoorActionRepo:
+		return "ABC-123", "repository scope is ready; type or accept a ticket to inspect"
+	case frontDoorActionInspect:
+		return "verify", "inspect finished; verify checks release readiness next"
+	case frontDoorActionVerify:
+		switch session.LastVerdict {
+		case "safe":
+			return "packet", "safe verification can move straight to packet"
+		case "warning", "blocked":
+			return "plan", "review missing commits, risks, and manual steps next"
+		default:
+			return "packet", "verification finished; packet prepares handoff"
+		}
+	case frontDoorActionPlan:
+		if session.LastVerdict == "safe" {
+			return "packet", "safe plan can move to packet"
+		}
+		return "explain", "turn the plan into an audience-ready explanation"
+	default:
+		return "", ""
+	}
+}
+
+func (a *App) renderFrontDoorSessionSuggestions(session *frontDoorSessionState, current *workarea.Definition, hasAssistSession bool) {
+	if session == nil || (strings.TrimSpace(session.LastTicketID) == "" && strings.TrimSpace(session.LastRepoTarget) == "" && strings.TrimSpace(session.LastPath) == "") {
+		return
+	}
+	suggestions := frontDoorSessionSuggestions(session, current, hasAssistSession)
+	if len(suggestions) == 0 {
+		return
+	}
+	ui := output.NewConsole(a.stdout)
+	_ = ui.Blank()
+	_ = ui.Section("Suggested next")
+	rows := make([]output.KeyValue, 0, len(suggestions)+1)
+	for _, suggestion := range suggestions {
+		value := strings.TrimSpace(suggestion.Command)
+		if value == "" {
+			value = strings.TrimSpace(suggestion.Note)
+		}
+		if value == "" {
+			continue
+		}
+		rows = append(rows, output.KeyValue{Label: suggestion.Label, Value: value})
+	}
+	if strings.TrimSpace(session.DefaultInput) != "" {
+		runText := "press Enter to run " + session.DefaultInput + ", or type another command"
+		if strings.TrimSpace(session.DefaultReason) != "" {
+			runText += " (" + session.DefaultReason + ")"
+		}
+		rows = append(rows, output.KeyValue{Label: "run?", Value: runText})
+	}
+	_ = ui.NestedRows(rows...)
+}
+
+func frontDoorSessionSuggestions(session *frontDoorSessionState, current *workarea.Definition, hasAssistSession bool) []output.FrontDoorSuggestion {
+	ticketID := strings.TrimSpace(session.LastTicketID)
+	if ticketID == "" {
+		ticketID = "ABC-123"
+	}
+	suggestions := make([]output.FrontDoorSuggestion, 0, 8)
+	addCommand := func(label, command string) {
+		command = strings.TrimSpace(command)
+		if command == "" {
+			return
+		}
+		suggestions = append(suggestions, output.FrontDoorSuggestion{Label: label, Command: command})
+	}
+	addNote := func(label, note string) {
+		note = strings.TrimSpace(note)
+		if note == "" {
+			return
+		}
+		suggestions = append(suggestions, output.FrontDoorSuggestion{Label: label, Note: note})
+	}
+
+	switch session.LastAction {
+	case frontDoorActionInspect:
+		addCommand("verify", "verify")
+		addCommand("packet", "packet")
+	case frontDoorActionVerify:
+		switch session.LastVerdict {
+		case "safe":
+			addCommand("packet", "packet")
+		case "warning":
+			addCommand("plan", "plan")
+			addCommand("explain", "explain")
+		case "blocked":
+			addCommand("plan", "plan")
+			addCommand("explain", "explain")
+		default:
+			addCommand("packet", "packet")
+		}
+	case frontDoorActionPlan:
+		addCommand("packet", "packet")
+		addCommand("explain", "explain")
+	default:
+		addCommand("inspect", ticketID)
+		addCommand("verify", "verify")
+		addCommand("packet", "packet")
+	}
+	if hasAssistSession {
+		addCommand("ask", "ask what is still blocked?")
+	}
+	if session.LastRepoTarget != "" {
+		addNote("scope", "using "+session.LastRepoTarget)
+		if current == nil && session.RepoUses[session.LastRepoTarget] >= 2 {
+			addCommand("save", "save "+inferFrontDoorSaveName(session.LastRepoTarget))
+			addNote("why", "then future sessions can start with "+ticketID+", verify, and packet")
+		}
+	} else if session.LastPath != "" {
+		addNote("scope", "using path "+session.LastPath)
+	}
+	if session.LastFromBranch != "" {
+		addNote("branch", session.LastFromBranch+" looks like the release source")
+	}
+	if session.LastToBranch != "" {
+		addNote("target", session.LastToBranch+" is the release target")
+	}
+	if strings.TrimSpace(session.LastTicketID) != "" {
+		addNote("memory", "remembering "+ticketID+"; next, last, verify, packet, and explain reuse it")
+	} else {
+		addNote("memory", "repository is remembered; type a ticket once, then verify and packet stay short")
+	}
+	return suggestions
+}
+
+func (a *App) renderFrontDoorPromptHelp(hasCurrent, hasSaved, hasAssist bool, session *frontDoorSessionState) {
+	ticketID := "ABC-123"
+	if session != nil && strings.TrimSpace(session.LastTicketID) != "" {
+		ticketID = session.LastTicketID
+	}
+	ui := output.NewConsole(a.stdout)
+	_ = ui.Blank()
+	_ = ui.Section("Prompt help")
+	rows := []output.KeyValue{
+		{Label: "inspect", Value: ticketID + " or i " + ticketID},
+		{Label: "verify", Value: "verify or v"},
+		{Label: "packet", Value: "packet or p"},
+		{Label: "explain", Value: "explain"},
+		{Label: "next", Value: "next or Enter when run? is shown"},
+		{Label: "last", Value: "rerun the previous command"},
+		{Label: "repo", Value: "repo, repo payments, or gh owner/name"},
+		{Label: "save", Value: "save payments"},
+		{Label: "use", Value: "use payments"},
+	}
+	if hasCurrent || hasSaved {
+		rows = append(rows, output.KeyValue{Label: "switch", Value: "switch project"})
+	}
+	if hasAssist {
+		rows = append(rows, output.KeyValue{Label: "resume", Value: "resume or r"})
+	} else {
+		rows = append(rows, output.KeyValue{Label: "resume", Value: "r tries to resume the last AI brief"})
+	}
+	rows = append(rows,
+		output.KeyValue{Label: "url", Value: "paste a GitHub, GitLab, Bitbucket, Azure, or SVN URL"},
+		output.KeyValue{Label: "local", Value: "local " + ticketID},
+		output.KeyValue{Label: "exit", Value: "exit, quit, or q"},
+	)
+	_ = ui.NestedRows(rows...)
+}
+
+func frontDoorLoginInputFromOutput(text string) string {
+	line := frontDoorLineContaining(text, "gig login ")
+	if line == "" {
+		return ""
+	}
+	fields := strings.Fields(line)
+	for i := 0; i+2 < len(fields); i++ {
+		if fields[i] == "gig" && fields[i+1] == "login" {
+			return "login " + fields[i+2]
+		}
+	}
+	return ""
+}
+
+func frontDoorLineContaining(text, pattern string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, pattern) {
+			return line
+		}
+	}
+	return ""
+}
+
+func extractFrontDoorVerdict(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		lower := strings.ToLower(line)
+		if !strings.Contains(lower, "verdict") {
+			continue
+		}
+		switch {
+		case strings.Contains(lower, "blocked"):
+			return "blocked"
+		case strings.Contains(lower, "warning"):
+			return "warning"
+		case strings.Contains(lower, "safe"):
+			return "safe"
+		}
+	}
+	return ""
 }
 
 func (a *App) runFrontDoorActionWithoutCurrentProject(ctx context.Context, reader *bufio.Reader, store *workarea.Store, workareas []workarea.Definition, action frontDoorAction, presetTicket string, preferredModes ...frontDoorAction) (int, error) {
@@ -401,9 +908,9 @@ func (a *App) runFrontDoorActionWithoutCurrentProject(ctx context.Context, reade
 		},
 		{
 			Value:    "enter-target",
-			Title:    "Paste a repository target",
-			Subtitle: "Use a target like github:owner/name when you already know the repo.",
-			Keywords: []string{"repo", "target", "github:owner/name"},
+			Title:    "Paste a repository URL or target",
+			Subtitle: "Paste a provider URL, Git remote, SVN URL, or canonical target.",
+			Keywords: []string{"repo", "target", "github:owner/name", "url", "remote"},
 		},
 		{
 			Value:    "use-current-folder",
@@ -455,7 +962,7 @@ func (a *App) runFrontDoorActionWithoutCurrentProject(ctx context.Context, reade
 		}
 		return a.executeFrontDoorAction(ctx, action, ticketID, repository.Root, ""), nil
 	case frontDoorActionEnterTarget:
-		fmt.Fprintln(a.stdout, "Repository target example: github:owner/name")
+		fmt.Fprintln(a.stdout, "Repository example: https://github.com/owner/name or github:owner/name")
 		repoTarget, err := a.promptForLine(reader, "Repository target")
 		if err != nil {
 			return -1, err
@@ -603,39 +1110,50 @@ func (a *App) resolveFrontDoorTicketID(reader *bufio.Reader, preset string) (str
 }
 
 func (a *App) executeFrontDoorAction(ctx context.Context, action frontDoorAction, ticketID, repoTarget, path string) int {
-	ticketID = normalizeTicketID(ticketID)
-	switch action {
+	return a.executeFrontDoorCommand(ctx, frontDoorCommand{
+		Action:     action,
+		TicketID:   ticketID,
+		RepoTarget: repoTarget,
+		Path:       path,
+	})
+}
+
+func (a *App) executeFrontDoorCommand(ctx context.Context, command frontDoorCommand) int {
+	ticketID := normalizeTicketID(command.TicketID)
+	args := []string{}
+	if ticketID != "" {
+		args = append(args, ticketID)
+	}
+	if strings.TrimSpace(command.RepoTarget) != "" {
+		args = append(args, "--repo", strings.TrimSpace(command.RepoTarget))
+	}
+	if strings.TrimSpace(command.Path) != "" {
+		args = append(args, "--path", strings.TrimSpace(command.Path))
+	}
+	if strings.TrimSpace(command.FromBranch) != "" {
+		args = append(args, "--from", strings.TrimSpace(command.FromBranch))
+	}
+	if strings.TrimSpace(command.ToBranch) != "" {
+		args = append(args, "--to", strings.TrimSpace(command.ToBranch))
+	}
+	if command.Action != frontDoorActionInspect && strings.TrimSpace(command.Path) != "" && strings.TrimSpace(command.FromBranch) == "" && strings.TrimSpace(command.ToBranch) == "" {
+		args = append(args, a.frontDoorLocalPromotionArgs(ctx, strings.TrimSpace(command.Path))...)
+	}
+	args = append(args, command.ExtraArgs...)
+
+	switch command.Action {
 	case frontDoorActionInspect:
-		args := []string{ticketID}
-		if strings.TrimSpace(repoTarget) != "" {
-			args = append(args, "--repo", repoTarget)
-		}
-		if strings.TrimSpace(path) != "" {
-			args = append(args, "--path", path)
-		}
 		return a.runInspect(ctx, args)
 	case frontDoorActionVerify:
-		args := []string{ticketID}
-		if strings.TrimSpace(repoTarget) != "" {
-			args = append(args, "--repo", repoTarget)
-		}
-		if strings.TrimSpace(path) != "" {
-			args = append(args, "--path", path)
-			args = append(args, a.frontDoorLocalPromotionArgs(ctx, path)...)
-		}
 		return a.runVerify(ctx, args)
 	case frontDoorActionManifest:
-		args := []string{ticketID}
-		if strings.TrimSpace(repoTarget) != "" {
-			args = append(args, "--repo", repoTarget)
-		}
-		if strings.TrimSpace(path) != "" {
-			args = append(args, "--path", path)
-			args = append(args, a.frontDoorLocalPromotionArgs(ctx, path)...)
-		}
 		return a.runManifest(ctx, args)
+	case frontDoorActionPlan:
+		return a.runPlan(ctx, args)
+	case frontDoorActionExplain:
+		return a.runAssistAudit(ctx, args)
 	default:
-		fmt.Fprintf(a.stderr, "front door failed: unsupported action %q\n", action)
+		fmt.Fprintf(a.stderr, "front door failed: unsupported action %q\n", command.Action)
 		return 1
 	}
 }
@@ -680,6 +1198,12 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (f
 	if len(tokens) == 0 {
 		return frontDoorCommand{Action: frontDoorActionPicker}, nil
 	}
+	if strings.EqualFold(tokens[0], "gig") {
+		tokens = tokens[1:]
+		if len(tokens) == 0 {
+			return frontDoorCommand{Action: frontDoorActionPicker}, nil
+		}
+	}
 
 	if len(tokens) == 1 {
 		switch strings.ToLower(tokens[0]) {
@@ -707,23 +1231,56 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (f
 			if hasSaved && !hasCurrent {
 				return frontDoorCommand{Action: frontDoorActionSavedWorkarea}, nil
 			}
-		case "?", "help", "menu", "pick", "browse":
+		case "?", "help":
+			return frontDoorCommand{Action: frontDoorActionHelp}, nil
+		case "menu", "pick", "browse":
 			return frontDoorCommand{Action: frontDoorActionPicker}, nil
+		case "i":
+			return frontDoorCommand{Action: frontDoorActionInspect}, nil
+		case "v":
+			return frontDoorCommand{Action: frontDoorActionVerify}, nil
+		case "p":
+			return frontDoorCommand{Action: frontDoorActionManifest}, nil
+		case "r":
+			return frontDoorCommand{Action: frontDoorActionResume}, nil
+		case "last":
+			return frontDoorCommand{Action: frontDoorActionLast}, nil
+		case "next":
+			return frontDoorCommand{Action: frontDoorActionNext}, nil
+		case "repo", "target":
+			return frontDoorCommand{Action: frontDoorActionRepo}, nil
+		case "save":
+			return frontDoorCommand{Action: frontDoorActionSave}, nil
+		case "use":
+			return frontDoorCommand{Action: frontDoorActionProject, Args: []string{"use"}}, nil
 		case "github":
 			return frontDoorCommand{Action: frontDoorActionDiscoverGitHub}, nil
+		case "gh", "gl", "bb", "ado", "azdo", "svn":
+			return frontDoorCommand{Action: frontDoorActionRepo, RepoQuery: tokens[0]}, nil
 		case "local", "folder":
-			return frontDoorCommand{Action: frontDoorActionUseCurrentFolder}, nil
+			return frontDoorCommand{Action: frontDoorActionUseCurrentFolder, Path: "."}, nil
 		case "switch", "project", "workarea":
 			return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
 		case "resume":
 			if hasAssist {
 				return frontDoorCommand{Action: frontDoorActionResume}, nil
 			}
+		case "exit", "quit", "q":
+			return frontDoorCommand{Action: frontDoorActionExit}, nil
 		}
 	}
 
-	repoTarget := ""
-	filtered := make([]string, 0, len(tokens))
+	filtered, flagRepoTarget, flagPath, flagFromBranch, flagToBranch, err := parseFrontDoorInlineFlags(tokens)
+	if err != nil {
+		return frontDoorCommand{}, err
+	}
+	tokens = filtered
+	if len(tokens) == 0 {
+		return frontDoorCommand{Action: frontDoorActionPicker}, nil
+	}
+
+	repoTarget := flagRepoTarget
+	filtered = make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		if repoTarget == "" && isFrontDoorRepoTarget(token) {
 			repoTarget = token
@@ -733,21 +1290,30 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (f
 	}
 	tokens = filtered
 	if len(tokens) == 0 && repoTarget != "" {
-		return frontDoorCommand{Action: frontDoorActionInspect, RepoTarget: repoTarget}, nil
+		return frontDoorCommand{Action: frontDoorActionInspect, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch}, nil
 	}
 
 	first := strings.ToLower(tokens[0])
 	switch first {
-	case "inspect", "find":
-		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
-	case "verify":
-		return frontDoorCommand{Action: frontDoorActionVerify, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
-	case "manifest", "packet":
+	case "inspect", "find", "i":
+		ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens[1:])
+		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+	case "verify", "v":
+		ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens[1:])
+		return frontDoorCommand{Action: frontDoorActionVerify, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+	case "manifest", "packet", "p":
 		args := tokens[1:]
 		if len(args) > 0 && strings.EqualFold(args[0], "generate") {
 			args = args[1:]
 		}
-		return frontDoorCommand{Action: frontDoorActionManifest, TicketID: frontDoorTicketArg(args), RepoTarget: repoTarget}, nil
+		ticketID, extraArgs := frontDoorTicketAndExtraArgs(args)
+		return frontDoorCommand{Action: frontDoorActionManifest, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+	case "plan":
+		ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens[1:])
+		return frontDoorCommand{Action: frontDoorActionPlan, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+	case "explain", "e":
+		ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens[1:])
+		return frontDoorCommand{Action: frontDoorActionExplain, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
 	case "login":
 		provider := ""
 		if len(tokens) > 1 {
@@ -760,19 +1326,44 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (f
 			message = "what changed since the last brief?"
 		}
 		return frontDoorCommand{Action: frontDoorActionAsk, Message: message}, nil
-	case "resume":
-		if hasAssist {
-			return frontDoorCommand{Action: frontDoorActionResume}, nil
-		}
-		return frontDoorCommand{}, fmt.Errorf("no saved assist session is ready yet")
+	case "resume", "r":
+		return frontDoorCommand{Action: frontDoorActionResume}, nil
+	case "exit", "quit", "q":
+		return frontDoorCommand{Action: frontDoorActionExit}, nil
+	case "?", "help":
+		return frontDoorCommand{Action: frontDoorActionHelp}, nil
+	case "last":
+		return frontDoorCommand{Action: frontDoorActionLast}, nil
+	case "next":
+		return frontDoorCommand{Action: frontDoorActionNext}, nil
+	case "project", "workarea":
+		return frontDoorCommand{Action: frontDoorActionProject, Args: append([]string(nil), tokens[1:]...)}, nil
+	case "use":
+		return frontDoorCommand{Action: frontDoorActionProject, Args: append([]string{"use"}, tokens[1:]...)}, nil
+	case "save":
+		return frontDoorCommand{Action: frontDoorActionSave, Message: strings.TrimSpace(strings.Join(tokens[1:], " ")), RepoTarget: repoTarget}, nil
+	case "gh", "gl", "bb", "ado", "azdo", "svn":
+		return frontDoorProviderAliasCommand(first, tokens[1:], flagPath, flagFromBranch, flagToBranch)
 	case "repo", "target":
-		if repoTarget == "" {
-			return frontDoorCommand{}, fmt.Errorf("type a repository target such as github:owner/name")
+		if repoTarget != "" {
+			ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens[1:])
+			if ticketID != "" || frontDoorArgsProvideTicketScope(extraArgs) {
+				return frontDoorCommand{Action: frontDoorActionInspect, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+			}
+			return frontDoorCommand{Action: frontDoorActionRepo, RepoTarget: repoTarget}, nil
 		}
-		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: frontDoorTicketArg(tokens[1:]), RepoTarget: repoTarget}, nil
+		query, ticketID, extraArgs := frontDoorRepoQueryTicketExtra(tokens[1:])
+		if query == "" {
+			return frontDoorCommand{Action: frontDoorActionRepo}, nil
+		}
+		if ticketID != "" {
+			return frontDoorCommand{Action: frontDoorActionInspect, TicketID: ticketID, RepoQuery: query, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+		}
+		return frontDoorCommand{Action: frontDoorActionRepo, RepoQuery: query}, nil
 	case "local", "folder":
-		return frontDoorCommand{Action: frontDoorActionUseCurrentFolder, TicketID: frontDoorTicketArg(tokens[1:])}, nil
-	case "switch", "project", "workarea":
+		ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens[1:])
+		return frontDoorCommand{Action: frontDoorActionInspect, TicketID: ticketID, Path: ".", FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+	case "switch":
 		return frontDoorCommand{Action: frontDoorActionSwitchWorkarea}, nil
 	}
 
@@ -780,7 +1371,60 @@ func parseFrontDoorCommand(line string, hasCurrent, hasSaved, hasAssist bool) (f
 		return frontDoorCommand{Action: frontDoorActionAsk, Message: trimmed}, nil
 	}
 
-	return frontDoorCommand{Action: frontDoorActionInspect, TicketID: tokens[0], RepoTarget: repoTarget}, nil
+	ticketID, extraArgs := frontDoorTicketAndExtraArgs(tokens)
+	return frontDoorCommand{Action: frontDoorActionInspect, TicketID: ticketID, RepoTarget: repoTarget, Path: flagPath, FromBranch: flagFromBranch, ToBranch: flagToBranch, ExtraArgs: extraArgs}, nil
+}
+
+func parseFrontDoorInlineFlags(tokens []string) ([]string, string, string, string, string, error) {
+	var repoTarget, path, fromBranch, toBranch string
+	filtered := make([]string, 0, len(tokens))
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
+		readValue := func(flag string) (string, error) {
+			if i+1 >= len(tokens) {
+				return "", fmt.Errorf("%s requires a value", flag)
+			}
+			i++
+			return strings.TrimSpace(tokens[i]), nil
+		}
+		switch {
+		case token == "--repo" || token == "-repo":
+			value, err := readValue(token)
+			if err != nil {
+				return nil, "", "", "", "", err
+			}
+			repoTarget = value
+		case strings.HasPrefix(token, "--repo="):
+			repoTarget = strings.TrimSpace(strings.TrimPrefix(token, "--repo="))
+		case token == "--path" || token == "-path":
+			value, err := readValue(token)
+			if err != nil {
+				return nil, "", "", "", "", err
+			}
+			path = value
+		case strings.HasPrefix(token, "--path="):
+			path = strings.TrimSpace(strings.TrimPrefix(token, "--path="))
+		case token == "--from" || token == "-from":
+			value, err := readValue(token)
+			if err != nil {
+				return nil, "", "", "", "", err
+			}
+			fromBranch = value
+		case strings.HasPrefix(token, "--from="):
+			fromBranch = strings.TrimSpace(strings.TrimPrefix(token, "--from="))
+		case token == "--to" || token == "-to":
+			value, err := readValue(token)
+			if err != nil {
+				return nil, "", "", "", "", err
+			}
+			toBranch = value
+		case strings.HasPrefix(token, "--to="):
+			toBranch = strings.TrimSpace(strings.TrimPrefix(token, "--to="))
+		default:
+			filtered = append(filtered, token)
+		}
+	}
+	return filtered, repoTarget, path, fromBranch, toBranch, nil
 }
 
 func isFrontDoorRepoTarget(value string) bool {
@@ -788,11 +1432,14 @@ func isFrontDoorRepoTarget(value string) bool {
 	return err == nil
 }
 
-func frontDoorTicketArg(tokens []string) string {
+func frontDoorTicketAndExtraArgs(tokens []string) (string, []string) {
 	if len(tokens) == 0 {
-		return ""
+		return "", nil
 	}
-	return tokens[0]
+	if strings.HasPrefix(strings.TrimSpace(tokens[0]), "-") {
+		return "", append([]string(nil), tokens...)
+	}
+	return tokens[0], append([]string(nil), tokens[1:]...)
 }
 
 func frontDoorResumePrompt(session sessionstore.Session) string {

@@ -17,12 +17,12 @@
     <text x="58" y="308" fill="#a5adba">path    payments</text>
     <text x="58" y="356" fill="#7d8591">branch</text>
     <text x="88" y="392" fill="#f8fafc">release/2026.04.20</text>
-    <text x="58" y="424" fill="#39d0ff">next    gig ABC-123 --path .</text>
+    <text x="58" y="424" fill="#39d0ff">next    gig ABC-123</text>
 
     <text x="34" y="512" fill="#f8fafc">Suggested next</text>
-    <text x="62" y="548" fill="#39d0ff">gig ABC-123 --path .</text>
+    <text x="62" y="548" fill="#39d0ff">gig ABC-123</text>
     <text x="62" y="580" fill="#39d0ff">gig verify ABC-123 --path . --from release/2026.04.20 --to main</text>
-    <text x="62" y="612" fill="#39d0ff">gig manifest ABC-123 --path . --from release/2026.04.20 --to main</text>
+    <text x="62" y="612" fill="#39d0ff">gig packet ABC-123 --path . --from release/2026.04.20 --to main</text>
     <text x="62" y="652" fill="#7d8591">local git repository detected</text>
 
     <text x="720" y="154" fill="#f8fafc">Try one line</text>

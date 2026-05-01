@@ -840,32 +840,64 @@ func flagProvided(fs *flag.FlagSet, name string) bool {
 }
 
 func (a *App) printWorkareaUsage() {
-	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  gig project list [--format human|json] [--json]")
-	fmt.Fprintln(a.stderr, "  gig project add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
-	fmt.Fprintln(a.stderr, "  gig project use [<name>]")
-	fmt.Fprintln(a.stderr, "  gig project show [<name>]")
-	fmt.Fprintln(a.stderr, "Alias: gig workarea ...")
+	printHelpHeading(a.stderr, "gig project", "Save repo context so future commands stay short.")
+	printHelpUsage(a.stderr,
+		"gig project add [<name>] [--repo <target> | --provider github|gitlab|bitbucket|azure-devops] [--use]",
+		"gig project use [<name>]",
+		"gig project list [--format human|json] [--json]",
+		"gig project show [<name>]",
+	)
+	printHelpCommands(a.stderr, "Inside prompt",
+		"gig",
+		"repo payments",
+		"save payments",
+	)
+	printHelpCommands(a.stderr, "CLI form",
+		"gig project add payments --repo github:owner/name --use",
+		"gig project use payments",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--repo", Value: "Remember a live remote target"},
+		helpRow{Label: "--provider", Value: "Browse provider repos when --repo is omitted"},
+		helpRow{Label: "--from/--to", Value: "Optional branch defaults when inference needs help"},
+		helpRow{Label: "--use", Value: "Make this the current project now"},
+	)
+	printHelpRows(a.stderr, "Alias", helpRow{Label: "workarea", Value: "gig workarea ..."})
 }
 
 func (a *App) printWorkareaListUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig project list [--format human|json] [--json]")
-	fmt.Fprintln(a.stderr, "Alias: gig workarea list ...")
+	printHelpUsage(a.stderr, "gig project list [--format human|json] [--json]")
+	printHelpRows(a.stderr, "Alias", helpRow{Label: "workarea list", Value: "gig workarea list ..."})
 }
 
 func (a *App) printWorkareaAddUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig project add [<name>] [--repo <provider-target>] [--provider github|gitlab|bitbucket|azure-devops] [--org owner] [--path /path/to/workspace] [--from <branch>] [--to <branch>] [--envs dev=dev,test=test,prod=main] [--use]")
-	fmt.Fprintln(a.stderr, "Alias: gig workarea add ...")
+	printHelpHeading(a.stderr, "gig project add", "Remember a project for shorter future commands.")
+	printHelpUsage(a.stderr, "gig project add [<name>] [--repo <target> | --provider github|gitlab|bitbucket|azure-devops] [--use]")
+	printHelpCommands(a.stderr, "Start here",
+		"gig",
+		"repo payments",
+		"save payments",
+		"gig project add payments --repo github:owner/name --use",
+	)
+	printHelpRows(a.stderr, "Common flags",
+		helpRow{Label: "--repo", Value: "Remote target or pasted provider URL"},
+		helpRow{Label: "--path", Value: "Local fallback workspace"},
+		helpRow{Label: "--from/--to", Value: "Optional branch defaults when inference needs help"},
+		helpRow{Label: "--envs", Value: "Optional environment mapping"},
+		helpRow{Label: "--use", Value: "Make this the current project now"},
+	)
+	printHelpRows(a.stderr, "Alias", helpRow{Label: "workarea add", Value: "gig workarea add ..."})
 }
 
 func (a *App) printWorkareaUseUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig project use [<name>]")
-	fmt.Fprintln(a.stderr, "Alias: gig workarea use ...")
+	printHelpUsage(a.stderr, "gig project use [<name>]")
+	printHelpCommands(a.stderr, "Examples", "gig project use payments", "use payments")
+	printHelpRows(a.stderr, "Alias", helpRow{Label: "workarea use", Value: "gig workarea use ..."})
 }
 
 func (a *App) printWorkareaShowUsage() {
-	fmt.Fprintln(a.stderr, "Usage: gig project show [<name>]")
-	fmt.Fprintln(a.stderr, "Alias: gig workarea show ...")
+	printHelpUsage(a.stderr, "gig project show [<name>]")
+	printHelpRows(a.stderr, "Alias", helpRow{Label: "workarea show", Value: "gig workarea show ..."})
 }
 
 func (a *App) printCurrentWorkareaHint() {

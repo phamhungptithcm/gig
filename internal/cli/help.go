@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"gig/internal/output"
 	"gig/internal/sourcecontrol"
@@ -75,15 +76,38 @@ func printSuggestions(w io.Writer, suggestions []output.FrontDoorSuggestion) {
 	}
 	ui := newHelpPrinter(w)
 	_ = ui.Section("Try next")
+	rows := make([]output.KeyValue, 0, len(suggestions))
+	flushRows := func() {
+		if len(rows) == 0 {
+			return
+		}
+		_ = ui.NestedRows(rows...)
+		rows = rows[:0]
+	}
 	for _, suggestion := range suggestions {
 		if suggestion.Command != "" {
-			_ = ui.Commands(suggestion.Command)
+			rows = printLabeledHelpSuggestion(ui, rows, suggestion.Label, suggestion.Command, flushRows)
 		}
 		if suggestion.Note != "" {
-			_ = ui.Note(suggestion.Note)
+			rows = printLabeledHelpSuggestion(ui, rows, suggestion.Label, suggestion.Note, flushRows)
 		}
 	}
+	flushRows()
 	_ = ui.Blank()
+}
+
+func printLabeledHelpSuggestion(ui output.Console, rows []output.KeyValue, label, value string, flushRows func()) []output.KeyValue {
+	label = strings.TrimSpace(label)
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return rows
+	}
+	if label == "" {
+		flushRows()
+		_ = ui.Commands(value)
+		return rows[:0]
+	}
+	return append(rows, output.KeyValue{Label: label, Value: value})
 }
 
 func providerCoverageHelpRows() []helpRow {

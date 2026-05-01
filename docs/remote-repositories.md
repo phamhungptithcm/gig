@@ -9,6 +9,9 @@ gig packet ABC-123
 ```
 
 Use explicit targets when you are outside the checkout, running CI, or auditing a different repo.
+Humans usually do not need to memorize these forms: inside `gig`, use `repo`,
+`repo payments`, `gh owner/name`, a normal provider URL, or a pasted Git remote
+and let the prompt normalize it.
 
 ## Target Syntax
 
@@ -76,6 +79,11 @@ gig verify ABC-123 --repo github:owner/name --from staging --to main
 Save repeated topology in a project:
 
 ```bash
+gig
+# ask gig > repo payments
+# ask gig > save payments
+
+# Scriptable form:
 gig project add payments --repo github:owner/name --from staging --to main --use
 ```
 

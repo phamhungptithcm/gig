@@ -36,6 +36,7 @@ type FrontDoorState struct {
 }
 
 type FrontDoorSuggestion struct {
+	Label   string `json:"label,omitempty"`
 	Command string `json:"command,omitempty"`
 	Note    string `json:"note,omitempty"`
 }
@@ -89,20 +90,20 @@ func RenderFrontDoor(w io.Writer, state FrontDoorState) error {
 		}
 	}
 
+	if err := renderFrontDoorSuggestions(w, ui, state); err != nil {
+		return err
+	}
+
 	if len(state.ProviderCoverage) > 0 {
+		if err := ui.Blank(); err != nil {
+			return err
+		}
 		if err := ui.Section("Provider coverage"); err != nil {
 			return err
 		}
 		if err := ui.Rows(state.ProviderCoverage...); err != nil {
 			return err
 		}
-		if err := ui.Blank(); err != nil {
-			return err
-		}
-	}
-
-	if err := renderFrontDoorSuggestions(w, ui, state); err != nil {
-		return err
 	}
 
 	if state.Current == nil {
@@ -144,17 +145,35 @@ func renderFrontDoorSuggestions(w io.Writer, ui Console, state FrontDoorState) e
 	}
 
 	if len(state.Suggestions) > 0 {
+		rows := make([]KeyValue, 0, len(state.Suggestions))
+		flushRows := func() error {
+			if len(rows) == 0 {
+				return nil
+			}
+			if err := ui.NestedRows(rows...); err != nil {
+				return err
+			}
+			rows = rows[:0]
+			return nil
+		}
 		for _, suggestion := range state.Suggestions {
 			if strings.TrimSpace(suggestion.Command) != "" {
-				if err := ui.Commands(suggestion.Command); err != nil {
+				pendingRows, err := renderLabeledSuggestion(ui, rows, suggestion.Label, suggestion.Command, flushRows)
+				if err != nil {
 					return err
 				}
+				rows = pendingRows
 			}
 			if strings.TrimSpace(suggestion.Note) != "" {
-				if err := ui.Note(suggestion.Note); err != nil {
+				pendingRows, err := renderLabeledSuggestion(ui, rows, suggestion.Label, suggestion.Note, flushRows)
+				if err != nil {
 					return err
 				}
+				rows = pendingRows
 			}
+		}
+		if err := flushRows(); err != nil {
+			return err
 		}
 		if _, err := fmt.Fprintf(w, "  %s %s\n", ui.Muted("more"), ui.Command("gig --help")); err != nil {
 			return err
@@ -194,14 +213,14 @@ func renderFrontDoorSuggestions(w io.Writer, ui Console, state FrontDoorState) e
 				return err
 			}
 		} else {
-			commands := []string{"gig ABC-123 --path ."}
+			commands := []string{"gig ABC-123"}
 			if fromBranch, toBranch, ok := detectedPromotionBranches(*state.Detected); ok {
 				commands = append(commands,
 					fmt.Sprintf("gig verify ABC-123 --path . --from %s --to %s", fromBranch, toBranch),
 					fmt.Sprintf("gig packet ABC-123 --path . --from %s --to %s", fromBranch, toBranch),
 				)
 			} else {
-				commands = append(commands, "gig project add local --path . --from <source> --to <target> --use")
+				commands = append(commands, "gig verify ABC-123", "gig packet ABC-123")
 			}
 			if err := ui.Commands(commands...); err != nil {
 				return err
@@ -213,12 +232,13 @@ func renderFrontDoorSuggestions(w io.Writer, ui Console, state FrontDoorState) e
 	default:
 		if err := ui.Commands(
 			"gig login",
-			"gig ABC-123 --repo github:owner/name",
-			"gig project add --provider github --use",
+			"repo",
+			"repo payments",
+			"gh owner/name",
 		); err != nil {
 			return err
 		}
-		if err := ui.Note("paste a repo target when you already know it; use --path . for local Git or SVN"); err != nil {
+		if err := ui.Note("paste a repo URL when you already know it; use local ABC-123 for local Git or SVN"); err != nil {
 			return err
 		}
 	}
@@ -227,6 +247,22 @@ func renderFrontDoorSuggestions(w io.Writer, ui Console, state FrontDoorState) e
 		return err
 	}
 	return nil
+}
+
+func renderLabeledSuggestion(ui Console, rows []KeyValue, label, value string, flushRows func() error) ([]KeyValue, error) {
+	label = strings.TrimSpace(label)
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return rows, nil
+	}
+	if label == "" {
+		if err := flushRows(); err != nil {
+			return rows, err
+		}
+		return rows[:0], ui.Commands(value)
+	}
+	rows = append(rows, KeyValue{Label: label, Value: value})
+	return rows, nil
 }
 
 func detectedPromotionBranches(repository FrontDoorDetectedRepository) (string, string, bool) {
@@ -276,7 +312,7 @@ func renderFrontDoorHero(w io.Writer, ui Console, state FrontDoorState) error {
 			fmt.Sprintf("%-7s %s", frontDoorDetectedRootLabel(*state.Detected), frontDoorDetectedRootValue(*state.Detected)),
 			"branch",
 			fmt.Sprintf("  %s", blankAsDefault(state.Detected.Branch, "unknown")),
-			fmt.Sprintf("next    %s", blankAsDefault(state.Detected.Command, "gig ABC-123 --path .")),
+			fmt.Sprintf("next    %s", blankAsDefault(state.Detected.Command, "gig ABC-123")),
 		)
 	} else {
 		lines = append(lines,

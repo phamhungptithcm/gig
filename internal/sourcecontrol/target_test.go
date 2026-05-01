@@ -27,6 +27,32 @@ func TestParseRepositoryTargetGitHubShortcut(t *testing.T) {
 	}
 }
 
+func TestParseRepositoryTargetProviderAliasShortcuts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		target string
+		want   string
+	}{
+		{target: "gh:acme/payments", want: "github:acme/payments"},
+		{target: "gl:acme/platform/payments", want: "gitlab:acme/platform/payments"},
+		{target: "bb:acme/payments", want: "bitbucket:acme/payments"},
+		{target: "ado:acme/Payments/release-audit", want: "azure-devops:acme/Payments/release-audit"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.target, func(t *testing.T) {
+			repository, err := sourcecontrol.ParseRepositoryTarget(test.target)
+			if err != nil {
+				t.Fatalf("ParseRepositoryTarget() error = %v", err)
+			}
+			if repository.Root != test.want {
+				t.Fatalf("Root = %q, want %q", repository.Root, test.want)
+			}
+		})
+	}
+}
+
 func TestParseRepositoryTargetGitHubURL(t *testing.T) {
 	t.Parallel()
 
@@ -170,6 +196,25 @@ func TestParseRepositoryTargetSVNPrefixedURL(t *testing.T) {
 	}
 	if repository.Name != "HorizonCRM" {
 		t.Fatalf("Name = %q, want HorizonCRM", repository.Name)
+	}
+}
+
+func TestParseRepositoryTargetPlainSVNHTTPURL(t *testing.T) {
+	t.Parallel()
+
+	repository, err := sourcecontrol.ParseRepositoryTarget("https://svn.example.com/repos/app/branches/staging/ProductName")
+	if err != nil {
+		t.Fatalf("ParseRepositoryTarget() error = %v", err)
+	}
+
+	if repository.Type != scm.TypeRemoteSVN {
+		t.Fatalf("Type = %s, want %s", repository.Type, scm.TypeRemoteSVN)
+	}
+	if repository.Root != "svn:https://svn.example.com/repos/app/branches/staging/ProductName" {
+		t.Fatalf("Root = %q, want svn:https://svn.example.com/repos/app/branches/staging/ProductName", repository.Root)
+	}
+	if repository.Name != "ProductName" {
+		t.Fatalf("Name = %q, want ProductName", repository.Name)
 	}
 }
 

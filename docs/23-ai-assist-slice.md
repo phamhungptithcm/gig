@@ -76,8 +76,8 @@ gig assist resolve --path . --ticket ABC-123 --audience release-manager
 `gig assist audit`:
 
 1. resolves repo scope and branch context using normal `gig` rules
-2. builds a deterministic bundle from inspection, planning, verification, and manifest highlights
-3. sends that bundle to DeerFlow together with a read-only follow-up bridge for fresh `gig inspect`, `gig verify`, and `gig manifest` evidence on the same saved session
+2. builds a deterministic bundle from inspection, planning, verification, and packet highlights
+3. sends that bundle to DeerFlow together with a read-only follow-up bridge for fresh `gig inspect`, `gig verify`, and `gig packet` evidence on the same saved session
 4. prints a concise AI briefing tuned for `qa`, `client`, or `release-manager`
 
 `gig ask`:
@@ -122,7 +122,7 @@ This slice helps with the practical pain points that deterministic JSON alone do
 It does not:
 
 - replace `verify`
-- replace `manifest`
+- replace `packet`
 - guess release state without `gig` evidence
 - require DeerFlow for the main remote audit workflow
 - change `gig` into a write-enabled automation tool

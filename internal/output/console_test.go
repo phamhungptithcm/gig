@@ -35,9 +35,9 @@ func TestRenderFrontDoorTruncatesBoxesToColumns(t *testing.T) {
 	err := RenderFrontDoor(&buffer, FrontDoorState{
 		Version:    "dev",
 		HeroStatus: "no project selected yet with a deliberately long explanatory status",
-		Prompt:     "ask gig > repo github:owner/name ABC-123 with extra detail",
+		Prompt:     "ask gig > repo payments with extra detail",
 		Examples: []string{
-			"repo github:owner/name ABC-123 with extra detail that should wrap outside the box",
+			"repo payments with extra detail that should wrap outside the box",
 		},
 	})
 	if err != nil {
